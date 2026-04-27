@@ -1384,7 +1384,7 @@ useEffect(() => {
     const run = async () => {
       const { data: prev } = await supabase
   .from("user_presence")
-  .select("venue_id, venue_state, entered_inner_at, updated_at")
+  .select("venue_id, venue_state, entered_inner_at, updated_at, lat, lng")
   .eq("user_id", meId)
   .single();
 const needsInitialAssignment = !prev?.venue_id;
@@ -1512,6 +1512,11 @@ if (bestInner.id) {
             if (fp.venue_id) continue;
             const d = distanceMeters(you.lat, you.lng, fp.lat, fp.lng);
             if (d > nearbyThresholdM) continue;
+            const prevDist = prev?.lat != null && prev?.lng != null
+              ? distanceMeters(prev.lat, prev.lng, fp.lat, fp.lng)
+              : Number.POSITIVE_INFINITY;
+            const crossedIntoNearby = prevDist > nearbyThresholdM;
+            if (!crossedIntoNearby) continue;
             await createNotification({
               recipientId: fp.user_id,
               actorId: meId,
