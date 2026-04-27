@@ -198,6 +198,11 @@ export default function ProfilePage() {
     }
     setActiveTab("moments");
   };
+  const profileTabs = [
+    { key: "moments", label: "Moments" },
+    { key: "places", label: "Places" },
+    { key: "saved", label: "Saved" },
+  ] as const;
 
   return (
     <ProtectedRoute>
@@ -314,11 +319,7 @@ export default function ProfilePage() {
 
           <section className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-3 backdrop-blur">
             <div className="flex gap-1">
-              {[
-                { key: "moments", label: "Moments" },
-                { key: "places", label: "Places" },
-                { key: "saved", label: "Saved" },
-              ].map((tab: { key: "moments" | "places" | "saved"; label: string }) => (
+              {profileTabs.map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
