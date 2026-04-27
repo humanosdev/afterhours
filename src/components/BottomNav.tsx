@@ -26,13 +26,16 @@ export default function BottomNav({
   return (
     <nav
       className="fixed inset-x-0 z-[60] flex justify-center px-3"
-      style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)" }}
+      style={{
+        // Safe area + gap above home swipe; min ~34px when env() is 0 (e.g. missing viewport-fit).
+        bottom: "max(2.125rem, calc(env(safe-area-inset-bottom, 0px) + 0.875rem))",
+      }}
     >
-      <div className="relative w-full max-w-md rounded-[28px] border border-white/15 bg-black/55 px-5 py-3.5 shadow-[0_12px_42px_rgba(0,0,0,0.48)] backdrop-blur-xl">
-        <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-gradient-to-b from-white/[0.08] to-transparent" />
+      <div className="relative w-full max-w-[min(100vw-20px,400px)] rounded-2xl border border-white/[0.12] bg-black/60 px-3 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.06] to-transparent" />
         <div className="relative mx-auto flex items-center justify-between">
         {/* LEFT SIDE */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           {leftTabs.map(({ href, label, Icon }) => {
             const active = pathname === href;
 
@@ -41,16 +44,17 @@ export default function BottomNav({
                 key={href}
                 href={href}
                 className={[
-                  "relative grid h-12 w-12 place-items-center rounded-2xl border transition-all",
+                  "relative grid h-10 w-10 place-items-center rounded-xl border transition-all",
                   active
-                    ? "border-white/25 bg-transparent shadow-none"
-                    : "border-transparent bg-white/[0.03] hover:border-white/20 hover:bg-white/10",
+                    ? "border-white/20 bg-transparent shadow-none"
+                    : "border-transparent bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.08]",
                 ].join(" ")}
                 aria-label={label}
               >
                 <Icon
                   size={22}
-                  className={active ? "text-violet-100" : "text-white/70"}
+                  strokeWidth={active ? 2.25 : 2}
+                  className={active ? "text-violet-200" : "text-white/65"}
                 />
                 {label === "Profile" && unreadCount > 0 ? (
                   <span className="absolute -top-1 -right-1 inline-flex min-w-[16px] h-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
@@ -67,23 +71,23 @@ export default function BottomNav({
           <button
             type="button"
             onClick={onOpenStories}
-            className="group relative mx-1.5 shrink-0 rounded-2xl border border-violet-300/50 bg-violet-500/20 p-3.5 shadow-[0_0_26px_rgba(168,85,247,0.42)] transition-transform hover:scale-[1.03]"
+            className="group relative mx-1 shrink-0 grid h-11 w-11 place-items-center rounded-xl border border-violet-400/45 bg-gradient-to-b from-violet-500/35 to-violet-600/25 shadow-[0_0_22px_rgba(168,85,247,0.45)] transition active:scale-[0.98]"
             aria-label="New moment"
           >
-            <Plus size={24} className="text-violet-50" />
+            <Plus size={22} strokeWidth={2.5} className="text-violet-50" />
           </button>
         ) : (
           <Link
             href="/stories"
-            className="group relative mx-1.5 shrink-0 rounded-2xl border border-violet-300/50 bg-violet-500/20 p-3.5 shadow-[0_0_26px_rgba(168,85,247,0.42)] transition-transform hover:scale-[1.03]"
+            className="group relative mx-1 shrink-0 grid h-11 w-11 place-items-center rounded-xl border border-violet-400/45 bg-gradient-to-b from-violet-500/35 to-violet-600/25 shadow-[0_0_22px_rgba(168,85,247,0.45)] transition active:scale-[0.98]"
             aria-label="Open moments"
           >
-            <Plus size={24} className="text-violet-50" />
+            <Plus size={22} strokeWidth={2.5} className="text-violet-50" />
           </Link>
         )}
 
         {/* RIGHT SIDE */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
           {rightTabs.map(({ href, label, Icon }) => {
             const active = pathname === href;
 
@@ -92,16 +96,17 @@ export default function BottomNav({
                 key={href}
                 href={href}
                 className={[
-                  "grid h-12 w-12 place-items-center rounded-2xl border transition-all",
+                  "grid h-10 w-10 place-items-center rounded-xl border transition-all",
                   active
-                    ? "border-white/25 bg-transparent shadow-none"
-                    : "border-transparent bg-white/[0.03] hover:border-white/20 hover:bg-white/10",
+                    ? "border-white/20 bg-transparent shadow-none"
+                    : "border-transparent bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.08]",
                 ].join(" ")}
                 aria-label={label}
               >
                 <Icon
                   size={22}
-                  className={active ? "text-violet-100" : "text-white/70"}
+                  strokeWidth={active ? 2.25 : 2}
+                  className={active ? "text-violet-200" : "text-white/65"}
                 />
               </Link>
             );

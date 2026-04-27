@@ -114,9 +114,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
+  // Production only: let new service workers activate and reload once.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production") return;
 
     let reloadedForUpdate = false;
 
@@ -142,9 +144,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Development SW/cache purge runs synchronously in root layout <head> (before chunks load).
+
+  // Production only: if deployed CSS 404s (stale precache), unregister + clear once then reload.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production") return;
 
     const healMissingCss = async () => {
       const cssLink = document.querySelector('link[rel="stylesheet"][href*="/_next/static/css"]') as HTMLLinkElement | null;
@@ -168,21 +174,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       window.location.reload();
     };
 
-    const clearLocalhostSw = async () => {
-      if (window.location.hostname !== "localhost") return;
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    };
-
-    clearLocalhostSw().finally(() => {
-      window.setTimeout(() => {
-        healMissingCss();
-      }, 150);
-    });
+    window.setTimeout(() => {
+      void healMissingCss();
+    }, 150);
   }, []);
 
   useEffect(() => {

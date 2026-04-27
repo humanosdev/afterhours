@@ -1,7 +1,7 @@
 "use client";
 
 import mapboxgl from "mapbox-gl";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -12,6 +12,8 @@ import {
   Trees,
   Grid3X3,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   createNotification,
@@ -113,7 +115,47 @@ function safeSetMapCursor(m: mapboxgl.Map | null, cursor: string) {
   if (canvas) canvas.style.cursor = cursor;
 }
 
-function createNeonPinImage() {
+/** Substrings matched against `venue.category` for green dining-style map pins. */
+const DINING_PIN_CATEGORY_MATCHERS = [
+  "food",
+  "restaurant",
+  "eat",
+  "cafe",
+  "dining",
+  "bistro",
+  "eatery",
+  "grill",
+  "kitchen",
+  "coffee",
+  "bakery",
+];
+
+function isDiningVenueCategory(category: string | null | undefined) {
+  const s = `${category ?? ""}`.toLowerCase();
+  return DINING_PIN_CATEGORY_MATCHERS.some((token) => s.includes(token));
+}
+
+/** Same name hints as the Campus map filter — keep in sync when adding buildings. */
+const CAMPUS_VENUE_NAME_SUBSTRINGS = ["ego hall", "johnson", "morgan", "pearson"];
+
+const CAMPUS_PIN_CATEGORY_MATCHERS = ["campus", "school", "university", "college", "dorm"];
+
+function isCampusVenue(v: { category: string; name: string }) {
+  const source = `${v.category ?? ""}`.toLowerCase();
+  if (CAMPUS_PIN_CATEGORY_MATCHERS.some((token) => source.includes(token))) return true;
+  const name = `${v.name ?? ""}`.toLowerCase();
+  return CAMPUS_VENUE_NAME_SUBSTRINGS.some((fragment) => name.includes(fragment));
+}
+
+type NeonPinVariant = "default" | "dining" | "campus";
+
+function resolveVenuePinVariant(v: { category: string; name: string }): NeonPinVariant {
+  if (isCampusVenue(v)) return "campus";
+  if (isDiningVenueCategory(v.category)) return "dining";
+  return "default";
+}
+
+function createNeonPinImage(variant: NeonPinVariant = "default") {
   const size = 96;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -126,34 +168,55 @@ function createNeonPinImage() {
   const circleR = 18;
   const tipY = 74;
 
-  // Soft purple bloom.
+  let glow0: string;
+  let glowMid: string;
+  let glowEdge: string;
+  let fill: string;
+  let shadowRgb: string;
+  if (variant === "dining") {
+    glow0 = "rgba(34, 197, 94, 0.95)";
+    glowMid = "rgba(34, 197, 94, 0.65)";
+    glowEdge = "rgba(34, 197, 94, 0)";
+    fill = "#22c55e";
+    shadowRgb = "34,197,94";
+  } else if (variant === "campus") {
+    glow0 = "rgba(239, 68, 68, 0.95)";
+    glowMid = "rgba(239, 68, 68, 0.65)";
+    glowEdge = "rgba(239, 68, 68, 0)";
+    fill = "#ef4444";
+    shadowRgb = "239,68,68";
+  } else {
+    glow0 = "rgba(139, 92, 246, 0.95)";
+    glowMid = "rgba(139, 92, 246, 0.65)";
+    glowEdge = "rgba(139, 92, 246, 0)";
+    fill = "#8b5cf6";
+    shadowRgb = "139,92,246";
+  }
+
   const glow = ctx.createRadialGradient(cx, circleCy, 6, cx, circleCy, 36);
-  glow.addColorStop(0, "rgba(139, 92, 246, 0.95)");
-  glow.addColorStop(0.4, "rgba(139, 92, 246, 0.65)");
-  glow.addColorStop(1, "rgba(139, 92, 246, 0)");
+  glow.addColorStop(0, glow0);
+  glow.addColorStop(0.4, glowMid);
+  glow.addColorStop(1, glowEdge);
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(cx, circleCy, 36, 0, Math.PI * 2);
   ctx.fill();
 
-  // Pin silhouette.
   ctx.beginPath();
   ctx.moveTo(cx, tipY);
   ctx.bezierCurveTo(cx - 20, 54, cx - 18, 26, cx, 20);
   ctx.bezierCurveTo(cx + 18, 26, cx + 20, 54, cx, tipY);
   ctx.closePath();
-  ctx.fillStyle = "#8b5cf6";
+  ctx.fillStyle = fill;
   ctx.fill();
 
-  // Pin outline glow.
   ctx.strokeStyle = "rgba(255,255,255,0.8)";
   ctx.lineWidth = 2.2;
-  ctx.shadowColor = "rgba(139,92,246,0.85)";
+  ctx.shadowColor = `rgba(${shadowRgb},0.85)`;
   ctx.shadowBlur = 10;
   ctx.stroke();
   ctx.shadowBlur = 0;
 
-  // Inner cutout.
   ctx.beginPath();
   ctx.arc(cx, circleCy, circleR * 0.48, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(255,255,255,0.9)";
@@ -228,6 +291,8 @@ type VenuePerson = {
   user_id: string;
   isFriend: boolean;
   name: string;
+  /** Friend is in this geozone but last presence ping is outside the “online” window (still within recent window). */
+  isRecentPresence: boolean;
 };
 
 const ONLINE_WINDOW_MS = 5 * 60_000;
@@ -281,13 +346,19 @@ const [arrivalPulseUntil, setArrivalPulseUntil] = useState(0);
 const [pulseTick, setPulseTick] = useState(0);
 const [myProfile, setMyProfile] = useState<FriendProfile | null>(null);
 const handledQueryVenueIdRef = useRef<string | null>(null);
-const MAP_NAV_CLEARANCE_PX = 132;
+/** Space above bottom nav + home indicator; lower = closer to nav, more map area. */
+const MAP_NAV_CLEARANCE_PX = 100;
 type CategoryKey = "all" | "nightlife" | "food" | "events" | "campus" | "chill" | "more";
 type MapPanelMode = "categories" | "friends";
 const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
 const [activityPlaceholderOpen, setActivityPlaceholderOpen] = useState(false);
 const [panelMode, setPanelMode] = useState<MapPanelMode>("categories");
 const [mapZoom, setMapZoom] = useState(14);
+/** Active category chip tints — match map pin colors (purple default / green dining / red campus). */
+const MAP_PIN_PURPLE = "#8b5cf6";
+const MAP_PIN_GREEN = "#22c55e";
+const MAP_PIN_RED = "#ef4444";
+
 const categoryFilters: {
   key: CategoryKey;
   label: string;
@@ -295,13 +366,19 @@ const categoryFilters: {
   accent: string;
   matchers: string[];
 }[] = [
-  { key: "all", label: "All", icon: Grid3X3, accent: "#a855f7", matchers: [] },
-  { key: "nightlife", label: "Nightlife", icon: MoonStar, accent: "#f43f5e", matchers: ["nightlife", "bar", "club", "party"] },
-  { key: "food", label: "Food", icon: UtensilsCrossed, accent: "#f59e0b", matchers: ["food", "restaurant", "eat", "cafe"] },
-  { key: "events", label: "Events", icon: Sparkles, accent: "#a855f7", matchers: ["event", "music", "show", "concert"] },
-  { key: "campus", label: "Campus", icon: GraduationCap, accent: "#14b8a6", matchers: ["campus", "school", "university"] },
-  { key: "chill", label: "Chill", icon: Trees, accent: "#14b8a6", matchers: ["chill", "park", "lounge"] },
-  { key: "more", label: "More", icon: Sparkles, accent: "#3b82f6", matchers: [] },
+  { key: "all", label: "All", icon: Grid3X3, accent: MAP_PIN_PURPLE, matchers: [] },
+  { key: "nightlife", label: "Nightlife", icon: MoonStar, accent: MAP_PIN_PURPLE, matchers: ["nightlife", "bar", "club", "party"] },
+  { key: "food", label: "Food", icon: UtensilsCrossed, accent: MAP_PIN_GREEN, matchers: ["food", "restaurant", "eat", "cafe"] },
+  { key: "events", label: "Events", icon: Sparkles, accent: MAP_PIN_PURPLE, matchers: ["event", "music", "show", "concert"] },
+  {
+    key: "campus",
+    label: "Campus",
+    icon: GraduationCap,
+    accent: MAP_PIN_RED,
+    matchers: ["campus", "school", "university"],
+  },
+  { key: "chill", label: "Chill", icon: Trees, accent: MAP_PIN_PURPLE, matchers: ["chill", "park", "lounge"] },
+  { key: "more", label: "More", icon: Sparkles, accent: MAP_PIN_PURPLE, matchers: [] },
 ];
 
 const selectedVenue = selectedVenueId
@@ -315,7 +392,18 @@ const filteredVenues = useMemo(() => {
   if (!filter) return venues;
   return venues.filter((v) => {
     const source = `${v.category ?? ""}`.toLowerCase();
-    return filter.matchers.some((token) => source.includes(token));
+    const name = `${v.name ?? ""}`.toLowerCase();
+
+    // Campus buildings (e.g. Ego Hall) often carry a "bar" category token — keep them off Nightlife.
+    if (activeCategory === "nightlife") {
+      if (CAMPUS_VENUE_NAME_SUBSTRINGS.some((fragment) => name.includes(fragment))) return false;
+    }
+
+    if (filter.matchers.some((token) => source.includes(token))) return true;
+    if (activeCategory === "campus") {
+      return CAMPUS_VENUE_NAME_SUBSTRINGS.some((fragment) => name.includes(fragment));
+    }
+    return false;
   });
 }, [venues, activeCategory]);
 
@@ -343,8 +431,6 @@ function getVenuePeople(venueId: string) {
       nearbyAll: [],
       insideFriends: [],
       nearbyFriends: [],
-      insideFriendsRecent: 0,
-      nearbyFriendsRecent: 0,
     };
   }
 
@@ -352,8 +438,6 @@ function getVenuePeople(venueId: string) {
   const nearbyAll: VenuePerson[] = [];
   const insideFriends: VenuePerson[] = [];
   const nearbyFriends: VenuePerson[] = [];
-  let insideFriendsRecent = 0;
-  let nearbyFriendsRecent = 0;
 
   for (const p of presence) {
     if (hiddenIds.has(p.user_id)) continue;
@@ -369,24 +453,22 @@ function getVenuePeople(venueId: string) {
   if (!isFriend && d > venue.outer_radius_m) continue;
   
 
-    const item = {
+    const item: VenuePerson = {
       user_id: p.user_id,
       isFriend,
       name: isFriend ? usernamesById[p.user_id] ?? "Friend" : "Someone",
-      
+      isRecentPresence: isFriend && !isOnlineNow && isRecentlySeen,
     };
 
     if (d <= venue.inner_radius_m) {
       insideAll.push(item);
       if (isFriend) {
         insideFriends.push(item);
-        if (!isOnlineNow && isRecentlySeen) insideFriendsRecent++;
       }
     } else if (d <= venue.outer_radius_m) {
       nearbyAll.push(item);
       if (isFriend) {
         nearbyFriends.push(item);
-        if (!isOnlineNow && isRecentlySeen) nearbyFriendsRecent++;
       }
     }
   }
@@ -396,8 +478,6 @@ function getVenuePeople(venueId: string) {
     nearbyAll,
     insideFriends,
     nearbyFriends,
-    insideFriendsRecent,
-    nearbyFriendsRecent,
   };
 }
 
@@ -721,8 +801,6 @@ const selectedVenuePeople = useMemo(() => {
       nearbyAll: [] as VenuePerson[],
       insideFriends: [] as VenuePerson[],
       nearbyFriends: [] as VenuePerson[],
-      insideFriendsRecent: 0,
-      nearbyFriendsRecent: 0,
     };
   }
   return getVenuePeople(selectedVenue.id);
@@ -900,9 +978,21 @@ useEffect(() => {
     });
 
     if (!m.hasImage("venue-neon-pin")) {
-      const neonPinImage = createNeonPinImage();
+      const neonPinImage = createNeonPinImage("default");
       if (neonPinImage) {
         m.addImage("venue-neon-pin", neonPinImage, { pixelRatio: 2 });
+      }
+    }
+    if (!m.hasImage("venue-neon-pin-dining")) {
+      const diningPinImage = createNeonPinImage("dining");
+      if (diningPinImage) {
+        m.addImage("venue-neon-pin-dining", diningPinImage, { pixelRatio: 2 });
+      }
+    }
+    if (!m.hasImage("venue-neon-pin-campus")) {
+      const campusPinImage = createNeonPinImage("campus");
+      if (campusPinImage) {
+        m.addImage("venue-neon-pin-campus", campusPinImage, { pixelRatio: 2 });
       }
     }
 
@@ -1122,7 +1212,15 @@ useEffect(() => {
       type: "symbol",
       source: VENUE_ACTIVITY_SOURCE,
       layout: {
-        "icon-image": "venue-neon-pin",
+        "icon-image": [
+          "match",
+          ["get", "pin_variant"],
+          "campus",
+          "venue-neon-pin-campus",
+          "dining",
+          "venue-neon-pin-dining",
+          "venue-neon-pin",
+        ],
         "icon-size": [
           "interpolate",
           ["linear"],
@@ -1288,6 +1386,7 @@ useEffect(() => {
         properties: {
           venueId: v.id,
           name: v.name,
+          pin_variant: resolveVenuePinVariant(v),
           inside_count: inside,
           nearby_count: nearby,
           combined_count: combined,
@@ -1891,6 +1990,43 @@ useEffect(() => {
       });
   }, [friendsById, friendProfilesById, presence]);
 
+  const focusFriendOnMap = useCallback(
+    (friendId: string) => {
+      const now = Date.now();
+      setLastPageInteractionAt(now);
+      setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+      const m = map.current;
+      if (!m || !mapReady) {
+        router.push(`/profile/${friendId}`);
+        return;
+      }
+      const pres = presence.find((p) => p.user_id === friendId);
+      if (pres?.venue_id) {
+        const v = venues.find((ven) => ven.id === pres.venue_id);
+        if (v) {
+          setSelectedVenueId(v.id);
+          m.easeTo({
+            center: [v.lng, v.lat],
+            zoom: Math.max(m.getZoom(), 15.8),
+            duration: 950,
+          });
+          return;
+        }
+      }
+      if (pres && Number.isFinite(pres.lat) && Number.isFinite(pres.lng)) {
+        setSelectedVenueId(null);
+        m.easeTo({
+          center: [pres.lng, pres.lat],
+          zoom: Math.max(m.getZoom(), 15.5),
+          duration: 950,
+        });
+        return;
+      }
+      router.push(`/profile/${friendId}`);
+    },
+    [mapReady, presence, venues, router]
+  );
+
   const goToPrevCheckpoint = () => {
     if (!checkpoints.length) return;
     const now = Date.now();
@@ -1952,15 +2088,16 @@ useEffect(() => {
                 key={filter.key}
                 type="button"
                 onClick={() => setActiveCategory(filter.key)}
-                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium text-white/90 transition"
+                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
                 style={{
-                  borderColor: active ? `${filter.accent}70` : "rgba(255,255,255,0.08)",
-                  background: active ? `${filter.accent}20` : "rgba(255,255,255,0.015)",
+                  borderColor: active ? `${filter.accent}99` : "rgba(255,255,255,0.08)",
+                  background: active ? `${filter.accent}28` : "rgba(255,255,255,0.015)",
+                  color: active ? filter.accent : "rgba(255,255,255,0.88)",
                 }}
                 aria-label={`Filter by ${filter.label}`}
               >
                 <div className="flex items-center gap-1">
-                  <Icon size={11} style={{ color: active ? filter.accent : "rgba(255,255,255,0.62)" }} />
+                  <Icon size={11} strokeWidth={active ? 2.25 : 1.85} className="shrink-0" />
                   <span>{filter.label}</span>
                 </div>
               </button>
@@ -1996,9 +2133,10 @@ useEffect(() => {
               return (
                 <button
                   key={f.id}
-                  onClick={() => router.push(`/profile/${f.id}`)}
+                  type="button"
+                  onClick={() => focusFriendOnMap(f.id)}
                   className="group relative flex w-full items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-1.5 py-1"
-                  aria-label={`Open ${label} profile`}
+                  aria-label={`Show ${label} on map`}
                 >
                   <div className={`relative rounded-full ${f.online ? "shadow-[0_0_18px_rgba(59,130,246,0.45)]" : ""}`}>
                     {f.profile?.avatar_url ? (
@@ -2044,10 +2182,10 @@ useEffect(() => {
         <button
           type="button"
           onClick={goToPrevCheckpoint}
-          className="grid h-8.5 w-8.5 place-items-center rounded-full border border-white/15 bg-white/5 text-sm text-white"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-white active:bg-white/10"
           aria-label="Previous checkpoint"
         >
-          ←
+          <ChevronLeft size={28} strokeWidth={2.5} className="text-white/95" aria-hidden />
         </button>
         <button
           type="button"
@@ -2068,10 +2206,10 @@ useEffect(() => {
         <button
           type="button"
           onClick={goToNextCheckpoint}
-          className="grid h-8.5 w-8.5 place-items-center rounded-full border border-white/15 bg-white/5 text-sm text-white"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-white active:bg-white/10"
           aria-label="Next checkpoint"
         >
-          →
+          <ChevronRight size={28} strokeWidth={2.5} className="text-white/95" aria-hidden />
         </button>
       </div>
       ) : null}
@@ -2132,14 +2270,16 @@ useEffect(() => {
                     <p className="text-xs text-white/60">Inside</p>
                     <p className="font-semibold">{selectedVenuePeople.insideAll.length}</p>
                     <p className="text-[11px] text-white/50">
-                      {selectedVenuePeople.insideFriends.length} friends • {selectedVenuePeople.insideFriendsRecent} recently
+                      {selectedVenuePeople.insideFriends.length}{" "}
+                      {selectedVenuePeople.insideFriends.length === 1 ? "friend" : "friends"}
                     </p>
                   </div>
                   <div className="rounded-xl border border-teal-300/20 bg-teal-500/10 px-3 py-2">
                     <p className="text-xs text-white/60">Nearby</p>
                     <p className="font-semibold">{selectedVenuePeople.nearbyAll.length}</p>
                     <p className="text-[11px] text-white/50">
-                      {selectedVenuePeople.nearbyFriends.length} friends • {selectedVenuePeople.nearbyFriendsRecent} recently
+                      {selectedVenuePeople.nearbyFriends.length}{" "}
+                      {selectedVenuePeople.nearbyFriends.length === 1 ? "friend" : "friends"}
                     </p>
                   </div>
                 </div>
@@ -2177,9 +2317,14 @@ useEffect(() => {
                             );
                           })}
                         </div>
-                        {selectedVenuePeople.insideFriends.slice(0, 3).map((friend) => (
+                        {selectedVenuePeople.insideFriends.slice(0, 12).map((friend) => (
                           <p key={`${friend.user_id}-inside-label`} className="truncate text-xs text-white/80">
                             {friend.name}
+                            {friend.isRecentPresence ? (
+                              <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-white/40">
+                                Recently
+                              </span>
+                            ) : null}
                           </p>
                         ))}
                       </div>
@@ -2196,7 +2341,14 @@ useEffect(() => {
                             key={`${friend.user_id}-nearby`}
                             className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs"
                           >
-                            <p className="truncate">{friend.name}</p>
+                            <p className="truncate">
+                              {friend.name}
+                              {friend.isRecentPresence ? (
+                                <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-white/40">
+                                  Recently
+                                </span>
+                              ) : null}
+                            </p>
                           </div>
                         ))}
                       </div>

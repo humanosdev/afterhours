@@ -14,7 +14,7 @@ export function StoryRing({
   src?: string | null;
   alt?: string;
   fallbackText?: string | null;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl" | "story" | "storyLg";
   active?: boolean;
   className?: string;
 }) {

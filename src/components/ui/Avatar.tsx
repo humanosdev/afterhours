@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
+type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | "story" | "storyLg";
 
 const sizeClasses: Record<AvatarSize, string> = {
   xs: "h-7 w-7 text-[10px]",
@@ -10,6 +10,10 @@ const sizeClasses: Record<AvatarSize, string> = {
   md: "h-11 w-11 text-sm",
   lg: "h-14 w-14 text-base",
   xl: "h-20 w-20 text-lg",
+  /** ~64px — compact strips, secondary rows */
+  story: "h-16 w-16 text-sm",
+  /** ~72px inner — hub / home story row (IG-scale hero rings) */
+  storyLg: "h-[4.5rem] w-[4.5rem] text-[15px]",
 };
 
 export function Avatar({
@@ -76,10 +80,13 @@ export function Avatar({
     );
   }
 
+  const ringPad = size === "storyLg" ? "p-[3px]" : "p-[2px]";
+
   return (
     <div
       className={[
-        "rounded-full p-[2px] bg-gradient-to-tr",
+        "rounded-full bg-gradient-to-tr",
+        ringPad,
         ringClass,
         "shadow-glow-violet",
         className,

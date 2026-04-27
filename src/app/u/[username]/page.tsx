@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
-import { Avatar, StoryRing } from "@/components/ui";
+import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import { createNotification } from "@/lib/notifications";
 
@@ -145,13 +145,14 @@ export default function UserProfile() {
   const [venueText, setVenueText] = useState<string>("Not at a venue");
   const [activeMomentsCount, setActiveMomentsCount] = useState(0);
   const [momentsCount, setMomentsCount] = useState(0);
-  const [placesCount, setPlacesCount] = useState(0);
   const [friendCount, setFriendCount] = useState(0);
   const [latestActiveMomentId, setLatestActiveMomentId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
   const [requesting, setRequesting] = useState(false);
   const [latestMomentOwnerId, setLatestMomentOwnerId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"moments" | "places" | "saved">("moments");
+  const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
 
   const isActive = (ts: string) =>
     Date.now() - new Date(ts).getTime() < 5 * 60_000;
@@ -247,20 +248,12 @@ export default function UserProfile() {
   useEffect(() => {
     if (!profile?.id) return;
     (async () => {
-      const [{ data: fr }, { data: storyRows }] = await Promise.all([
-        supabase
-          .from("friend_requests")
-          .select("id")
-          .eq("status", "accepted")
-          .or(`requester_id.eq.${profile.id},addressee_id.eq.${profile.id}`),
-        supabase.from("stories").select("venue_id").eq("user_id", profile.id).not("venue_id", "is", null).limit(400),
-      ]);
+      const { data: fr } = await supabase
+        .from("friend_requests")
+        .select("id")
+        .eq("status", "accepted")
+        .or(`requester_id.eq.${profile.id},addressee_id.eq.${profile.id}`);
       setFriendCount(fr?.length ?? 0);
-      const venues = new Set<string>();
-      (storyRows ?? []).forEach((r: any) => {
-        if (r?.venue_id) venues.add(r.venue_id);
-      });
-      setPlacesCount(venues.size);
     })();
   }, [profile?.id]);
 
@@ -334,8 +327,42 @@ export default function UserProfile() {
     })();
   }, [me, profile]);
 
+  useEffect(() => {
+    if (!profile?.id) return;
+    const isOwn = me === profile.id;
+    const locked = !!profile.is_private && !isOwn && !isFriend;
+    if (locked) {
+      setPlaces([]);
+      return;
+    }
+    (async () => {
+      const [{ data: storyRows }, { data: pres }] = await Promise.all([
+        supabase.from("stories").select("venue_id").eq("user_id", profile.id).limit(400),
+        supabase.from("user_presence").select("venue_id").eq("user_id", profile.id).maybeSingle(),
+      ]);
+      const venueIds = new Set<string>();
+      (storyRows ?? []).forEach((r: any) => {
+        if (r?.venue_id) venueIds.add(r.venue_id);
+      });
+      if (pres?.venue_id) venueIds.add(pres.venue_id);
+      if (!venueIds.size) {
+        setPlaces([]);
+        return;
+      }
+      const { data: venueRows } = await supabase
+        .from("venues")
+        .select("id, name, category")
+        .in("id", Array.from(venueIds));
+      setPlaces((venueRows ?? []) as any);
+    })();
+  }, [profile?.id, profile?.is_private, me, isFriend]);
+
   if (loading) {
-    return <div className="min-h-screen bg-black text-white p-6">Loading…</div>;
+    return (
+      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-black px-4 text-[14px] text-white/50">
+        Loading…
+      </div>
+    );
   }
 
   if (!profile) return null;
@@ -352,6 +379,27 @@ export default function UserProfile() {
     if (!profile?.username) return;
     if (shouldHidePrivateProfile) return;
     router.push(`/profile/friends?view=${encodeURIComponent(profile.username)}`);
+  };
+
+  const activeLabel = venueText.startsWith("At ")
+    ? venueText
+    : venueText.startsWith("Recently at ")
+      ? `Last at ${venueText.replace("Recently at ", "")}`
+      : venueText === "Not at a venue"
+        ? "Not at a venue"
+        : "Last active recently";
+  const statusValue = hasLiveMoment ? "Active" : "Away";
+  const profileTabs = [
+    { key: "moments" as const, label: "Moments" },
+    { key: "places" as const, label: "Places" },
+    { key: "saved" as const, label: "Saved" },
+  ];
+  const openMomentsTab = () => {
+    if (latestActiveMomentId) {
+      router.push(`/moments/${encodeURIComponent(latestActiveMomentId)}`);
+      return;
+    }
+    setActiveTab("moments");
   };
 
   async function sendFriendRequestFromProfile() {
@@ -377,224 +425,284 @@ export default function UserProfile() {
   }
 
   return (
-    <div className="min-h-screen bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+112px)] pt-[calc(env(safe-area-inset-top,0px)+14px)] text-white">
-      <div className="mx-auto w-full max-w-md space-y-4">
-      <div className="mb-6 flex items-center justify-between">
-        <button onClick={goBackSafe} className="text-sm text-white/60">
-          ←
-        </button>
-        <div className="relative">
+    <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
+      <div className="mx-auto flex w-full flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen((v) => !v);
-            }}
-            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm"
-            aria-label="Profile actions"
+            onClick={goBackSafe}
+            className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/85"
+            aria-label="Go back"
           >
-            ☰
+            ←
           </button>
-          {menuOpen ? (
-            <div
-              className="absolute right-0 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
-              onClick={(e) => e.stopPropagation()}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen((v) => !v);
+              }}
+              className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[15px] text-white/85"
+              aria-label="Profile actions"
             >
-              {isBlocked ? (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!me || !them) return;
-                    const ok = window.confirm("Unblock this user?");
-                    if (!ok) return;
-                    await unblockUser(me, them);
-                    setIsBlocked(false);
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-3 text-left text-sm hover:bg-white/10"
-                >
-                  Unblock
-                </button>
-              ) : (
-                <>
-                  {isFriend ? (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!me || !them) return;
-                        const ok = window.confirm("Are you sure you want to unfriend this user?");
-                        if (!ok) return;
-                        await unfriendUser(me, them);
-                        setIsFriend(false);
-                        setMenuOpen(false);
-                      }}
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-white/10"
-                    >
-                      Unfriend
-                    </button>
-                  ) : null}
+              ☰
+            </button>
+            {menuOpen ? (
+              <div
+                className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-[12px] border border-white/[0.1] bg-zinc-900/95 backdrop-blur"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {isBlocked ? (
                   <button
                     type="button"
                     onClick={async () => {
                       if (!me || !them) return;
-                      const ok = window.confirm("Are you sure you want to block this user?");
+                      const ok = window.confirm("Unblock this user?");
                       if (!ok) return;
-                      await blockUser(me, them);
-                      setIsBlocked(true);
-                      setIsFriend(false);
+                      await unblockUser(me, them);
+                      setIsBlocked(false);
                       setMenuOpen(false);
                     }}
-                    className="w-full px-4 py-3 text-left text-sm text-red-400 hover:bg-red-500/20"
+                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
                   >
-                    Block
+                    Unblock
+                  </button>
+                ) : (
+                  <>
+                    {isFriend ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!me || !them) return;
+                          const ok = window.confirm("Are you sure you want to unfriend this user?");
+                          if (!ok) return;
+                          await unfriendUser(me, them);
+                          setIsFriend(false);
+                          setMenuOpen(false);
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
+                      >
+                        Unfriend
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!me || !them) return;
+                        const ok = window.confirm("Are you sure you want to block this user?");
+                        if (!ok) return;
+                        await blockUser(me, them);
+                        setIsBlocked(true);
+                        setIsFriend(false);
+                        setMenuOpen(false);
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-[14px] text-red-400 hover:bg-red-500/15"
+                    >
+                      Block
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="pt-5">
+          <div className="flex items-start gap-3.5">
+            <button type="button" onClick={openMomentsTab} className="shrink-0" aria-label="Open active Moment or Moments tab">
+              <StoryRing
+                src={profileAvatar}
+                alt={`${profile.username} avatar`}
+                fallbackText={profileName}
+                size="xl"
+                active={hasLiveMoment}
+              />
+            </button>
+            <div className="min-w-0 flex-1 pt-1">
+              <p className="truncate text-[1.375rem] font-bold leading-tight tracking-tight">{profileName}</p>
+              <p className="mt-0.5 truncate text-[14px] text-white/48">@{profile.username}</p>
+              <p className="mt-2 inline-flex max-w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] font-medium text-white/65 ring-1 ring-white/[0.08]">
+                {activeLabel}
+              </p>
+            </div>
+          </div>
+
+          {!shouldHidePrivateProfile ? (
+            profile.bio?.trim() ? (
+              <p className="mt-4 text-[14px] leading-[1.45] text-white/72">{profile.bio.trim()}</p>
+            ) : (
+              <p className="mt-4 text-[14px] text-white/38">No bio yet.</p>
+            )
+          ) : null}
+
+          <div className="mt-5 flex justify-between border-y border-white/[0.08] py-3.5 text-center">
+            <button type="button" onClick={openFriendsViewer} disabled={shouldHidePrivateProfile} className="min-w-0 flex-1 px-1 disabled:cursor-not-allowed disabled:opacity-45">
+              <p className="text-xl font-semibold tabular-nums text-white">{friendCount}</p>
+              <p className="mt-0.5 text-[12px] text-white/48">Friends</p>
+            </button>
+            <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
+            <div className="min-w-0 flex-1 px-1">
+              <p className="text-xl font-semibold tabular-nums text-white">{shouldHidePrivateProfile ? 0 : places.length}</p>
+              <p className="mt-0.5 text-[12px] text-white/48">Places</p>
+            </div>
+            <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
+            <div className="min-w-0 flex-1 px-1">
+              <p className="text-xl font-semibold tabular-nums text-white">{shouldHidePrivateProfile ? 0 : momentsCount}</p>
+              <p className="mt-0.5 text-[12px] text-white/48">Moments</p>
+            </div>
+            <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
+            <div className="min-w-0 flex-1 px-1">
+              <p className="truncate text-xl font-semibold text-white">{shouldHidePrivateProfile ? "—" : statusValue}</p>
+              <p className="mt-0.5 text-[12px] text-white/48">Status</p>
+            </div>
+          </div>
+
+          {!shouldHidePrivateProfile ? (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {isFriend ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/chat`)}
+                    className="h-11 rounded-[10px] bg-white text-[15px] font-semibold text-black transition active:opacity-90"
+                  >
+                    Message
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const shareUrl =
+                        typeof window !== "undefined"
+                          ? `${window.location.origin}/u/${encodeURIComponent(profile.username)}`
+                          : "";
+                      if (navigator.share) {
+                        await navigator.share({ title: `${profileName} on AfterHours`, url: shareUrl });
+                        return;
+                      }
+                      if (shareUrl) await navigator.clipboard.writeText(shareUrl);
+                    }}
+                    className="h-11 rounded-[10px] border border-white/[0.12] bg-white/[0.05] text-[15px] font-semibold text-white/92 transition hover:bg-white/[0.08]"
+                  >
+                    Share profile
                   </button>
                 </>
+              ) : requestStatus === "incoming" ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/profile/friends")}
+                  className="col-span-2 h-11 rounded-[10px] bg-white text-[15px] font-semibold text-black transition active:opacity-90"
+                >
+                  Respond in Friends
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={sendFriendRequestFromProfile}
+                  disabled={requesting || requestStatus === "outgoing"}
+                  className="col-span-2 h-11 rounded-[10px] bg-white text-[15px] font-semibold text-black transition active:opacity-90 disabled:opacity-60"
+                >
+                  {requestStatus === "outgoing" ? "Request sent" : requesting ? "Sending..." : "Add friend"}
+                </button>
               )}
             </div>
           ) : null}
         </div>
-      </div>
-      <section className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 backdrop-blur">
-      <div className="mb-4 flex items-center gap-4">
-        <button
-          type="button"
-          onClick={() => {
-            if (!latestActiveMomentId) return;
-            router.push(`/moments/${encodeURIComponent(latestActiveMomentId)}`);
-          }}
-          className="shrink-0"
-          aria-label="Open latest moment"
-        >
-          <StoryRing
-            src={profileAvatar}
-            alt={`${profile.username} avatar`}
-            fallbackText={profileName}
-            size="lg"
-            active={hasLiveMoment}
-          />
-        </button>
 
-        <div>
-          <div className="text-2xl font-semibold">
-            {profileName}
-          </div>
-          <div className="text-sm text-white/60">
-            @{profile.username}
-          </div>
-          <div className="mt-1 text-sm text-white/60">
-            {venueText}
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        <button
-          type="button"
-          onClick={openFriendsViewer}
-          disabled={shouldHidePrivateProfile}
-          className={`rounded-xl border border-white/12 px-3 py-2 text-left transition ${
-            shouldHidePrivateProfile
-              ? "cursor-not-allowed bg-white/[0.01] opacity-60"
-              : "bg-white/[0.03] hover:bg-white/[0.06]"
-          }`}
-        >
-          <p className="text-[11px] text-white/55">Friends</p>
-          <p className="text-base font-semibold">{friendCount}</p>
-        </button>
-        <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
-          <p className="text-[11px] text-white/55">Moments</p>
-          <p className="text-base font-semibold">{momentsCount}</p>
-        </div>
-        <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
-          <p className="text-[11px] text-white/55">Places</p>
-          <p className="text-base font-semibold">{placesCount}</p>
-        </div>
-        <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
-          <p className="text-[11px] text-white/55">Live status</p>
-          <p className="truncate text-base font-semibold">{hasLiveMoment ? "Active now" : "Recently active"}</p>
-        </div>
-      </div>
-      {!shouldHidePrivateProfile ? (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {isFriend ? (
-            <button
-              type="button"
-              onClick={() => router.push(`/chat`)}
-              className="rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100"
-            >
-              Message
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={sendFriendRequestFromProfile}
-              disabled={requesting || requestStatus !== "none"}
-              className="rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100 disabled:opacity-60"
-            >
-              {requestStatus === "outgoing"
-                ? "Request sent"
-                : requestStatus === "incoming"
-                  ? "Respond in Friends"
-                  : requesting
-                    ? "Sending..."
-                    : "Add friend"}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => router.push(`/u/${profile.username}`)}
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold"
-          >
-            View profile
-          </button>
-        </div>
-      ) : null}
-      </section>
-
-      {shouldHidePrivateProfile ? (
-        <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="text-base font-semibold">This account is private</div>
-          <div className="mt-1 text-sm text-white/65">
-            You need to be friends to view this profile.
-          </div>
-          {requestStatus === "outgoing" ? (
-            <div className="mt-3 inline-flex rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80">
-              Request sent
-            </div>
-          ) : requestStatus === "incoming" ? (
-            <button
-              type="button"
-              onClick={() => router.push("/profile/friends")}
-              className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
-            >
-              Respond to request
-            </button>
-          ) : (
-            !isOwnProfile && (
+        {shouldHidePrivateProfile ? (
+          <div className="mt-6 border-y border-white/[0.08] py-8 text-center">
+            <p className="text-[15px] font-semibold text-white">This account is private</p>
+            <p className="mt-1.5 px-4 text-[13px] leading-relaxed text-white/48">You need to be friends to view photos, moments, and more.</p>
+            {requestStatus === "outgoing" ? (
+              <p className="mt-4 text-[13px] text-white/42">Request sent</p>
+            ) : requestStatus === "incoming" ? (
+              <button
+                type="button"
+                onClick={() => router.push("/profile/friends")}
+                className="mt-5 h-11 rounded-[10px] bg-white px-6 text-[15px] font-semibold text-black transition active:opacity-90"
+              >
+                Respond to request
+              </button>
+            ) : !isOwnProfile ? (
               <button
                 type="button"
                 onClick={sendFriendRequestFromProfile}
                 disabled={requesting}
-                className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black disabled:opacity-60"
+                className="mt-5 h-11 rounded-[10px] bg-white px-6 text-[15px] font-semibold text-black transition active:opacity-90 disabled:opacity-60"
               >
                 {requesting ? "Sending..." : "Add friend"}
               </button>
-            )
-          )}
-        </div>
-      ) : profile.bio ? (
-        <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-sm">
-          {profile.bio}
-        </div>
-      ) : (
-        <div className="text-white/40 text-sm">No bio yet.</div>
-      )}
+            ) : null}
+          </div>
+        ) : null}
 
-      {!shouldHidePrivateProfile ? (
-        <div className="mt-6">
-          <div className="text-sm text-white/60">Moments</div>
-          <ProfileStoriesGrid userId={profile.id} emptyLabel="No Moments from this user yet." />
-        </div>
-      ) : null}
+        {!shouldHidePrivateProfile ? (
+          <>
+            <div className="mt-6 border-b border-white/[0.08]">
+              <nav className="-mb-px flex gap-6">
+                {profileTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`relative pb-2.5 text-[15px] font-semibold transition ${
+                      activeTab === tab.key ? "text-white" : "text-white/42 hover:text-white/65"
+                    }`}
+                  >
+                    {tab.label}
+                    {activeTab === tab.key ? (
+                      <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-accent-violet shadow-[0_0_12px_rgba(168,85,247,0.35)]" />
+                    ) : null}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            <div className="pt-3">
+              {activeTab === "moments" ? (
+                <ProfileStoriesGrid
+                  userId={profile.id}
+                  emptyLabel="No moments yet"
+                  emptySubtitle="When they post, it’ll show up here."
+                />
+              ) : null}
+
+              {activeTab === "places" ? (
+                <div>
+                  {places.length ? (
+                    <ul className="divide-y divide-white/[0.08]">
+                      {places.map((place) => (
+                        <li key={place.id} className="flex items-center justify-between gap-3 py-3 first:pt-0">
+                          <div className="min-w-0">
+                            <p className="truncate text-[15px] font-semibold text-white">{place.name}</p>
+                            <p className="truncate text-[12px] text-white/42">{place.category ?? "Venue"}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/map?venueId=${encodeURIComponent(place.id)}`)}
+                            className="h-9 shrink-0 rounded-[10px] bg-white/[0.08] px-3 text-[12px] font-semibold text-white/90 ring-1 ring-white/[0.08]"
+                          >
+                            Open on Map
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="py-8 text-center text-[13px] text-white/42">Places they post from will appear here.</p>
+                  )}
+                </div>
+              ) : null}
+
+              {activeTab === "saved" ? (
+                <p className="py-8 text-center text-[13px] leading-relaxed text-white/42">
+                  Saved places and moments will appear here.
+                </p>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+
+        <div className="min-h-6 flex-1 shrink-0" aria-hidden />
       </div>
     </div>
   );

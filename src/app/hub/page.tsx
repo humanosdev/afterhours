@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { Avatar, EmptyState, SectionHeader, SocialCard, StatusBadge, StoryRing } from "@/components/ui";
+import { ChevronRight } from "lucide-react";
+import { Avatar, StoryRing } from "@/components/ui";
 import StoryViewerModal, { type StoryViewerGroup } from "@/components/StoryViewerModal";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -491,34 +492,32 @@ const venuesToShow = venueCards.slice(0, 3);
 
   return (
     <ProtectedRoute>
-    <div className="min-h-screen bg-primary text-text-primary px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+112px)] space-y-4">
-      {/* Header */}
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-xs font-semibold tracking-[0.24em] text-violet-300/75">
-            AFTERHOURS
-          </div>
-          <div className="mt-1 text-[30px] leading-none font-bold">What&apos;s alive right now</div>
-          <div className="mt-1 text-sm text-white/65">Friends, places, and activity near you.</div>
-        </div>
+    <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-primary text-text-primary">
+      <div className="flex w-full flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+8px)] sm:px-5 sm:pt-3">
+      {/* Top bar — IG-style thin chrome; story strip is the hero below */}
+      <header className="flex items-center justify-between gap-3 pb-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/38">AfterHours</p>
         <button
           type="button"
           onClick={() => router.push("/notifications")}
-          className="relative rounded-full border border-white/15 bg-white/5 px-3 py-2 text-sm text-text-primary backdrop-blur"
+          className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[15px] text-white/85"
           aria-label="Open notifications"
         >
           ♡
           {unreadCount > 0 ? (
-            <span className="absolute -right-1 -top-1 rounded-full bg-accent-violet px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+            <span className="absolute -right-0.5 -top-0.5 min-w-[1.125rem] rounded-full bg-accent-violet px-1 py-0.5 text-center text-[10px] font-semibold leading-none text-white shadow-[0_0_12px_rgba(168,85,247,0.45)]">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           ) : null}
         </button>
-      </div>
+      </header>
 
-      {/* MOMENTS */}
-      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-3 backdrop-blur">
-      <div className="scrollbar-none flex items-center gap-4 overflow-x-auto pb-1">
+      {/* Moments — large story rings first (dominant like Instagram home) */}
+      <section className="-mx-4 border-b border-white/[0.08] pb-4 pt-1 sm:-mx-5" aria-labelledby="hub-moments-heading">
+        <h2 id="hub-moments-heading" className="sr-only">
+          Moments
+        </h2>
+        <div className="scrollbar-none flex items-start gap-[14px] overflow-x-auto px-4 pb-1 sm:px-5">
           {/* YOUR MOMENT */}
           <button
             type="button"
@@ -537,25 +536,23 @@ const venuesToShow = venueCards.slice(0, 3);
                 window.dispatchEvent(new Event("open-story-camera"));
               }
             }}
-            className="flex flex-col items-center min-w-[76px]"
+            className="flex w-[84px] shrink-0 flex-col items-center"
           >
             <div className="relative">
               <StoryRing
                 src={avatarUrl}
                 alt="your moment"
                 fallbackText={myStoryFallback}
-                size="lg"
+                size="storyLg"
                 active={hasMyActiveStory}
               />
               {!hasMyActiveStory ? (
-                <div className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border border-subtle bg-accent-violet text-text-primary shadow-glow-violet">
-                  <span className="text-sm leading-none">+</span>
+                <div className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border-2 border-black bg-accent-violet text-text-primary shadow-[0_0_14px_rgba(168,85,247,0.55)]">
+                  <span className="text-[13px] font-semibold leading-none">+</span>
                 </div>
               ) : null}
             </div>
-            <span className="mt-2 w-16 truncate text-center text-xs text-text-secondary">
-              Moments
-            </span>
+            <span className="mt-2 w-full truncate text-center text-[12px] leading-tight text-white/55">Your story</span>
           </button>
 
           {/* FRIEND MOMENTS */}
@@ -570,103 +567,97 @@ const venuesToShow = venueCards.slice(0, 3);
                 if (!okToRender) return;
                 openStoryViewerForUser(user.user_id);
               }}
-              className="flex flex-col items-center min-w-[76px] text-left"
+              className="flex w-[84px] shrink-0 flex-col items-center text-left"
             >
               <StoryRing
                 src={user.avatar_url}
                 fallbackText={user.username}
-                size="lg"
+                size="storyLg"
                 active={user.stories.length > 0}
               />
-              <span className="mt-2 w-16 truncate text-center text-xs text-text-secondary">
+              <span className="mt-2 w-full truncate text-center text-[12px] leading-tight text-white/55">
                 {user.username || "user"}
               </span>
             </button>
           ))}
-      </div>
-      {friendStoryGroups.length === 0 ? (
-        <p className="mt-2 text-xs text-white/55">Post what&apos;s happening around you.</p>
-      ) : null}
+        </div>
+        {friendStoryGroups.length === 0 ? (
+          <p className="mt-2 px-4 text-center text-[12px] text-white/42 sm:px-5">Post what&apos;s happening around you.</p>
+        ) : null}
+      </section>
+
+      <div className="pt-5">
+        <h1 className="text-[1.375rem] font-bold leading-[1.15] tracking-tight text-white">What&apos;s alive right now</h1>
+        <p className="mt-1 text-[13px] leading-snug text-white/48">Friends, places, and activity near you.</p>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 backdrop-blur">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-white">Live pulse</p>
-            <p className="text-xs text-white/55">{pulseLine}</p>
-          </div>
-          <span className="text-[11px] text-violet-300/85">Updated just now</span>
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-          <div className="rounded-xl border border-sky-300/25 bg-sky-500/10 px-3 py-2">
-            <p className="text-[11px] text-white/60">Friends active</p>
-            <p className="text-lg font-semibold">{liveFriendsCount}</p>
-          </div>
-          <div className="rounded-xl border border-teal-300/25 bg-teal-500/10 px-3 py-2">
-            <p className="text-[11px] text-white/60">Places active</p>
-            <p className="text-lg font-semibold">{liveVenuesCount}</p>
-          </div>
-          <div className="rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 py-2">
-            <p className="text-[11px] text-white/60">Nearby now</p>
-            <p className="text-lg font-semibold">{nearbyActivityCount}</p>
-          </div>
-          <div className="rounded-xl border border-violet-300/25 bg-violet-500/10 px-3 py-2">
-            <p className="text-[11px] text-white/60">Trending place</p>
-            <p className="truncate text-sm font-semibold">{trendingPlace ?? "No activity yet"}</p>
-          </div>
-        </div>
-      </div>
+      <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
 
-      {/* ACTIVE FRIENDS */}
-      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 space-y-3 backdrop-blur">
-        <div className="flex items-start justify-between gap-2">
-          <SectionHeader
-            title="Active friends"
-            subtitle="Online in the last few minutes"
-          />
+      {/* Live pulse — compact metrics */}
+      <section className="space-y-2">
+        <p className="text-[17px] font-semibold leading-snug text-white">{pulseLine}</p>
+        <p className="text-[13px] text-white/48">
+          <span className="font-semibold text-white/90">{liveFriendsCount}</span> friends
+          <span className="mx-1.5 text-white/25">·</span>
+          <span className="font-semibold text-white/90">{liveVenuesCount}</span> places
+          <span className="mx-1.5 text-white/25">·</span>
+          <span className="font-semibold text-white/90">{nearbyActivityCount}</span> nearby
+        </p>
+        {trendingPlace ? (
+          <p className="text-[12px] text-white/42">
+            Trending <span className="text-white/65">{trendingPlace}</span>
+          </p>
+        ) : (
+          <p className="text-[12px] text-white/42">No trending spot yet — be the first there.</p>
+        )}
+      </section>
+
+      <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
+
+      {/* Active friends */}
+      <section className="space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[15px] font-semibold text-white">Active friends</h2>
           <button
             type="button"
             onClick={() => router.push("/profile/friends")}
-            className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-100"
+            className="text-[13px] font-semibold text-violet-300/95"
           >
-            View all
+            See all
           </button>
         </div>
+        <p className="text-[12px] text-white/42">Online in the last few minutes</p>
 
         {onlineFriends.length === 0 ? (
-          <EmptyState
-            title="No friends active yet"
-            description="They’ll show up here when they pop out."
-            className="bg-surface"
-          />
+          <div className="py-5 text-center">
+            <p className="text-[14px] text-white/72">No friends active yet</p>
+            <p className="mt-1 text-[12px] text-white/42">They&apos;ll show up here when they pop out.</p>
+          </div>
         ) : (
-          <div className="scrollbar-none flex items-center gap-3 overflow-x-auto pb-1">
+          <div className="scrollbar-none -mx-0.5 flex gap-4 overflow-x-auto px-0.5 pb-0.5">
             {onlineFriends.map((f) => {
               const name = profiles[f.user_id] || "Friend";
               const venueName = f.venue_id ? venues.find((v) => v.id === f.venue_id)?.name ?? null : null;
               return (
                 <button
                   key={f.user_id}
+                  type="button"
                   onClick={() => {
                     const uname = profiles[f.user_id];
                     if (uname) router.push(`/u/${uname}`);
                   }}
-                  className="min-w-[120px] rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-left"
+                  className="flex w-[64px] shrink-0 flex-col items-center gap-1.5 text-center"
                 >
-                  <div className="flex items-center gap-2">
-                    <Avatar
-                      src={avatars[f.user_id] ?? null}
-                      fallbackText={name}
-                      size="sm"
-                      className="shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold">
-                        {name}
-                      </div>
-                      <div className="text-[11px] text-white/60">
-                        {venueName ? `At ${venueName}` : "Online"}
-                      </div>
+                  <Avatar
+                    src={avatars[f.user_id] ?? null}
+                    fallbackText={name}
+                    size="lg"
+                    className="shrink-0 ring-1 ring-white/[0.08]"
+                  />
+                  <div className="w-full">
+                    <div className="truncate text-[12px] font-semibold text-white">{name}</div>
+                    <div className="truncate text-[10px] text-white/42">
+                      {venueName ? `At ${venueName}` : "Online"}
                     </div>
                   </div>
                 </button>
@@ -674,36 +665,27 @@ const venuesToShow = venueCards.slice(0, 3);
             })}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* VENUES */}
-      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 space-y-3 backdrop-blur">
-        <SectionHeader
-          title="Live Places"
-          subtitle="Where the night is happening right now"
-        />
+      <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
+
+      {/* Live places — dense rows: thumb | meta | chevron */}
+      <section>
+        <h2 className="text-[15px] font-semibold text-white">Live Places</h2>
+        <p className="mt-0.5 text-[12px] text-white/42">Open on map or view activity</p>
 
         {venuesToShow.length === 0 ? (
-          <EmptyState
-            title="No venues yet"
-            description="As people show up near venues, they’ll appear here."
-            className="bg-surface"
-          />
+          <div className="py-8 text-center">
+            <p className="text-[14px] text-white/65">Quiet right now</p>
+            <p className="mt-1 text-[12px] text-white/38">Venues show up as people get nearby.</p>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {venuesToShow.map((v: any, index) => {
-              let vibe = "No activity yet";
-              let vibeVariant: "neutral" | "cyan" | "violet" = "neutral";
-              if (v.total >= 16) {
-                vibe = "Packed";
-                vibeVariant = "violet";
-              } else if (v.total >= 8) {
-                vibe = "Active";
-                vibeVariant = "cyan";
-              } else if (v.total >= 2) {
-                vibe = "Warming Up";
-                vibeVariant = "neutral";
-              }
+          <ul className="mt-3 divide-y divide-white/[0.08]">
+            {venuesToShow.map((v: any) => {
+              let vibe = "Quiet";
+              if (v.total >= 16) vibe = "Packed";
+              else if (v.total >= 8) vibe = "Active";
+              else if (v.total >= 2) vibe = "Warming up";
 
               const previewIds = friendPreviewForVenue(v.id);
               const distanceMi =
@@ -714,107 +696,92 @@ const venuesToShow = venueCards.slice(0, 3);
               const venueImage = v.image_url || v.photo_url || v.cover_image_url || null;
 
               return (
-                <SocialCard
-                  key={v.id}
-                  className="bg-surface border border-white/10"
-                  interactive
-                  onClick={() => router.push(`/map?venueId=${encodeURIComponent(v.id)}`)}
-                >
-                  {venueImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={venueImage}
-                      alt={v.name}
-                      className="mb-3 h-28 w-full rounded-xl border border-white/10 object-cover"
-                    />
-                  ) : (
-                    <div className="mb-3 grid h-28 w-full place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-violet-500/12 via-sky-500/8 to-teal-400/10">
-                      <p className="text-xs text-white/60">Venue photo coming soon</p>
+                <li key={v.id} className="py-3 first:pt-0">
+                  <button
+                    type="button"
+                    className="flex w-full gap-3 text-left"
+                    onClick={() => router.push(`/map?venueId=${encodeURIComponent(v.id)}`)}
+                  >
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[10px] bg-white/[0.06] ring-1 ring-white/[0.08]">
+                      {venueImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={venueImage} alt={v.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center text-[10px] font-medium text-white/35">
+                          AH
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs text-violet-300/80">#{index + 1}</div>
-                      <div className="mt-1 truncate text-base font-semibold">
-                        {v.name}
-                      </div>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-white/60">
-                        <span>{v.category ?? "Venue"}</span>
-                        {distanceMi !== null ? <span>• {distanceMi.toFixed(1)} mi</span> : null}
-                      </div>
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <p className="truncate text-[15px] font-semibold leading-tight text-white">{v.name}</p>
+                      <p className="mt-0.5 truncate text-[12px] text-white/45">
+                        {vibe}
+                        <span className="text-white/25"> · </span>
+                        {v.category ?? "Venue"}
+                        {distanceMi !== null ? (
+                          <>
+                            <span className="text-white/25"> · </span>
+                            {distanceMi.toFixed(1)} mi
+                          </>
+                        ) : null}
+                      </p>
+                      <p className="mt-1 text-[11px] text-white/38">
+                        {v.total} around · {v.inside} in · {v.nearby} near
+                        {previewIds.length > 0 ? (
+                          <span className="text-white/25"> · </span>
+                        ) : null}
+                        {previewIds.length > 0 ? (
+                          <span className="text-white/50">
+                            {v.friendsInside > 0 ? `${v.friendsInside} friends` : "Friends here"}
+                          </span>
+                        ) : v.friendsInside === 0 ? (
+                          <span className="text-white/35"> · First check-in wins</span>
+                        ) : null}
+                      </p>
                     </div>
-                    <StatusBadge label={vibe} variant={vibeVariant} />
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-sm text-text-secondary">
-                      <span className="text-text-primary font-semibold">
-                        {v.total}
-                      </span>
-                      <span>people</span>
+                    <div className="flex shrink-0 flex-col items-end justify-center gap-0.5 pr-0.5">
+                      <span className="text-[16px] font-bold tabular-nums text-white">{v.total}</span>
+                      <ChevronRight className="text-white/30" size={18} strokeWidth={2} aria-hidden />
                     </div>
-
-                    {/* Avatar preview (friends) */}
+                  </button>
+                  <div className="mt-2 flex items-center justify-between gap-2 pl-[68px]">
                     {previewIds.length > 0 ? (
-                      <div className="flex -space-x-2">
+                      <div className="flex -space-x-1.5">
                         {previewIds.map((id: string) => (
                           <Avatar
                             key={id}
                             src={avatars[id] ?? null}
                             fallbackText={profiles[id] || "F"}
                             size="xs"
-                            className="border border-subtle"
+                            className="ring-2 ring-[#0a0a0c]"
                           />
                         ))}
                       </div>
                     ) : (
-                      <div className="text-xs text-text-secondary">
-                        {v.friendsInside > 0
-                          ? `${v.friendsInside} friends inside`
-                          : "Waiting for the first check-in"}
-                      </div>
+                      <span className="min-w-0" aria-hidden />
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hasActivity) {
+                          router.push(`/venue-activity?venueId=${encodeURIComponent(v.id)}`);
+                          return;
+                        }
+                        router.push(`/map?venueId=${encodeURIComponent(v.id)}`);
+                      }}
+                      className="rounded-[10px] bg-white/[0.08] px-3 py-2 text-[12px] font-semibold text-white/90 ring-1 ring-white/[0.08] transition hover:bg-white/[0.11]"
+                    >
+                      {hasActivity ? "View activity" : "Map"}
+                    </button>
                   </div>
-
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-text-secondary">
-                    <div className="rounded-xl border border-subtle bg-secondary px-3 py-2">
-                      <div className="text-[11px]">Inside</div>
-                      <div className="mt-1 font-semibold text-text-primary">
-                        {v.inside}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-subtle bg-secondary px-3 py-2">
-                      <div className="text-[11px]">Nearby</div>
-                      <div className="mt-1 font-semibold text-text-primary">
-                        {v.nearby}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-subtle bg-secondary px-3 py-2">
-                      <div className="text-[11px]">Friends</div>
-                      <div className="mt-1 font-semibold text-text-primary">
-                        {v.friendsInside}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (hasActivity) {
-                        router.push(`/venue-activity?venueId=${encodeURIComponent(v.id)}`);
-                        return;
-                      }
-                      router.push(`/map?venueId=${encodeURIComponent(v.id)}`);
-                    }}
-                    className="mt-3 w-full rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100"
-                  >
-                    {hasActivity ? "View Activity" : "Open on Map"}
-                  </button>
-                </SocialCard>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
+      </section>
+
+      <div className="min-h-6 flex-1 shrink-0" aria-hidden />
       </div>
 
       <StoryViewerModal

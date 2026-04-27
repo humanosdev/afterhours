@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ImagePlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
@@ -11,10 +12,12 @@ type StoryRow = {
 
 export default function ProfileStoriesGrid({
   userId,
-  emptyLabel = "No Moments Yet",
+  emptyLabel = "No moments yet",
+  emptySubtitle,
 }: {
   userId: string | null;
   emptyLabel?: string;
+  emptySubtitle?: string;
 }) {
   const router = useRouter();
   const [stories, setStories] = useState<StoryRow[]>([]);
@@ -66,20 +69,28 @@ export default function ProfileStoriesGrid({
   }, [userId]);
 
   if (loading) {
-    return <div className="mt-8 text-center text-sm text-white/50">Loading Moments…</div>;
+    return <div className="py-10 text-center text-[13px] text-white/45">Loading…</div>;
   }
 
   if (stories.length === 0) {
-    return <div className="mt-8 text-center text-sm text-white/40">{emptyLabel}</div>;
+    return (
+      <div className="flex flex-col items-center justify-center py-14 text-center">
+        <ImagePlus className="h-8 w-8 text-white/22" strokeWidth={1.5} aria-hidden />
+        <p className="mt-3 text-[15px] font-semibold text-white/75">{emptyLabel}</p>
+        {emptySubtitle ? (
+          <p className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-white/38">{emptySubtitle}</p>
+        ) : null}
+      </div>
+    );
   }
 
   return (
-    <div className="mt-4 grid grid-cols-3 gap-[2px]">
+    <div className="grid grid-cols-3 gap-px bg-white/[0.08]">
       {stories.map((story) => (
         <button
           key={story.id}
           type="button"
-          className="aspect-square w-full bg-black"
+          className="aspect-square w-full bg-[#0a0a0c]"
           onClick={() => router.push(`/moments/${encodeURIComponent(story.id)}`)}
           aria-label="Open Moment"
         >

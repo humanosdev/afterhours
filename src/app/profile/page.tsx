@@ -132,7 +132,7 @@ export default function ProfilePage() {
       window.clearInterval(interval);
     };
   }, [userId]);
-  // Show my current venue (uses existing presence data)
+
   useEffect(() => {
     if (!userId) return;
 
@@ -175,9 +175,10 @@ export default function ProfilePage() {
       }
     })();
   }, [userId]);
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-black text-white p-6">
+      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-black px-4 py-6 text-[14px] text-white/50">
         Loading…
       </div>
     );
@@ -188,8 +189,10 @@ export default function ProfilePage() {
   const activeLabel = venueText.startsWith("At ")
     ? venueText
     : venueText.startsWith("Recently at ")
-      ? `Last active ${venueText.replace("Recently at ", "")}`
-      : "Last active recently";
+      ? `Last at ${venueText.replace("Recently at ", "")}`
+      : venueText === "Not at a venue"
+        ? "Not at a venue"
+        : "Last active recently";
   const openMomentsTab = () => {
     if (latestActiveMomentId) {
       router.push(`/moments/${encodeURIComponent(latestActiveMomentId)}`);
@@ -198,41 +201,47 @@ export default function ProfilePage() {
     setActiveTab("moments");
   };
   const profileTabs = [
-    { key: "moments", label: "Moments" },
-    { key: "places", label: "Places" },
-    { key: "saved", label: "Saved" },
-  ] as const;
+    { key: "moments" as const, label: "Moments" },
+    { key: "places" as const, label: "Places" },
+    { key: "saved" as const, label: "Saved" },
+  ];
+
+  const statusValue = hasLiveMoment ? "Active" : "Away";
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+112px)] pt-[calc(env(safe-area-inset-top,0px)+14px)] text-white">
-        <div className="mx-auto w-full max-w-md space-y-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
+      <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
+        <div className="mx-auto flex w-full flex-1 flex-col">
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+            <h1 className="text-[17px] font-bold tracking-tight">Profile</h1>
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-sm backdrop-blur"
+                className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[15px] text-white/85"
               >
                 ☰
               </button>
               {menuOpen ? (
-                <div className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
+                <div className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-[12px] border border-white/[0.1] bg-zinc-900/95 backdrop-blur">
                   <button
+                    type="button"
                     onClick={() => router.push("/settings")}
-                    className="w-full px-4 py-3 text-left text-sm hover:bg-white/10"
+                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
                   >
                     Settings
                   </button>
                   <button
+                    type="button"
                     onClick={() => router.push("/profile/edit")}
-                    className="w-full px-4 py-3 text-left text-sm hover:bg-white/10"
+                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
                   >
                     Edit profile
                   </button>
                   <button
+                    type="button"
                     onClick={signOut}
-                    className="w-full px-4 py-3 text-left text-sm text-red-400 hover:bg-red-500/20"
+                    className="w-full px-4 py-2.5 text-left text-[14px] text-red-400 hover:bg-red-500/15"
                   >
                     Sign out
                   </button>
@@ -241,64 +250,69 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <section className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 backdrop-blur">
-            <div className="flex items-start gap-3">
+          <div className="pt-5">
+            <div className="flex items-start gap-3.5">
               <button
                 type="button"
                 onClick={openMomentsTab}
                 className="shrink-0"
-                aria-label="Open Moments tab"
+                aria-label="Open active Moment or Moments tab"
               >
                 <StoryRing
                   src={avatarUrl}
                   alt="profile avatar"
                   fallbackText={nameToShow}
-                  size="lg"
+                  size="xl"
                   active={hasLiveMoment}
                 />
               </button>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xl font-semibold leading-tight">{nameToShow}</p>
-                <p className="truncate text-sm text-white/60">@{username ?? "user"}</p>
-                <p className="mt-1 text-sm text-white/70">{activeLabel}</p>
+              <div className="min-w-0 flex-1 pt-1">
+                <p className="truncate text-[1.375rem] font-bold leading-tight tracking-tight">{nameToShow}</p>
+                <p className="mt-0.5 truncate text-[14px] text-white/48">@{username ?? "user"}</p>
+                <p className="mt-2 inline-flex max-w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] font-medium text-white/65 ring-1 ring-white/[0.08]">
+                  {activeLabel}
+                </p>
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <button
-                type="button"
-                onClick={() => router.push("/profile/friends")}
-                className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]"
-              >
-                <p className="text-[11px] text-white/55">Friends</p>
-                <p className="text-base font-semibold">{friendCount}</p>
+            {bio?.trim() ? (
+              <p className="mt-4 text-[14px] leading-[1.45] text-white/72">{bio.trim()}</p>
+            ) : (
+              <p className="mt-4 text-[14px] text-white/38">Add a line so people know your vibe.</p>
+            )}
+
+            <div className="mt-5 flex justify-between border-y border-white/[0.08] py-3.5 text-center">
+              <button type="button" onClick={() => router.push("/profile/friends")} className="min-w-0 flex-1 px-1">
+                <p className="text-xl font-semibold tabular-nums text-white">{friendCount}</p>
+                <p className="mt-0.5 text-[12px] text-white/48">Friends</p>
               </button>
-              <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
-                <p className="text-[11px] text-white/55">Moments</p>
-                <p className="text-base font-semibold">{momentsCount}</p>
+              <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
+              <div className="min-w-0 flex-1 px-1">
+                <p className="text-xl font-semibold tabular-nums text-white">{places.length}</p>
+                <p className="mt-0.5 text-[12px] text-white/48">Places</p>
               </div>
-              <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
-                <p className="text-[11px] text-white/55">Places</p>
-                <p className="text-base font-semibold">{places.length}</p>
+              <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
+              <div className="min-w-0 flex-1 px-1">
+                <p className="text-xl font-semibold tabular-nums text-white">{momentsCount}</p>
+                <p className="mt-0.5 text-[12px] text-white/48">Moments</p>
               </div>
-              <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
-                <p className="text-[11px] text-white/55">Live status</p>
-                <p className="truncate text-base font-semibold">{hasLiveMoment ? "Active now" : "Recently active"}</p>
+              <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
+              <div className="min-w-0 flex-1 px-1">
+                <p className="truncate text-xl font-semibold text-white">{statusValue}</p>
+                <p className="mt-0.5 text-[12px] text-white/48">Status</p>
               </div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white/75">
-              {bio?.trim() ? bio : "Add a bio so people know your vibe."}
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
+                type="button"
                 onClick={() => router.push("/profile/edit")}
-                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold"
+                className="h-11 rounded-[10px] bg-white text-[15px] font-semibold text-black transition active:opacity-90"
               >
-                Edit Profile
+                Edit profile
               </button>
               <button
+                type="button"
                 onClick={async () => {
                   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
                   if (navigator.share) {
@@ -307,61 +321,67 @@ export default function ProfilePage() {
                   }
                   if (shareUrl) await navigator.clipboard.writeText(shareUrl);
                 }}
-                className="rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100"
+                className="h-11 rounded-[10px] border border-white/[0.12] bg-white/[0.05] text-[15px] font-semibold text-white/92 transition hover:bg-white/[0.08]"
               >
-                Share Profile
+                Share profile
               </button>
             </div>
-          </section>
+          </div>
 
-          <section className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-3 backdrop-blur">
-            <div className="flex gap-1">
+          <div className="mt-6 border-b border-white/[0.08]">
+            <nav className="-mb-px flex gap-6">
               {profileTabs.map((tab) => (
                 <button
                   key={tab.key}
+                  type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                    activeTab === tab.key
-                      ? "bg-violet-500/25 text-violet-100"
-                      : "bg-white/5 text-white/70"
+                  className={`relative pb-2.5 text-[15px] font-semibold transition ${
+                    activeTab === tab.key ? "text-white" : "text-white/42 hover:text-white/65"
                   }`}
                 >
                   {tab.label}
+                  {activeTab === tab.key ? (
+                    <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-accent-violet shadow-[0_0_12px_rgba(168,85,247,0.35)]" />
+                  ) : null}
                 </button>
               ))}
-            </div>
+            </nav>
+          </div>
 
+          <div className="pt-3">
             {activeTab === "moments" ? (
-              <div className="mt-3">
-                <ProfileStoriesGrid
-                  userId={userId}
-                  emptyLabel="No Moments Yet. Go out and post your first Moment."
-                />
-              </div>
+              <ProfileStoriesGrid
+                userId={userId}
+                emptyLabel="No moments yet"
+                emptySubtitle="When you post, they’ll show up here."
+              />
             ) : null}
 
             {activeTab === "places" ? (
-              <div className="mt-3 space-y-2">
+              <div>
                 {places.length ? (
-                  places.map((place) => (
-                    <div
-                      key={place.id}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{place.name}</p>
-                        <p className="truncate text-xs text-white/60">{place.category ?? "Venue"}</p>
-                      </div>
-                      <button
-                        onClick={() => router.push(`/map?venueId=${encodeURIComponent(place.id)}`)}
-                        className="rounded-lg border border-sky-300/30 bg-sky-500/15 px-2 py-1 text-xs font-semibold text-sky-100"
+                  <ul className="divide-y divide-white/[0.08]">
+                    {places.map((place) => (
+                      <li
+                        key={place.id}
+                        className="flex items-center justify-between gap-3 py-3 first:pt-0"
                       >
-                        Open on Map
-                      </button>
-                    </div>
-                  ))
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold text-white">{place.name}</p>
+                          <p className="truncate text-[12px] text-white/42">{place.category ?? "Venue"}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/map?venueId=${encodeURIComponent(place.id)}`)}
+                          className="h-9 shrink-0 rounded-[10px] bg-white/[0.08] px-3 text-[12px] font-semibold text-white/90 ring-1 ring-white/[0.08]"
+                        >
+                          Open on Map
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 ) : (
-                  <p className="py-6 text-center text-sm text-white/55">
+                  <p className="py-8 text-center text-[13px] text-white/42">
                     Places you post from will appear here.
                   </p>
                 )}
@@ -369,11 +389,13 @@ export default function ProfilePage() {
             ) : null}
 
             {activeTab === "saved" ? (
-              <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/60">
+              <p className="py-8 text-center text-[13px] leading-relaxed text-white/42">
                 Saved places and moments will appear here.
-              </div>
+              </p>
             ) : null}
-          </section>
+          </div>
+
+          <div className="min-h-6 flex-1 shrink-0" aria-hidden />
         </div>
       </div>
     </ProtectedRoute>
