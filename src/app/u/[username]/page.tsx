@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
 import { Avatar, StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
+import { createNotification } from "@/lib/notifications";
 
 async function unfriendUser(me: string, them: string) {
   console.log("ME:", me);
@@ -143,10 +144,14 @@ export default function UserProfile() {
   const [isFriend, setIsFriend] = useState(false);
   const [venueText, setVenueText] = useState<string>("Not at a venue");
   const [activeMomentsCount, setActiveMomentsCount] = useState(0);
+  const [momentsCount, setMomentsCount] = useState(0);
+  const [placesCount, setPlacesCount] = useState(0);
+  const [friendCount, setFriendCount] = useState(0);
   const [latestActiveMomentId, setLatestActiveMomentId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
   const [requesting, setRequesting] = useState(false);
+  const [latestMomentOwnerId, setLatestMomentOwnerId] = useState<string | null>(null);
 
   const isActive = (ts: string) =>
     Date.now() - new Date(ts).getTime() < 5 * 60_000;
@@ -197,7 +202,15 @@ export default function UserProfile() {
   }, [me, profile]);
 
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || !me) return;
+    const isOwn = me === profile.id;
+    const isPrivateAndLocked = !!profile.is_private && !isOwn && !isFriend;
+    if (isPrivateAndLocked) {
+      setActiveMomentsCount(0);
+      setMomentsCount(0);
+      setLatestActiveMomentId(null);
+      return;
+    }
     const loadActiveMoments = async () => {
       const { data: rows } = await supabase
         .from("stories")
@@ -208,7 +221,6 @@ export default function UserProfile() {
 
       const now = Date.now();
       const activeMoments = (rows ?? []).filter((m: any) => {
-        if (!m?.image_url) return false;
         const createdMs = new Date(m.created_at).getTime();
         if (!Number.isFinite(createdMs)) return false;
         const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
@@ -217,7 +229,9 @@ export default function UserProfile() {
       });
 
       setActiveMomentsCount(activeMoments.length);
+      setMomentsCount((rows ?? []).length);
       setLatestActiveMomentId((activeMoments[0] as any)?.id ?? null);
+      setLatestMomentOwnerId(profile.id);
     };
 
     loadActiveMoments();
@@ -228,6 +242,26 @@ export default function UserProfile() {
       window.removeEventListener("story-posted", onStoryPosted);
       window.clearInterval(interval);
     };
+  }, [profile?.id, profile?.is_private, me, isFriend]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    (async () => {
+      const [{ data: fr }, { data: storyRows }] = await Promise.all([
+        supabase
+          .from("friend_requests")
+          .select("id")
+          .eq("status", "accepted")
+          .or(`requester_id.eq.${profile.id},addressee_id.eq.${profile.id}`),
+        supabase.from("stories").select("venue_id").eq("user_id", profile.id).not("venue_id", "is", null).limit(400),
+      ]);
+      setFriendCount(fr?.length ?? 0);
+      const venues = new Set<string>();
+      (storyRows ?? []).forEach((r: any) => {
+        if (r?.venue_id) venues.add(r.venue_id);
+      });
+      setPlacesCount(venues.size);
+    })();
   }, [profile?.id]);
 
   useEffect(() => {
@@ -313,7 +347,12 @@ export default function UserProfile() {
   const isPrivate = !!profile.is_private;
   const canViewPrivateProfile = isOwnProfile || isFriend;
   const shouldHidePrivateProfile = isPrivate && !canViewPrivateProfile;
-  const hasLiveMoment = activeMomentsCount > 0;
+  const hasLiveMoment = activeMomentsCount > 0 && latestMomentOwnerId === profile.id;
+  const openFriendsViewer = () => {
+    if (!profile?.username) return;
+    if (shouldHidePrivateProfile) return;
+    router.push(`/profile/friends?view=${encodeURIComponent(profile.username)}`);
+  };
 
   async function sendFriendRequestFromProfile() {
     if (!me || !them || requesting || isFriend || requestStatus !== "none") return;
@@ -329,11 +368,17 @@ export default function UserProfile() {
       alert("Could not send friend request");
       return;
     }
+    await createNotification({
+      recipientId: them,
+      actorId: me,
+      type: "friend_request_received",
+    });
     setRequestStatus("outgoing");
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
+    <div className="min-h-screen bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+112px)] pt-[calc(env(safe-area-inset-top,0px)+14px)] text-white">
+      <div className="mx-auto w-full max-w-md space-y-4">
       <div className="mb-6 flex items-center justify-between">
         <button onClick={goBackSafe} className="text-sm text-white/60">
           ←
@@ -409,6 +454,7 @@ export default function UserProfile() {
           ) : null}
         </div>
       </div>
+      <section className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 backdrop-blur">
       <div className="mb-4 flex items-center gap-4">
         <button
           type="button"
@@ -440,6 +486,69 @@ export default function UserProfile() {
           </div>
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <button
+          type="button"
+          onClick={openFriendsViewer}
+          disabled={shouldHidePrivateProfile}
+          className={`rounded-xl border border-white/12 px-3 py-2 text-left transition ${
+            shouldHidePrivateProfile
+              ? "cursor-not-allowed bg-white/[0.01] opacity-60"
+              : "bg-white/[0.03] hover:bg-white/[0.06]"
+          }`}
+        >
+          <p className="text-[11px] text-white/55">Friends</p>
+          <p className="text-base font-semibold">{friendCount}</p>
+        </button>
+        <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
+          <p className="text-[11px] text-white/55">Moments</p>
+          <p className="text-base font-semibold">{momentsCount}</p>
+        </div>
+        <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
+          <p className="text-[11px] text-white/55">Places</p>
+          <p className="text-base font-semibold">{placesCount}</p>
+        </div>
+        <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
+          <p className="text-[11px] text-white/55">Live status</p>
+          <p className="truncate text-base font-semibold">{hasLiveMoment ? "Active now" : "Recently active"}</p>
+        </div>
+      </div>
+      {!shouldHidePrivateProfile ? (
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {isFriend ? (
+            <button
+              type="button"
+              onClick={() => router.push(`/chat`)}
+              className="rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100"
+            >
+              Message
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={sendFriendRequestFromProfile}
+              disabled={requesting || requestStatus !== "none"}
+              className="rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100 disabled:opacity-60"
+            >
+              {requestStatus === "outgoing"
+                ? "Request sent"
+                : requestStatus === "incoming"
+                  ? "Respond in Friends"
+                  : requesting
+                    ? "Sending..."
+                    : "Add friend"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => router.push(`/u/${profile.username}`)}
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold"
+          >
+            View profile
+          </button>
+        </div>
+      ) : null}
+      </section>
 
       {shouldHidePrivateProfile ? (
         <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
@@ -486,7 +595,7 @@ export default function UserProfile() {
           <ProfileStoriesGrid userId={profile.id} emptyLabel="No Moments from this user yet." />
         </div>
       ) : null}
-
+      </div>
     </div>
   );
 }

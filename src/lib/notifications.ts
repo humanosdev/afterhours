@@ -1,8 +1,9 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { NotificationType } from "../../types/notifications";
 
-const ONLINE_COOLDOWN_MS = 5 * 60_000;
+const ONLINE_COOLDOWN_MS = 20 * 60_000;
 const VENUE_COOLDOWN_MS = 2 * 60 * 60_000;
+const NEARBY_COOLDOWN_MS = 30 * 60_000;
 const DAILY_PUSH_LIMIT = 3;
 
 type PrefRow = {
@@ -85,6 +86,7 @@ export async function createNotification(params: {
     .gte("created_at", todayStart.toISOString());
 
   const directSocialEvent =
+    type === "friend_request_received" ||
     type === "friend_request_accepted" ||
     type === "friend_story" ||
     type === "friend_joined_venue";
@@ -140,9 +142,23 @@ export async function createNotification(params: {
     }
   }
 
+  if (type === "friend_nearby") {
+    if (!prefs.friend_activity_enabled) return;
+    const sinceIso = new Date(Date.now() - NEARBY_COOLDOWN_MS).toISOString();
+    const { data: recentNearby } = await supabase
+      .from("notifications")
+      .select("id")
+      .eq("recipient_user_id", recipientId)
+      .eq("actor_user_id", actorId)
+      .eq("type", "friend_nearby")
+      .gte("created_at", sinceIso)
+      .limit(1);
+    if (recentNearby?.length) return;
+  }
+
   if (type === "venue_popping" && !prefs.venue_pop_enabled) return;
   if (type === "friend_story" && !prefs.stories_enabled) return;
-  if (type === "friend_request_accepted" && !prefs.friend_request_enabled) return;
+  if ((type === "friend_request_accepted" || type === "friend_request_received") && !prefs.friend_request_enabled) return;
 
   const { error } = await supabase.from("notifications").insert({
     recipient_user_id: recipientId,
@@ -163,15 +179,21 @@ export async function createNotification(params: {
   if (type === "friend_online") {
     pushTitle = "Friends active";
     pushBody = `${actorName} is out right now`;
+  } else if (type === "friend_nearby") {
+    pushTitle = "Friend nearby";
+    pushBody = `${actorName} is nearby`;
   } else if (type === "friend_joined_venue") {
     const { data: venue } = venueId
       ? await supabase.from("venues").select("name").eq("id", venueId).maybeSingle()
       : { data: null as any };
     pushTitle = "Friend at venue";
-    pushBody = `${actorName} just got to ${venue?.name ?? "a venue"} 👀`;
+    pushBody = `${actorName} is at ${venue?.name ?? "a venue"} 👀`;
   } else if (type === "friend_story") {
     pushTitle = "New story";
     pushBody = `${actorName} posted a new story`;
+  } else if (type === "friend_request_received") {
+    pushTitle = "New friend request";
+    pushBody = `${actorName} sent you a friend request`;
   } else if (type === "friend_request_accepted") {
     pushTitle = "New connection";
     pushBody = `You and ${actorName} are now connected`;

@@ -215,7 +215,10 @@ export default function ChatConversationPage() {
     if (!viewport) return;
 
     const updateInset = () => {
-      const keyboardOverlap = Math.max(0, window.innerHeight - viewport.height);
+      const keyboardOverlap = Math.max(
+        0,
+        window.innerHeight - (viewport.height + viewport.offsetTop)
+      );
       setComposerBottomInset(Math.max(8, keyboardOverlap + 8));
       requestAnimationFrame(() => {
         bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
@@ -330,7 +333,7 @@ export default function ChatConversationPage() {
   const visibleMessages = messages.filter((m) => !deletedForMeIds.has(m.id));
 
   return (
-    <div className="flex h-[100svh] flex-col bg-black text-white">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
       <div className="sticky top-0 z-20 border-b border-white/10 bg-black/90 px-3 py-2.5 backdrop-blur">
         <div className="flex items-center gap-2">
           <button onClick={goBackSafe} className="text-white/60">
@@ -359,7 +362,7 @@ export default function ChatConversationPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 pb-3">
+      <div className="flex-1 overflow-y-auto px-3 py-3 pb-4">
         {visibleMessages.map((m) => (
           <div
             key={m.id}
@@ -414,7 +417,8 @@ export default function ChatConversationPage() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Message..."
-            className="max-h-28 min-h-10 flex-1 rounded-2xl border border-white/15 bg-[#101015] px-3 py-2.5 text-sm outline-none focus:border-white/25"
+            className="max-h-28 min-h-10 flex-1 rounded-2xl border border-white/15 bg-[#101015] px-3 py-2.5 text-base outline-none focus:border-white/25 md:text-sm"
+            enterKeyHint="send"
             onFocus={() =>
               requestAnimationFrame(() => {
                 bottomRef.current?.scrollIntoView({ behavior: "smooth" });

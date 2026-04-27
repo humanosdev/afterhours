@@ -517,7 +517,7 @@ export default function ChatPage() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by username"
             disabled={selectionMode}
-            className="w-full rounded-xl border border-white/10 bg-[#101015] px-3 py-2.5 text-sm outline-none focus:border-white/20"
+            className="w-full rounded-xl border border-white/10 bg-[#101015] px-3 py-2.5 text-base outline-none focus:border-white/20 md:text-sm"
           />
         </div>
 

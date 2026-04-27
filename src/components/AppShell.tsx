@@ -115,6 +115,77 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator)) return;
+
+    let reloadedForUpdate = false;
+
+    const maybeReloadOnControllerChange = () => {
+      if (reloadedForUpdate) return;
+      reloadedForUpdate = true;
+      window.location.reload();
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", maybeReloadOnControllerChange);
+
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return;
+      reg.update().catch(() => {});
+
+      if (reg.waiting) {
+        reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      }
+    });
+
+    return () => {
+      navigator.serviceWorker.removeEventListener("controllerchange", maybeReloadOnControllerChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator)) return;
+
+    const healMissingCss = async () => {
+      const cssLink = document.querySelector('link[rel="stylesheet"][href*="/_next/static/css"]') as HTMLLinkElement | null;
+      if (!cssLink?.href) return;
+      try {
+        const res = await fetch(cssLink.href, { method: "GET", cache: "no-store" });
+        if (res.ok) return;
+      } catch {
+        // continue to recovery path
+      }
+
+      if (sessionStorage.getItem("ah-css-heal-ran") === "1") return;
+      sessionStorage.setItem("ah-css-heal-ran", "1");
+
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      window.location.reload();
+    };
+
+    const clearLocalhostSw = async () => {
+      if (window.location.hostname !== "localhost") return;
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    };
+
+    clearLocalhostSw().finally(() => {
+      window.setTimeout(() => {
+        healMissingCss();
+      }, 150);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!currentUserId) return;
     const channel = supabase
       .channel(`live-notifications:${currentUserId}`)
@@ -144,9 +215,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           let body = "Something new is happening.";
           let route = "/notifications";
           if (row.type === "friend_joined_venue") {
-            title = `${actorName} just got to ${venue?.name ?? "a venue"} 👀`;
+            title = `${actorName} is at ${venue?.name ?? "a venue"} 👀`;
             body = "Tap to open map";
             route = row.venue_id ? `/map?venueId=${encodeURIComponent(row.venue_id)}` : "/map";
+          } else if (row.type === "friend_nearby") {
+            title = `${actorName} is nearby`;
+            body = "Tap to open map";
+            route = "/map";
           } else if (row.type === "friends_active_bundle") {
             title = "Friends are active 🔥";
             body = "Tap to open hub";
@@ -155,6 +230,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             title = `${actorName} posted a new Moment`;
             body = "Tap to open Moments";
             route = "/stories";
+          } else if (row.type === "friend_request_received") {
+            title = `${actorName} sent a friend request`;
+            body = "Tap to respond";
+            route = "/notifications";
           } else if (row.type === "friend_request_accepted") {
             title = `You and ${actorName} are now connected`;
             body = "Tap to view profile";

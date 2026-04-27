@@ -29,6 +29,15 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<NotificationWithMeta[]>([]);
   const [meId, setMeId] = useState<string | null>(null);
+  const [requestOpen, setRequestOpen] = useState(true);
+  const [friendRequests, setFriendRequests] = useState<Array<{
+    id: string;
+    requester_id: string;
+    username: string | null;
+    display_name: string | null;
+    avatar_url: string | null;
+    created_at: string;
+  }>>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -109,6 +118,39 @@ export default function NotificationsPage() {
       if (unreadIds.length) {
         await supabase.from("notifications").update({ read: true }).in("id", unreadIds);
       }
+
+      const { data: pendingRows } = await supabase
+        .from("friend_requests")
+        .select("id, requester_id, created_at")
+        .eq("addressee_id", user.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      const requesterIds = Array.from(new Set((pendingRows ?? []).map((r: any) => r.requester_id)));
+      let byId: Record<string, { username: string | null; display_name: string | null; avatar_url: string | null }> = {};
+      if (requesterIds.length) {
+        const { data: reqProfiles } = await supabase
+          .from("profiles")
+          .select("id, username, display_name, avatar_url")
+          .in("id", requesterIds);
+        (reqProfiles ?? []).forEach((p: any) => {
+          byId[p.id] = {
+            username: p.username ?? null,
+            display_name: p.display_name ?? null,
+            avatar_url: p.avatar_url ?? null,
+          };
+        });
+      }
+      if (!mounted) return;
+      setFriendRequests(
+        (pendingRows ?? []).map((r: any) => ({
+          id: r.id,
+          requester_id: r.requester_id,
+          created_at: r.created_at,
+          username: byId[r.requester_id]?.username ?? null,
+          display_name: byId[r.requester_id]?.display_name ?? null,
+          avatar_url: byId[r.requester_id]?.avatar_url ?? null,
+        }))
+      );
     })();
 
     return () => {
@@ -127,10 +169,14 @@ export default function NotificationsPage() {
           const message =
             n.type === "friend_online"
               ? `${actorName} went online`
+              : n.type === "friend_nearby"
+              ? `${actorName} is nearby`
               : n.type === "friend_joined_venue"
-              ? `${actorName} joined ${n.venue_name ?? "a venue"}`
+              ? `${actorName} is at ${n.venue_name ?? "a venue"}`
               : n.type === "friend_story"
               ? `${actorName} posted a new Moment`
+              : n.type === "friend_request_received"
+              ? `${actorName} sent you a friend request`
               : n.type === "friend_request_accepted"
               ? `You and ${actorName} are now connected`
               : n.type === "friends_active_bundle"
@@ -156,6 +202,10 @@ export default function NotificationsPage() {
                 }
                 if (n.type === "friend_request_accepted") {
                   if (n.actor_user_id) router.push(`/profile/${n.actor_user_id}`);
+                  return;
+                }
+                if (n.type === "friend_request_received") {
+                  router.push("/notifications");
                   return;
                 }
               }}
@@ -204,6 +254,26 @@ export default function NotificationsPage() {
     );
   }, [items, loading]);
 
+  async function acceptRequest(requestId: string) {
+    if (!meId) return;
+    const req = friendRequests.find((r) => r.id === requestId);
+    await supabase.from("friend_requests").update({ status: "accepted" }).eq("id", requestId);
+    setFriendRequests((prev) => prev.filter((r) => r.id !== requestId));
+    if (req?.requester_id) {
+      const { createNotification } = await import("@/lib/notifications");
+      await createNotification({
+        recipientId: req.requester_id,
+        actorId: meId,
+        type: "friend_request_accepted",
+      });
+    }
+  }
+
+  async function denyRequest(requestId: string) {
+    await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
+    setFriendRequests((prev) => prev.filter((r) => r.id !== requestId));
+  }
+
   return (
     <div className="min-h-screen bg-black text-white p-6">
       <div className="flex items-center justify-between mb-6">
@@ -220,6 +290,57 @@ export default function NotificationsPage() {
           >
             Settings
           </button>
+        ) : null}
+      </div>
+      <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+        <button
+          type="button"
+          onClick={() => setRequestOpen((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <div>
+            <p className="text-sm font-semibold">Friend Requests</p>
+            <p className="text-xs text-white/50">{friendRequests.length} pending</p>
+          </div>
+          <span className="text-xs text-white/60">{requestOpen ? "Hide" : "Show"}</span>
+        </button>
+        {requestOpen ? (
+          <div className="mt-3 space-y-2">
+            {friendRequests.length === 0 ? (
+              <p className="text-xs text-white/45">No pending friend requests.</p>
+            ) : (
+              friendRequests.map((r) => {
+                const label = r.display_name || r.username || "User";
+                return (
+                  <div key={r.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+                    <Avatar src={r.avatar_url} fallbackText={label} size="sm" />
+                    <button
+                      type="button"
+                      onClick={() => r.username && router.push(`/u/${r.username}`)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <p className="truncate text-sm font-semibold">{label}</p>
+                      <p className="truncate text-xs text-white/45">@{r.username ?? "user"}</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => acceptRequest(r.id)}
+                      className="rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-black"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => denyRequest(r.id)}
+                      className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-xs text-white/80"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         ) : null}
       </div>
       {content}

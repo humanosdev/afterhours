@@ -1496,6 +1496,29 @@ if (bestInner.id) {
             });
           }
         }
+
+        const canSendNearby = !venueId;
+        if (canSendNearby) {
+          const { data: friendPresenceRows } = await supabase
+            .from("user_presence")
+            .select("user_id, lat, lng, venue_id, updated_at")
+            .in("user_id", friendIds);
+          const nearbyThresholdM = 300;
+          for (const fp of (friendPresenceRows ?? []) as Array<{ user_id: string; lat: number; lng: number; venue_id: string | null; updated_at: string }>) {
+            const p = prefs.get(fp.user_id);
+            if (p?.online === false) continue;
+            const isFriendActive = Date.now() - new Date(fp.updated_at).getTime() < 5 * 60_000;
+            if (!isFriendActive) continue;
+            if (fp.venue_id) continue;
+            const d = distanceMeters(you.lat, you.lng, fp.lat, fp.lng);
+            if (d > nearbyThresholdM) continue;
+            await createNotification({
+              recipientId: fp.user_id,
+              actorId: meId,
+              type: "friend_nearby",
+            });
+          }
+        }
       }
 
       hasRunInitialPresence.current = true;

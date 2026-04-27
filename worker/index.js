@@ -27,8 +27,12 @@ self.addEventListener("notificationclick", (event) => {
   let url = "/notifications";
   if (data.type === "friend_joined_venue" && data.venueId) {
     url = `/map?venueId=${encodeURIComponent(data.venueId)}`;
+  } else if (data.type === "friend_nearby") {
+    url = "/map";
   } else if (data.type === "friend_story") {
     url = "/stories";
+  } else if (data.type === "friend_request_received") {
+    url = "/notifications";
   } else if (data.type === "friend_request_accepted" && data.actorId) {
     url = `/profile/${data.actorId}`;
   }
@@ -45,4 +49,10 @@ self.addEventListener("notificationclick", (event) => {
       return undefined;
     })
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event?.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });

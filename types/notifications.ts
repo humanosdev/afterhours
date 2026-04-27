@@ -1,8 +1,10 @@
 export type NotificationType =
   | "friend_online"
+  | "friend_nearby"
   | "friend_joined_venue"
   | "friends_active_bundle"
   | "friend_story"
+  | "friend_request_received"
   | "friend_request_accepted"
   | "venue_popping";
 

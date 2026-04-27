@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Avatar } from "@/components/ui";
+import { createNotification } from "@/lib/notifications";
 
 type ProfileLite = {
   id: string;
@@ -31,8 +32,10 @@ function normalizeUsername(v: string) {
   return v.trim().replace(/^@/, "").toLowerCase();
 }
 
-export default function FriendsPage() {
+function FriendsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const viewUsername = (searchParams.get("view") || "").trim().toLowerCase();
   const goBackSafe = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -53,6 +56,9 @@ export default function FriendsPage() {
   const [nameById, setNameById] = useState<Record<string, ProfileLite>>({});
   const [presenceById, setPresenceById] = useState<Record<string, PresenceRow>>({});
   const [venueById, setVenueById] = useState<Record<string, string>>({});
+  const [viewerTarget, setViewerTarget] = useState<ProfileLite | null>(null);
+  const [viewerCanSeeFriends, setViewerCanSeeFriends] = useState(true);
+  const [viewerRelationship, setViewerRelationship] = useState<"none" | "incoming" | "outgoing" | "accepted">("none");
 
   useEffect(() => {
     (async () => {
@@ -62,10 +68,73 @@ export default function FriendsPage() {
         return;
       }
       setMeId(auth.user.id);
-      await refreshAll(auth.user.id);
+      if (viewUsername) {
+        await refreshViewer(auth.user.id, viewUsername);
+      } else {
+        await refreshAll(auth.user.id);
+      }
       setLoading(false);
     })();
-  }, [router]);
+  }, [router, viewUsername]);
+
+  async function refreshViewer(viewerId: string, usernameToView: string) {
+    setMsg(null);
+    const { data: target } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, is_private")
+      .eq("username", usernameToView)
+      .maybeSingle();
+    if (!target?.id) {
+      setMsg("Could not find that profile.");
+      setViewerTarget(null);
+      setFriends([]);
+      return;
+    }
+
+    const typedTarget = target as ProfileLite;
+    setViewerTarget(typedTarget);
+
+    const { data: relRows } = await supabase
+      .from("friend_requests")
+      .select("requester_id, addressee_id, status")
+      .or(`and(requester_id.eq.${viewerId},addressee_id.eq.${typedTarget.id}),and(requester_id.eq.${typedTarget.id},addressee_id.eq.${viewerId})`);
+
+    const relationRows = (relRows ?? []) as FriendRequestRow[];
+    const accepted = relationRows.some((r) => r.status === "accepted");
+    const incoming = relationRows.some((r) => r.status === "pending" && r.requester_id === typedTarget.id && r.addressee_id === viewerId);
+    const outgoing = relationRows.some((r) => r.status === "pending" && r.requester_id === viewerId && r.addressee_id === typedTarget.id);
+    setViewerRelationship(accepted ? "accepted" : incoming ? "incoming" : outgoing ? "outgoing" : "none");
+
+    const canSee = !typedTarget.is_private || typedTarget.id === viewerId || accepted;
+    setViewerCanSeeFriends(canSee);
+    if (!canSee) {
+      setFriends([]);
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
+
+    const { data: reqs } = await supabase
+      .from("friend_requests")
+      .select("requester_id, addressee_id, status")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${typedTarget.id},addressee_id.eq.${typedTarget.id}`);
+    const acceptedRows = (reqs ?? []) as FriendRequestRow[];
+    const friendIds = Array.from(
+      new Set(acceptedRows.map((r) => (r.requester_id === typedTarget.id ? r.addressee_id : r.requester_id)))
+    );
+    if (!friendIds.length) {
+      setFriends([]);
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
+    const { data: friendRows } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, is_private")
+      .in("id", friendIds);
+    setFriends((friendRows ?? []) as ProfileLite[]);
+  }
 
   async function refreshAll(uid: string) {
     setMsg(null);
@@ -156,6 +225,10 @@ export default function FriendsPage() {
   }
 
   useEffect(() => {
+    if (viewUsername) {
+      setDiscoverResult(null);
+      return;
+    }
     const uid = meId;
     if (!uid) return;
     const q = normalizeUsername(search);
@@ -199,13 +272,45 @@ export default function FriendsPage() {
       setMsg("Could not send request.");
       return;
     }
+    await createNotification({
+      recipientId: targetId,
+      actorId: meId,
+      type: "friend_request_received",
+    });
     setDiscoverResult(null);
     await refreshAll(meId);
   }
 
+  async function sendRequestToViewerTarget() {
+    if (!meId || !viewerTarget?.id || viewerRelationship !== "none") return;
+    const { error } = await supabase.from("friend_requests").insert({
+      requester_id: meId,
+      addressee_id: viewerTarget.id,
+      status: "pending",
+    });
+    if (error) {
+      setMsg("Could not send request.");
+      return;
+    }
+    await createNotification({
+      recipientId: viewerTarget.id,
+      actorId: meId,
+      type: "friend_request_received",
+    });
+    setViewerRelationship("outgoing");
+  }
+
   async function acceptRequest(requestId: string) {
     if (!meId) return;
+    const req = incoming.find((r) => r.id === requestId);
     await supabase.from("friend_requests").update({ status: "accepted" }).eq("id", requestId);
+    if (req?.requester_id) {
+      await createNotification({
+        recipientId: req.requester_id,
+        actorId: meId,
+        type: "friend_request_accepted",
+      });
+    }
     await refreshAll(meId);
   }
 
@@ -245,11 +350,18 @@ export default function FriendsPage() {
           <button onClick={goBackSafe} className="text-lg text-white/70" aria-label="Back">
             ←
           </button>
-          <h1 className="text-xl font-semibold">Friends</h1>
-          <Link href="/profile/blocks" className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm text-white/80">
-            Blocked
-          </Link>
+          <h1 className="text-xl font-semibold">
+            {viewerTarget ? `${viewerTarget.display_name || viewerTarget.username}'s Friends` : "Friends"}
+          </h1>
+          {!viewerTarget ? (
+            <Link href="/profile/blocks" className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm text-white/80">
+              Blocked
+            </Link>
+          ) : (
+            <div className="w-[72px]" />
+          )}
         </div>
+        {!viewerTarget ? (
         <div className="mt-3">
           <input
             value={search}
@@ -258,8 +370,9 @@ export default function FriendsPage() {
             className="w-full rounded-xl border border-white/10 bg-[#101015] px-3 py-2.5 text-sm outline-none focus:border-white/20"
           />
         </div>
-        {searching ? <div className="mt-2 text-xs text-white/45">Searching...</div> : null}
-        {discoverResult ? (
+        ) : null}
+        {!viewerTarget && searching ? <div className="mt-2 text-xs text-white/45">Searching...</div> : null}
+        {!viewerTarget && discoverResult ? (
           <div className="mt-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-2 py-2">
             <button
               onClick={() => discoverResult.username && router.push(`/u/${discoverResult.username}`)}
@@ -279,10 +392,36 @@ export default function FriendsPage() {
             </button>
           </div>
         ) : null}
+        {viewerTarget && !viewerCanSeeFriends ? (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
+            <p className="text-sm font-semibold">This account is private</p>
+            <p className="mt-1 text-xs text-white/60">You need to be friends to view their friends list.</p>
+            {viewerRelationship === "none" ? (
+              <button
+                type="button"
+                onClick={sendRequestToViewerTarget}
+                className="mt-3 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black"
+              >
+                Add friend
+              </button>
+            ) : viewerRelationship === "outgoing" ? (
+              <p className="mt-3 text-xs text-white/70">Request sent</p>
+            ) : viewerRelationship === "incoming" ? (
+              <button
+                type="button"
+                onClick={() => router.push("/profile/friends")}
+                className="mt-3 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black"
+              >
+                Respond to request
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
+      {viewerTarget && !viewerCanSeeFriends ? null : (
       <div className="space-y-5 px-2 pb-24 pt-2">
-        {activeFriends.length > 0 ? (
+        {!viewerTarget && activeFriends.length > 0 ? (
           <section>
             <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Active friends</div>
             {activeFriends.map((f) => {
@@ -301,7 +440,7 @@ export default function FriendsPage() {
           </section>
         ) : null}
 
-        {(incoming.length > 0 || outgoing.length > 0) ? (
+        {!viewerTarget && (incoming.length > 0 || outgoing.length > 0) ? (
           <section>
             <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Friend requests</div>
             {incoming.map((r) => {
@@ -349,12 +488,15 @@ export default function FriendsPage() {
               const status = p && isActive(p.updated_at)
                 ? (p.venue_id && venueById[p.venue_id] ? `At ${venueById[p.venue_id]}` : "Active now")
                 : "Offline";
+              const subtitle = viewerTarget
+                ? (f.is_private ? `@${f.username} · Private` : `@${f.username}`)
+                : `@${f.username} · ${status}`;
               return (
                 <div key={f.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
                   <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
                   <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
                     <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
-                    <div className="truncate text-xs text-white/45">@{f.username} · {status}</div>
+                    <div className="truncate text-xs text-white/45">{subtitle}</div>
                   </button>
                 </div>
               );
@@ -364,6 +506,21 @@ export default function FriendsPage() {
 
         {msg ? <div className="px-3 text-sm text-red-400">{msg}</div> : null}
       </div>
+      )}
     </div>
+  );
+}
+
+export default function FriendsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black p-6 text-sm text-white/60">
+          Loading friends...
+        </div>
+      }
+    >
+      <FriendsPageContent />
+    </Suspense>
   );
 }

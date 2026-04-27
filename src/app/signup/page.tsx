@@ -28,6 +28,34 @@ export default function SignupPage() {
     return hasMin && hasNumber && hasLetter;
   }
 
+  function getSignupErrorMessage(rawMessage: string) {
+    const msg = rawMessage.toLowerCase();
+
+    if (msg.includes("user already registered")) {
+      return "An account with this email already exists. Try logging in or resetting your password.";
+    }
+    if (msg.includes("email rate limit") || msg.includes("security purposes") || msg.includes("too many requests")) {
+      return "Too many signup attempts right now. Please wait a minute and try again.";
+    }
+    if (msg.includes("invalid email")) {
+      return "Please enter a valid Temple email.";
+    }
+    if (msg.includes("email address not authorized")) {
+      return "This email is not allowed to sign up for this app.";
+    }
+    if (msg.includes("error sending confirmation email")) {
+      return "We couldn't send the verification email right now. Please try again shortly.";
+    }
+    if (msg.includes("password")) {
+      return "Password does not meet requirements. Use at least 8 characters with letters and numbers.";
+    }
+    if (msg.includes("database error saving new user")) {
+      return "Signup is temporarily unavailable due to a server issue. Please try again soon.";
+    }
+
+    return "Signup failed. Please try again or use Forgot Password if you already created an account.";
+  }
+
   async function onSignup(e: React.FormEvent) {
   e.preventDefault();
   setLoading(true);
@@ -60,11 +88,7 @@ export default function SignupPage() {
   setLoading(false);
 
   if (error) {
-    const raw = error.message.toLowerCase();
-    if (raw.includes("invalid email")) {
-      return setMsg("Please enter a valid Temple email.");
-    }
-    return setMsg("Could not create your account right now. Please try again.");
+    return setMsg(getSignupErrorMessage(error.message || ""));
   }
 
   const { data: sessionData } = await supabase.auth.getSession();

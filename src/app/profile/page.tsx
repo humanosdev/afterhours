@@ -97,7 +97,6 @@ export default function ProfilePage() {
       setMomentsCount(momentsCountRes.count ?? 0);
       const now = Date.now();
       const activeMoments = (momentsRowsRes.data ?? []).filter((m: any) => {
-        if (!m?.image_url) return false;
         const createdMs = new Date(m.created_at).getTime();
         if (!Number.isFinite(createdMs)) return false;
         const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
@@ -261,21 +260,19 @@ export default function ProfilePage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xl font-semibold leading-tight">{nameToShow}</p>
                 <p className="truncate text-sm text-white/60">@{username ?? "user"}</p>
-                <button
-                  onClick={() => router.push("/profile/friends")}
-                  className="mt-1 block text-sm text-violet-200/90 hover:underline"
-                >
-                  {friendCount} friends
-                </button>
                 <p className="mt-1 text-sm text-white/70">{activeLabel}</p>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
+              <button
+                type="button"
+                onClick={() => router.push("/profile/friends")}
+                className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]"
+              >
                 <p className="text-[11px] text-white/55">Friends</p>
                 <p className="text-base font-semibold">{friendCount}</p>
-              </div>
+              </button>
               <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
                 <p className="text-[11px] text-white/55">Moments</p>
                 <p className="text-base font-semibold">{momentsCount}</p>

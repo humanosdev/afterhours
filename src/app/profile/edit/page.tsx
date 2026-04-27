@@ -108,8 +108,16 @@ const uploadAvatar = async (file: File) => {
   if (!userId) return;
   setError(null);
 
-  if (!file.type.startsWith("image/")) {
-    setError("Please choose an image file.");
+  const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+  const maxBytes = 8 * 1024 * 1024;
+
+  if (!allowedMimeTypes.includes(file.type)) {
+    setError("Unsupported image format. Please upload JPG, PNG, WEBP, or HEIC.");
+    return;
+  }
+
+  if (file.size > maxBytes) {
+    setError("Image is too large. Please choose an image under 8MB.");
     return;
   }
 
@@ -123,7 +131,14 @@ const uploadAvatar = async (file: File) => {
     .upload(filePath, file, { upsert: true });
 
   if (uploadError) {
-    setError("Could not upload profile picture.");
+    const raw = uploadError.message?.toLowerCase?.() ?? "";
+    if (raw.includes("mime")) {
+      setError("Unsupported image format. Please upload JPG, PNG, WEBP, or HEIC.");
+    } else if (raw.includes("size")) {
+      setError("Image is too large. Please choose an image under 8MB.");
+    } else {
+      setError("Could not upload profile picture. Please try a JPG or PNG image.");
+    }
     setUploadingAvatar(false);
     return;
   }
@@ -189,6 +204,9 @@ const uploadAvatar = async (file: File) => {
 
   <p className="text-xs text-white/40 mt-2">
     {uploadingAvatar ? "Uploading profile picture..." : "Tap to change profile picture"}
+  </p>
+  <p className="text-[11px] text-white/40 mt-1">
+    Supported formats: JPG, PNG, WEBP, HEIC (max 8MB)
   </p>
 </div>
       {/* Username */}
