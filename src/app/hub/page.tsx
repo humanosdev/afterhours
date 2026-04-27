@@ -537,10 +537,19 @@ const venuesToShow = venueCards.slice(0, 3);
 
       {/* ACTIVE FRIENDS */}
       <div className="rounded-2xl border border-subtle bg-secondary p-4 space-y-3">
-        <SectionHeader
-          title="Active friends"
-          subtitle="Online in the last few minutes"
-        />
+        <div className="flex items-start justify-between gap-2">
+          <SectionHeader
+            title="Active friends"
+            subtitle="Online in the last few minutes"
+          />
+          <button
+            type="button"
+            onClick={() => router.push("/profile/friends")}
+            className="rounded-full border border-subtle bg-surface px-3 py-1 text-xs text-text-secondary"
+          >
+            Friends
+          </button>
+        </div>
 
         {onlineFriends.length === 0 ? (
           <EmptyState

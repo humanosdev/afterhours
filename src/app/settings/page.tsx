@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 const sections = [
   {
@@ -41,6 +42,8 @@ const sections = [
 export default function SettingsPage() {
   const router = useRouter();
   const [autoVenueTourEnabled, setAutoVenueTourEnabled] = useState(true);
+  const [privateAccount, setPrivateAccount] = useState(false);
+  const [privacyLoading, setPrivacyLoading] = useState(true);
   const goBackSafe = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -60,12 +63,50 @@ export default function SettingsPage() {
     setAutoVenueTourEnabled(stored !== "false");
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setPrivacyLoading(false);
+        return;
+      }
+      const { data } = await supabase
+        .from("profiles")
+        .select("is_private")
+        .eq("id", user.id)
+        .maybeSingle();
+      setPrivateAccount(!!data?.is_private);
+      setPrivacyLoading(false);
+    })();
+  }, []);
+
   const toggleAutoVenueTour = () => {
     if (typeof window === "undefined") return;
     const next = !autoVenueTourEnabled;
     setAutoVenueTourEnabled(next);
     window.localStorage.setItem("map_auto_venue_tour_enabled", next ? "true" : "false");
     window.dispatchEvent(new Event("map-auto-tour-setting-changed"));
+  };
+
+  const togglePrivateAccount = async () => {
+    if (privacyLoading) return;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const next = !privateAccount;
+    setPrivateAccount(next);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_private: next })
+      .eq("id", user.id);
+    if (error) {
+      console.error("Failed updating privacy:", error);
+      setPrivateAccount(!next);
+      alert("Could not update privacy setting");
+    }
   };
 
   return (
@@ -95,6 +136,30 @@ export default function SettingsPage() {
                 <div
                   className={`mt-0.5 h-5 w-5 rounded-full bg-white transition ${
                     autoVenueTourEnabled ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </div>
+            </div>
+          </button>
+        </section>
+        <section>
+          <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Privacy</div>
+          <button
+            type="button"
+            onClick={togglePrivateAccount}
+            className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition-colors hover:bg-white/10"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Private account</div>
+                <div className="mt-1 text-xs text-white/50">
+                  Only friends can view your full profile page.
+                </div>
+              </div>
+              <div className={`h-6 w-11 rounded-full transition ${privateAccount ? "bg-accent-violet" : "bg-white/20"}`}>
+                <div
+                  className={`mt-0.5 h-5 w-5 rounded-full bg-white transition ${
+                    privateAccount ? "translate-x-5" : "translate-x-0.5"
                   }`}
                 />
               </div>

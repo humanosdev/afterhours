@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { ensureProfileExists } from "@/lib/ensureProfile";
 
 function normalizeUsername(input: string) {
   return input
@@ -34,6 +35,7 @@ export default function UsernameOnboardingPage() {
         return;
       }
       setUserId(data.user.id);
+      await ensureProfileExists(data.user.id);
     })();
   }, [router]);
 
@@ -70,11 +72,17 @@ export default function UsernameOnboardingPage() {
 
     setSaving(true);
     setMsg(null);
+    await ensureProfileExists(userId);
 
     const { error } = await supabase
       .from("profiles")
-      .update({ username })
-      .eq("id", userId);
+      .upsert(
+        {
+          id: userId,
+          username,
+        },
+        { onConflict: "id" }
+      );
 
     if (error) {
       setMsg("Username already taken.");

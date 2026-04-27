@@ -11,6 +11,7 @@ type ProfileLite = {
   username: string | null;
   display_name?: string | null;
   avatar_url?: string | null;
+  is_private?: boolean | null;
 };
 type FriendRequestRow = {
   id: string;
@@ -93,7 +94,10 @@ export default function FriendsPage() {
       new Set([...inc.map((r) => r.requester_id), ...out.map((r) => r.addressee_id), ...friendIds])
     );
     if (idsToResolve.length > 0) {
-      const { data: resolved } = await supabase.rpc("get_public_profiles_by_ids", { ids: idsToResolve });
+      const { data: resolved } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url, is_private")
+        .in("id", idsToResolve);
       const map: Record<string, ProfileLite> = {};
       for (const row of (resolved ?? []) as any[]) {
         map[row.id] = {
@@ -101,6 +105,7 @@ export default function FriendsPage() {
           username: row.username ?? null,
           display_name: row.display_name ?? null,
           avatar_url: row.avatar_url ?? null,
+          is_private: row.is_private ?? false,
         };
       }
       setNameById(map);
@@ -115,7 +120,10 @@ export default function FriendsPage() {
       return;
     }
 
-    const { data: friendRows } = await supabase.rpc("get_public_profiles_by_ids", { ids: friendIds });
+    const { data: friendRows } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, is_private")
+      .in("id", friendIds);
     const friendProfiles = (friendRows ?? []) as ProfileLite[];
     setFriends(friendProfiles);
 
@@ -159,7 +167,11 @@ export default function FriendsPage() {
     let alive = true;
     const timer = setTimeout(async () => {
       setSearching(true);
-      const { data } = await supabase.rpc("get_public_profile_by_username", { uname: q });
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url, is_private")
+        .ilike("username", q)
+        .limit(1);
       if (!alive) return;
       setSearching(false);
       const target = ((data ?? []) as ProfileLite[])[0];
@@ -189,31 +201,6 @@ export default function FriendsPage() {
     }
     setDiscoverResult(null);
     await refreshAll(meId);
-  }
-
-  async function startChatWithFriend(friendId: string) {
-    if (!meId) return;
-    const { data: myMemberships, error: mmErr } = await supabase
-      .from("conversation_members")
-      .select("conversation_id")
-      .eq("user_id", meId);
-    if (mmErr) return;
-    const convoIds = (myMemberships ?? []).map((m: { conversation_id: string }) => m.conversation_id);
-    if (convoIds.length) {
-      const { data: shared } = await supabase
-        .from("conversation_members")
-        .select("conversation_id")
-        .eq("user_id", friendId)
-        .in("conversation_id", convoIds);
-      if (shared?.length) {
-        router.push(`/chat/${shared[0].conversation_id}`);
-        return;
-      }
-    }
-    const { data: convoId } = await supabase.rpc("create_conversation_with_member", {
-      other_user: friendId,
-    });
-    if (convoId) router.push(`/chat/${convoId}`);
   }
 
   async function acceptRequest(requestId: string) {
@@ -274,13 +261,19 @@ export default function FriendsPage() {
         {searching ? <div className="mt-2 text-xs text-white/45">Searching...</div> : null}
         {discoverResult ? (
           <div className="mt-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-2 py-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <Avatar src={discoverResult.avatar_url ?? null} fallbackText={discoverResult.display_name || discoverResult.username} size="sm" className="shrink-0" />
+            <button
+              onClick={() => discoverResult.username && router.push(`/u/${discoverResult.username}`)}
+              className="flex min-w-0 items-center gap-2 text-left"
+            >
+              <Avatar src={discoverResult.avatar_url?.trim() || null} fallbackText={discoverResult.display_name || discoverResult.username} size="sm" className="shrink-0" />
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{discoverResult.display_name || discoverResult.username}</div>
-                <div className="truncate text-xs text-white/45">@{discoverResult.username}</div>
+                <div className="truncate text-xs text-white/45">
+                  @{discoverResult.username}
+                  {discoverResult.is_private ? " · Private" : ""}
+                </div>
               </div>
-            </div>
+            </button>
             <button onClick={() => sendRequest(discoverResult.id)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black">
               Add
             </button>
@@ -297,13 +290,10 @@ export default function FriendsPage() {
               const status = p?.venue_id && venueById[p.venue_id] ? `At ${venueById[p.venue_id]}` : "Active now";
               return (
                 <div key={`active-${f.id}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                  <Avatar src={f.avatar_url ?? null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                  <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
                   <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
                     <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
                     <div className="truncate text-xs text-emerald-300/90">{status}</div>
-                  </button>
-                  <button onClick={() => startChatWithFriend(f.id)} className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs" aria-label="Message">
-                    ✉
                   </button>
                 </div>
               );
@@ -319,7 +309,7 @@ export default function FriendsPage() {
               const label = person?.display_name || person?.username || "Unknown";
               return (
                 <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                  <Avatar src={person?.avatar_url ?? null} fallbackText={label} size="sm" className="shrink-0" />
+                  <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{label}</div>
                     <div className="truncate text-xs text-white/45">@{person?.username || "unknown"}</div>
@@ -334,7 +324,7 @@ export default function FriendsPage() {
               const label = person?.display_name || person?.username || "Unknown";
               return (
                 <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                  <Avatar src={person?.avatar_url ?? null} fallbackText={label} size="sm" className="shrink-0" />
+                  <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{label}</div>
                     <div className="truncate text-xs text-white/45">Request sent</div>
@@ -361,13 +351,10 @@ export default function FriendsPage() {
                 : "Offline";
               return (
                 <div key={f.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                  <Avatar src={f.avatar_url ?? null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                  <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
                   <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
                     <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
                     <div className="truncate text-xs text-white/45">@{f.username} · {status}</div>
-                  </button>
-                  <button onClick={() => startChatWithFriend(f.id)} className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs" aria-label="Message">
-                    ✉
                   </button>
                 </div>
               );

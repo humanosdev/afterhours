@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { appConfig } from "@/lib/appConfig";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { ensureProfileExists } from "@/lib/ensureProfile";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -68,6 +69,7 @@ export default function SignupPage() {
 
   const { data: sessionData } = await supabase.auth.getSession();
   if (sessionData.session) {
+    await ensureProfileExists(sessionData.session.user.id);
     await fetch("/api/legal/consent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

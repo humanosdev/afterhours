@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { registerPushSubscription } from "@/lib/pushClient";
+import { ensureProfileExists } from "@/lib/ensureProfile";
 
 function isIos() {
   if (typeof window === "undefined") return false;
@@ -25,6 +26,7 @@ export default function OnboardingPage() {
         return;
       }
       setUserId(data.session.user.id);
+      await ensureProfileExists(data.session.user.id);
       if (isIos()) setPlatform("ios");
       else if (
         typeof window !== "undefined" &&
@@ -38,6 +40,7 @@ export default function OnboardingPage() {
   const completeOnboarding = async () => {
     if (!userId || saving) return;
     setSaving(true);
+    await ensureProfileExists(userId);
     const { error } = await supabase
       .from("profiles")
       .update({ onboarding_complete: true })

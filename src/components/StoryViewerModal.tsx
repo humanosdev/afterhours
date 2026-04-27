@@ -29,6 +29,10 @@ type ViewerComment = {
   avatar_url: string | null;
 };
 
+function createTempId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function StoryViewerModal({
   open,
   group,
@@ -218,7 +222,7 @@ export default function StoryViewerModal({
       setLikesCount((c) => Math.max(0, c - 1));
       return;
     }
-    const { data, error } = await supabase.from("story_likes").insert({
+    const { error } = await supabase.from("story_likes").insert({
       story_id: activeStory.id,
       user_id: currentUserId,
     });
@@ -235,28 +239,27 @@ export default function StoryViewerModal({
     if (!activeStory || !currentUserId) return;
     const text = commentText.trim();
     if (!text) return;
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("story_comments")
       .insert({
         story_id: activeStory.id,
         user_id: currentUserId,
         content: text,
-      })
-      .select("id, story_id, user_id, content, created_at")
-      .single();
-    if (error || !data) {
+      });
+    if (error) {
       if (error) console.error(error);
       alert("Action failed");
       return;
     }
+    const now = new Date().toISOString();
     setComments((prev) => [
       ...prev,
       {
-        id: data.id,
-        story_id: data.story_id,
-        user_id: data.user_id,
-        content: data.content,
-        created_at: data.created_at,
+        id: createTempId("comment"),
+        story_id: activeStory.id,
+        user_id: currentUserId,
+        content: text,
+        created_at: now,
         username: myProfile?.username ?? null,
         avatar_url: myProfile?.avatar_url ?? null,
       },

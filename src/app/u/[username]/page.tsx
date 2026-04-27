@@ -122,6 +122,7 @@ type Profile = {
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
+  is_private: boolean | null;
 };
 
 export default function UserProfile() {
@@ -141,6 +142,9 @@ export default function UserProfile() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [isFriend, setIsFriend] = useState(false);
   const [venueText, setVenueText] = useState<string>("Not at a venue");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
+  const [requesting, setRequesting] = useState(false);
 
   const isActive = (ts: string) =>
     Date.now() - new Date(ts).getTime() < 5 * 60_000;
@@ -151,7 +155,7 @@ export default function UserProfile() {
     (async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, username, display_name, bio, avatar_url")
+        .select("id, username, display_name, bio, avatar_url, is_private")
         .eq("username", username)
         .single();
 
@@ -190,6 +194,14 @@ export default function UserProfile() {
     })();
   }, [me, profile]);
 
+  useEffect(() => {
+    const onDocClick = () => setMenuOpen(false);
+    if (menuOpen) {
+      document.addEventListener("click", onDocClick);
+    }
+    return () => document.removeEventListener("click", onDocClick);
+  }, [menuOpen]);
+
   // Friends-only venue visibility
   useEffect(() => {
     if (!me || !profile) return;
@@ -197,21 +209,32 @@ export default function UserProfile() {
     (async () => {
       const them = profile.id;
 
-      // Determine friendship from accepted friend_requests
+      // Determine friendship + pending request from friend_requests
       const { data: relRows } = await supabase
         .from("friend_requests")
-        .select("requester_id, addressee_id")
-        .eq("status", "accepted")
-        .or(`requester_id.eq.${me},addressee_id.eq.${me}`);
+        .select("requester_id, addressee_id, status")
+        .or(
+          `and(requester_id.eq.${me},addressee_id.eq.${them}),and(requester_id.eq.${them},addressee_id.eq.${me})`
+        );
 
       const friend =
         (relRows ?? []).some(
           (r: any) =>
-            (r.requester_id === me && r.addressee_id === them) ||
-            (r.requester_id === them && r.addressee_id === me)
+            r.status === "accepted" &&
+            ((r.requester_id === me && r.addressee_id === them) ||
+              (r.requester_id === them && r.addressee_id === me))
         );
 
       setIsFriend(friend);
+      const pendingOutgoing = (relRows ?? []).some(
+        (r: any) => r.status === "pending" && r.requester_id === me && r.addressee_id === them
+      );
+      const pendingIncoming = (relRows ?? []).some(
+        (r: any) => r.status === "pending" && r.requester_id === them && r.addressee_id === me
+      );
+      if (pendingIncoming) setRequestStatus("incoming");
+      else if (pendingOutgoing) setRequestStatus("outgoing");
+      else setRequestStatus("none");
 
       if (!friend) {
         setVenueText("Not at a venue");
@@ -248,22 +271,117 @@ export default function UserProfile() {
   if (!profile) return null;
 
   const them = profile.id;
+  const profileName = profile.display_name || `@${profile.username}`;
+  const profileAvatar = profile.avatar_url?.trim() ? profile.avatar_url : null;
+  const isOwnProfile = !!me && me === them;
+  const isPrivate = !!profile.is_private;
+  const canViewPrivateProfile = isOwnProfile || isFriend;
+  const shouldHidePrivateProfile = isPrivate && !canViewPrivateProfile;
+
+  async function sendFriendRequestFromProfile() {
+    if (!me || !them || requesting || isFriend || requestStatus !== "none") return;
+    setRequesting(true);
+    const { error } = await supabase.from("friend_requests").insert({
+      requester_id: me,
+      addressee_id: them,
+      status: "pending",
+    });
+    setRequesting(false);
+    if (error) {
+      console.error("Could not send request:", error);
+      alert("Could not send friend request");
+      return;
+    }
+    setRequestStatus("outgoing");
+  }
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
-      <button onClick={goBackSafe} className="mb-6 text-sm text-white/60">
-        ←
-      </button>
+      <div className="mb-6 flex items-center justify-between">
+        <button onClick={goBackSafe} className="text-sm text-white/60">
+          ←
+        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            className="rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm"
+            aria-label="Profile actions"
+          >
+            ☰
+          </button>
+          {menuOpen ? (
+            <div
+              className="absolute right-0 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {isBlocked ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!me || !them) return;
+                    const ok = window.confirm("Unblock this user?");
+                    if (!ok) return;
+                    await unblockUser(me, them);
+                    setIsBlocked(false);
+                    setMenuOpen(false);
+                  }}
+                  className="w-full px-4 py-3 text-left text-sm hover:bg-white/10"
+                >
+                  Unblock
+                </button>
+              ) : (
+                <>
+                  {isFriend ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!me || !them) return;
+                        const ok = window.confirm("Are you sure you want to unfriend this user?");
+                        if (!ok) return;
+                        await unfriendUser(me, them);
+                        setIsFriend(false);
+                        setMenuOpen(false);
+                      }}
+                      className="w-full px-4 py-3 text-left text-sm hover:bg-white/10"
+                    >
+                      Unfriend
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!me || !them) return;
+                      const ok = window.confirm("Are you sure you want to block this user?");
+                      if (!ok) return;
+                      await blockUser(me, them);
+                      setIsBlocked(true);
+                      setIsFriend(false);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full px-4 py-3 text-left text-sm text-red-400 hover:bg-red-500/20"
+                  >
+                    Block
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
       <div className="flex items-center gap-4 mb-4">
         <Avatar
-          src={profile.avatar_url}
-          fallbackText={profile.display_name || profile.username}
+          src={profileAvatar}
+          fallbackText={profileName}
           size="lg"
         />
 
   <div>
     <div className="text-2xl font-semibold">
-      {profile.display_name || `@${profile.username}`}
+      {profileName}
     </div>
     <div className="text-white/60 text-sm">
       @{profile.username}
@@ -274,7 +392,38 @@ export default function UserProfile() {
   </div>
 </div>
 
-      {profile.bio ? (
+      {shouldHidePrivateProfile ? (
+        <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="text-base font-semibold">This account is private</div>
+          <div className="mt-1 text-sm text-white/65">
+            You need to be friends to view this profile.
+          </div>
+          {requestStatus === "outgoing" ? (
+            <div className="mt-3 inline-flex rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80">
+              Request sent
+            </div>
+          ) : requestStatus === "incoming" ? (
+            <button
+              type="button"
+              onClick={() => router.push("/profile/friends")}
+              className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
+            >
+              Respond to request
+            </button>
+          ) : (
+            !isOwnProfile && (
+              <button
+                type="button"
+                onClick={sendFriendRequestFromProfile}
+                disabled={requesting}
+                className="mt-3 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black disabled:opacity-60"
+              >
+                {requesting ? "Sending..." : "Add friend"}
+              </button>
+            )
+          )}
+        </div>
+      ) : profile.bio ? (
         <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-sm">
           {profile.bio}
         </div>
@@ -282,46 +431,13 @@ export default function UserProfile() {
         <div className="text-white/40 text-sm">No bio yet.</div>
       )}
 
-      <div className="mt-6">
-        <div className="text-sm text-white/60">Stories</div>
-        <ProfileStoriesGrid userId={profile.id} emptyLabel="No stories from this user yet." />
-      </div>
-
-      {isBlocked ? (
-        <button
-          onClick={() => {
-            if (!me || !them) return;
-            unblockUser(me, them);
-            setIsBlocked(false);
-          }}
-          className="mt-4 bg-gray-800 border border-white/20 text-white px-4 py-2 rounded"
-        >
-          Unblock
-        </button>
-      ) : (
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={() => {
-              if (!me || !them) return;
-              unfriendUser(me, them);
-            }}
-            className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded"
-          >
-            Unfriend
-          </button>
-
-          <button
-            onClick={() => {
-              if (!me || !them) return;
-              blockUser(me, them);
-              setIsBlocked(true);
-            }}
-            className="bg-black border border-red-500 text-red-500 hover:bg-red-500 hover:text-white px-4 py-2 rounded"
-          >
-            Block
-          </button>
+      {!shouldHidePrivateProfile ? (
+        <div className="mt-6">
+          <div className="text-sm text-white/60">Stories</div>
+          <ProfileStoriesGrid userId={profile.id} emptyLabel="No stories from this user yet." />
         </div>
-      )}
+      ) : null}
+
     </div>
   );
 }

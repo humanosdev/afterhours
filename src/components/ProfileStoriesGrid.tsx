@@ -13,6 +13,10 @@ type StoryRow = {
   expires_at: string | null;
 };
 
+function createTempId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function ProfileStoriesGrid({
   userId,
   emptyLabel = "No stories yet",
@@ -198,7 +202,7 @@ export default function ProfileStoriesGrid({
       setLikesCount((c) => Math.max(0, c - 1));
       return;
     }
-    const { data, error } = await supabase.from("story_likes").insert({
+    const { error } = await supabase.from("story_likes").insert({
       story_id: selectedStory.id,
       user_id: currentUserId,
     });
@@ -215,27 +219,26 @@ export default function ProfileStoriesGrid({
     if (!selectedStory || !currentUserId) return;
     const text = commentText.trim();
     if (!text) return;
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("story_comments")
       .insert({
         story_id: selectedStory.id,
         user_id: currentUserId,
         content: text,
-      })
-      .select("id, user_id, content, created_at")
-      .single();
-    if (error || !data) {
+      });
+    if (error) {
       if (error) console.error(error);
       alert("Action failed");
       return;
     }
+    const now = new Date().toISOString();
     setComments((prev) => [
       ...prev,
       {
-        id: data.id,
-        user_id: data.user_id,
-        content: data.content,
-        created_at: data.created_at ?? null,
+        id: createTempId("comment"),
+        user_id: currentUserId,
+        content: text,
+        created_at: now,
         username: currentUserId === selectedStory.user_id ? profileInfo.username : "you",
         avatar_url: currentUserId === selectedStory.user_id ? profileInfo.avatar_url : null,
       },
