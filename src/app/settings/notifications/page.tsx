@@ -76,22 +76,30 @@ export default function NotificationSettingsPage() {
   }) {
     if (!userId) return;
     setSaving(true);
-    const { error } = await supabase.from("notification_preferences").upsert({
-      user_id: userId,
-      push_enabled: next.pushEnabled,
-      friend_activity_enabled: next.friendActivityEnabled,
-      venue_pop_enabled: next.venuePopEnabled,
-      friend_request_enabled: next.friendRequestEnabled,
-      stories_enabled: next.storiesEnabled,
-      quiet_hours_start: next.quietStart || null,
-      quiet_hours_end: next.quietEnd || null,
-    });
-    setSaving(false);
-    if (error) {
+    try {
+      const { error } = await supabase.from("notification_preferences").upsert({
+        user_id: userId,
+        push_enabled: next.pushEnabled,
+        friend_activity_enabled: next.friendActivityEnabled,
+        venue_pop_enabled: next.venuePopEnabled,
+        friend_request_enabled: next.friendRequestEnabled,
+        stories_enabled: next.storiesEnabled,
+        quiet_hours_start: next.quietStart || null,
+        quiet_hours_end: next.quietEnd || null,
+      });
+      if (error) {
+        console.error("notification settings save error:", error);
+        setUiMsg("Could not save notification settings. Please try again.");
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("notification settings save exception:", err);
       setUiMsg("Could not save notification settings. Please try again.");
       return false;
+    } finally {
+      setSaving(false);
     }
-    return true;
   }
 
   if (loading) {
@@ -112,6 +120,7 @@ export default function NotificationSettingsPage() {
           onClick={async () => {
             if (!userId) return;
             const next = !pushEnabled;
+            setPushEnabled(next);
             if (next) {
               const result = await registerPushSubscription(userId);
               if (!result.ok) {
@@ -151,8 +160,9 @@ export default function NotificationSettingsPage() {
               quietEnd,
             });
             if (ok) {
-              setPushEnabled(next);
               setUiMsg(null);
+            } else {
+              setPushEnabled(!next);
             }
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
@@ -174,6 +184,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !friendActivityEnabled;
+            setFriendActivityEnabled(next);
             const ok = await save({
               pushEnabled,
               friendActivityEnabled: next,
@@ -183,7 +194,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
-            if (ok) setFriendActivityEnabled(next);
+            if (!ok) setFriendActivityEnabled(!next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -205,6 +216,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !venuePopEnabled;
+            setVenuePopEnabled(next);
             const ok = await save({
               pushEnabled,
               friendActivityEnabled,
@@ -214,7 +226,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
-            if (ok) setVenuePopEnabled(next);
+            if (!ok) setVenuePopEnabled(!next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -236,6 +248,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !storiesEnabled;
+            setStoriesEnabled(next);
             const ok = await save({
               pushEnabled,
               friendActivityEnabled,
@@ -245,7 +258,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
-            if (ok) setStoriesEnabled(next);
+            if (!ok) setStoriesEnabled(!next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -263,6 +276,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !friendRequestEnabled;
+            setFriendRequestEnabled(next);
             const ok = await save({
               pushEnabled,
               friendActivityEnabled,
@@ -272,7 +286,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
-            if (ok) setFriendRequestEnabled(next);
+            if (!ok) setFriendRequestEnabled(!next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
