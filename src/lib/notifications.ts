@@ -86,6 +86,7 @@ export async function createNotification(params: {
     .gte("created_at", todayStart.toISOString());
 
   const directSocialEvent =
+    type === "friend_online" ||
     type === "friend_request_received" ||
     type === "friend_request_accepted" ||
     type === "friend_story" ||
@@ -211,8 +212,9 @@ export async function createNotification(params: {
       .maybeSingle();
     const currentlyActive =
       !!recPresence?.updated_at &&
-      Date.now() - new Date(recPresence.updated_at).getTime() < 90_000;
-    if (!currentlyActive) {
+      Date.now() - new Date(recPresence.updated_at).getTime() < 20_000;
+    const shouldSuppressForActiveSession = currentlyActive && type !== "friend_online";
+    if (!shouldSuppressForActiveSession) {
       await sendPushToUser(recipientId, pushTitle, pushBody, {
         type,
         venueId: venueId ?? null,
