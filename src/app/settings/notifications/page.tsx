@@ -25,6 +25,7 @@ export default function NotificationSettingsPage() {
   const [quietStart, setQuietStart] = useState("");
   const [quietEnd, setQuietEnd] = useState("");
   const [uiMsg, setUiMsg] = useState<string | null>(null);
+  const [hasDraftChanges, setHasDraftChanges] = useState(false);
   const [initialPrefs, setInitialPrefs] = useState<{
     pushEnabled: boolean;
     friendActivityEnabled: boolean;
@@ -75,6 +76,7 @@ export default function NotificationSettingsPage() {
         quietStart: data?.quiet_hours_start ? String(data.quiet_hours_start).slice(0, 5) : "",
         quietEnd: data?.quiet_hours_end ? String(data.quiet_hours_end).slice(0, 5) : "",
       });
+      setHasDraftChanges(false);
       setLoading(false);
     })();
 
@@ -129,7 +131,8 @@ export default function NotificationSettingsPage() {
     quietStart,
     quietEnd,
   };
-  const hasUnsavedChanges = !!initialPrefs && JSON.stringify(initialPrefs) !== JSON.stringify(currentPrefs);
+  const hasUnsavedChanges =
+    hasDraftChanges && !!initialPrefs && JSON.stringify(initialPrefs) !== JSON.stringify(currentPrefs);
 
   async function handleSaveChanges() {
     if (!userId || saving) return;
@@ -162,6 +165,7 @@ export default function NotificationSettingsPage() {
     const ok = await save(currentPrefs);
     if (!ok) return;
     setInitialPrefs(currentPrefs);
+    setHasDraftChanges(false);
     setUiMsg(pushWarning ? `${pushWarning} Preference saved.` : "Notification settings saved.");
   }
 
@@ -180,7 +184,10 @@ export default function NotificationSettingsPage() {
 
       <div className="mt-6 space-y-3">
         <button
-          onClick={() => setPushEnabled((v) => !v)}
+          onClick={() => {
+            setPushEnabled((v) => !v);
+            setHasDraftChanges(true);
+          }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -198,7 +205,10 @@ export default function NotificationSettingsPage() {
           </div>
         </button>
         <button
-          onClick={() => setFriendActivityEnabled((v) => !v)}
+          onClick={() => {
+            setFriendActivityEnabled((v) => !v);
+            setHasDraftChanges(true);
+          }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -217,7 +227,10 @@ export default function NotificationSettingsPage() {
         </button>
 
         <button
-          onClick={() => setVenuePopEnabled((v) => !v)}
+          onClick={() => {
+            setVenuePopEnabled((v) => !v);
+            setHasDraftChanges(true);
+          }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -236,7 +249,10 @@ export default function NotificationSettingsPage() {
         </button>
 
         <button
-          onClick={() => setStoriesEnabled((v) => !v)}
+          onClick={() => {
+            setStoriesEnabled((v) => !v);
+            setHasDraftChanges(true);
+          }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -251,7 +267,10 @@ export default function NotificationSettingsPage() {
         </button>
 
         <button
-          onClick={() => setFriendRequestEnabled((v) => !v)}
+          onClick={() => {
+            setFriendRequestEnabled((v) => !v);
+            setHasDraftChanges(true);
+          }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -272,13 +291,19 @@ export default function NotificationSettingsPage() {
             <input
               type="time"
               value={quietStart}
-              onChange={(e) => setQuietStart(e.target.value)}
+              onChange={(e) => {
+                setQuietStart(e.target.value);
+                setHasDraftChanges(true);
+              }}
               className="rounded-xl border border-white/10 bg-black/20 p-2 text-sm outline-none"
             />
             <input
               type="time"
               value={quietEnd}
-              onChange={(e) => setQuietEnd(e.target.value)}
+              onChange={(e) => {
+                setQuietEnd(e.target.value);
+                setHasDraftChanges(true);
+              }}
               className="rounded-xl border border-white/10 bg-black/20 p-2 text-sm outline-none"
             />
           </div>
