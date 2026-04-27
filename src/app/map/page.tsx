@@ -5,6 +5,15 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  UtensilsCrossed,
+  MoonStar,
+  Sparkles,
+  GraduationCap,
+  Trees,
+  Grid3X3,
+  X,
+} from "lucide-react";
+import {
   createNotification,
   getMyFriendIds,
   getNotificationPreferences,
@@ -21,6 +30,9 @@ type Venue = {
   lat: number;
   lng: number;
   category: string;
+  image_url?: string | null;
+  photo_url?: string | null;
+  cover_image_url?: string | null;
   visibility: "public" | "school_only";
   inner_radius_m: number;
   outer_radius_m: number;
@@ -220,6 +232,9 @@ type VenuePerson = {
 
 const ONLINE_WINDOW_MS = 5 * 60_000;
 const RECENT_VENUE_WINDOW_MS = 120 * 60_000;
+const AUTO_TOUR_PAUSE_MS = 2200;
+const AUTO_TOUR_IDLE_GRACE_MS = 2200;
+const AUTO_TOUR_ARROW_GRACE_MS = 2200;
 
 
   const youMarker = useRef<mapboxgl.Marker | null>(null);
@@ -259,7 +274,6 @@ const [autoTourPausedUntil, setAutoTourPausedUntil] = useState(0);
 const [lastArrowPressAt, setLastArrowPressAt] = useState(0);
 const [lastPageInteractionAt, setLastPageInteractionAt] = useState(() => Date.now());
 const [autoVenueTourEnabled, setAutoVenueTourEnabled] = useState(true);
-const [mapSidebarVisible, setMapSidebarVisible] = useState(true);
 const [hasInitialMapCenter, setHasInitialMapCenter] = useState(false);
 const [checkpointMotionEnabled, setCheckpointMotionEnabled] = useState(false);
 const [arrivalPulseVenueId, setArrivalPulseVenueId] = useState<string | null>(null);
@@ -267,12 +281,43 @@ const [arrivalPulseUntil, setArrivalPulseUntil] = useState(0);
 const [pulseTick, setPulseTick] = useState(0);
 const [myProfile, setMyProfile] = useState<FriendProfile | null>(null);
 const handledQueryVenueIdRef = useRef<string | null>(null);
-const MAP_NAV_CLEARANCE_PX = 104;
+const MAP_NAV_CLEARANCE_PX = 132;
+type CategoryKey = "all" | "nightlife" | "food" | "events" | "campus" | "chill" | "more";
+type MapPanelMode = "categories" | "friends";
+const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
+const [activityPlaceholderOpen, setActivityPlaceholderOpen] = useState(false);
+const [panelMode, setPanelMode] = useState<MapPanelMode>("categories");
+const [mapZoom, setMapZoom] = useState(14);
+const categoryFilters: {
+  key: CategoryKey;
+  label: string;
+  icon: any;
+  accent: string;
+  matchers: string[];
+}[] = [
+  { key: "all", label: "All", icon: Grid3X3, accent: "#a855f7", matchers: [] },
+  { key: "nightlife", label: "Nightlife", icon: MoonStar, accent: "#f43f5e", matchers: ["nightlife", "bar", "club", "party"] },
+  { key: "food", label: "Food", icon: UtensilsCrossed, accent: "#f59e0b", matchers: ["food", "restaurant", "eat", "cafe"] },
+  { key: "events", label: "Events", icon: Sparkles, accent: "#a855f7", matchers: ["event", "music", "show", "concert"] },
+  { key: "campus", label: "Campus", icon: GraduationCap, accent: "#14b8a6", matchers: ["campus", "school", "university"] },
+  { key: "chill", label: "Chill", icon: Trees, accent: "#14b8a6", matchers: ["chill", "park", "lounge"] },
+  { key: "more", label: "More", icon: Sparkles, accent: "#3b82f6", matchers: [] },
+];
 
 const selectedVenue = selectedVenueId
   ? venues.find((v) => v.id === selectedVenueId) ?? null
   : null;
 const queryVenueId = searchParams.get("venueId");
+
+const filteredVenues = useMemo(() => {
+  if (activeCategory === "all" || activeCategory === "more") return venues;
+  const filter = categoryFilters.find((f) => f.key === activeCategory);
+  if (!filter) return venues;
+  return venues.filter((v) => {
+    const source = `${v.category ?? ""}`.toLowerCase();
+    return filter.matchers.some((token) => source.includes(token));
+  });
+}, [venues, activeCategory]);
 
 function closeVenueCard() {
   setSelectedVenueId(null);
@@ -541,6 +586,7 @@ useEffect(() => {
   map.current = m;
 
   m.on("load", () => setMapReady(true));
+  m.on("zoomend", () => setMapZoom(m.getZoom()));
 
   return () => {
     m.remove();
@@ -648,9 +694,9 @@ function getCountsForVenue(
 }
 
 const checkpoints = useMemo<VenueCheckpoint[]>(() => {
-  return venues
+  return filteredVenues
     .map((v) => {
-      const { redTotal, greenTotal } = getCountsForVenue(v.id, presence, friendsById, venues, meId);
+      const { redTotal, greenTotal } = getCountsForVenue(v.id, presence, friendsById, filteredVenues, meId);
       const activity = (redTotal ?? 0) + (greenTotal ?? 0);
       const distanceFromYou = you ? distanceMeters(you.lat, you.lng, v.lat, v.lng) : Number.MAX_SAFE_INTEGER;
       return {
@@ -666,7 +712,7 @@ const checkpoints = useMemo<VenueCheckpoint[]>(() => {
       if (b.activity !== a.activity) return b.activity - a.activity;
       return a.distanceFromYou - b.distanceFromYou;
     });
-}, [venues, presence, friendsById, meId, you]);
+}, [filteredVenues, presence, friendsById, meId, you]);
 
 const selectedVenuePeople = useMemo(() => {
   if (!selectedVenue) {
@@ -725,7 +771,7 @@ useEffect(() => {
   const pause = () => {
     const now = Date.now();
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + 15000);
+    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
   };
   const m = map.current;
   m.on("dragstart", pause);
@@ -751,20 +797,18 @@ useEffect(() => {
   if (checkpoints.length < 2) return;
   const timer = setInterval(() => {
     if (Date.now() < autoTourPausedUntil) return;
-    if (Date.now() - lastPageInteractionAt < 15000) return;
-    if (Date.now() - lastArrowPressAt < 7000) return;
+    if (Date.now() - lastPageInteractionAt < AUTO_TOUR_IDLE_GRACE_MS) return;
+    if (Date.now() - lastArrowPressAt < AUTO_TOUR_ARROW_GRACE_MS) return;
     setCheckpointMotionEnabled(true);
     setCheckpointIndex((prev) => (prev + 1) % checkpoints.length);
-  }, 6000);
+  }, 2000);
   return () => clearInterval(timer);
 }, [autoVenueTourEnabled, hasInitialMapCenter, checkpoints.length, autoTourPausedUntil, lastPageInteractionAt, lastArrowPressAt]);
 
 useEffect(() => {
-  if (!arrivalPulseVenueId) return;
-  if (Date.now() > arrivalPulseUntil) return;
-  const timer = setInterval(() => setPulseTick((v) => v + 1), 120);
+  const timer = setInterval(() => setPulseTick((v) => v + 1), 140);
   return () => clearInterval(timer);
-}, [arrivalPulseVenueId, arrivalPulseUntil]);
+}, []);
 
 useEffect(() => {
   if (typeof window === "undefined") return;
@@ -797,7 +841,7 @@ useEffect(() => {
   setSelectedVenueId(target.id);
   const now = Date.now();
   setLastPageInteractionAt(now);
-  setAutoTourPausedUntil(now + 15000);
+  setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
   m.easeTo({
     center: [target.lng, target.lat],
     zoom: Math.max(m.getZoom(), 15.8),
@@ -890,6 +934,9 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
+          0, 4,
+          4, 10,
+          8, 20,
           10, 28,
           12, 40,
           14, 56,
@@ -939,17 +986,51 @@ useEffect(() => {
         "circle-radius": [
           "interpolate",
           ["linear"],
-          [
-            "+",
-            ["coalesce", ["get", "combined_count"], 0],
-            ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+          ["zoom"],
+          0, [
+            "interpolate",
+            ["linear"],
+            [
+              "+",
+              ["coalesce", ["get", "combined_count"], 0],
+              ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+              ["*", 1.8, ["coalesce", ["get", "ambient_pulse"], 0]],
+            ],
+            0, 2,
+            6, 6,
+            15, 10,
+            30, 13,
           ],
-          0, 42,
-          2, 58,
-          6, 90,
-          11, 130,
-          17, 185,
-          25, 240,
+          8, [
+            "interpolate",
+            ["linear"],
+            [
+              "+",
+              ["coalesce", ["get", "combined_count"], 0],
+              ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+              ["*", 1.8, ["coalesce", ["get", "ambient_pulse"], 0]],
+            ],
+            0, 10,
+            6, 20,
+            15, 28,
+            30, 34,
+          ],
+          14, [
+            "interpolate",
+            ["linear"],
+            [
+              "+",
+              ["coalesce", ["get", "combined_count"], 0],
+              ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+              ["*", 1.8, ["coalesce", ["get", "ambient_pulse"], 0]],
+            ],
+            0, 42,
+            2, 58,
+            6, 90,
+            11, 130,
+            17, 185,
+            25, 240,
+          ],
         ],
         "circle-blur": 0.9,
         "circle-opacity": [
@@ -980,17 +1061,49 @@ useEffect(() => {
         "circle-radius": [
           "interpolate",
           ["linear"],
-          [
-            "+",
-            ["coalesce", ["get", "combined_count"], 0],
-            ["*", 3, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+          ["zoom"],
+          0, [
+            "interpolate",
+            ["linear"],
+            [
+              "+",
+              ["coalesce", ["get", "combined_count"], 0],
+              ["*", 3, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+              ["*", 0.9, ["coalesce", ["get", "ambient_pulse"], 0]],
+            ],
+            0, 1,
+            10, 4,
+            25, 6,
           ],
-          0, 10,
-          2, 14,
-          6, 20,
-          11, 28,
-          17, 36,
-          25, 44,
+          8, [
+            "interpolate",
+            ["linear"],
+            [
+              "+",
+              ["coalesce", ["get", "combined_count"], 0],
+              ["*", 3, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+              ["*", 0.9, ["coalesce", ["get", "ambient_pulse"], 0]],
+            ],
+            0, 4,
+            10, 8,
+            25, 12,
+          ],
+          14, [
+            "interpolate",
+            ["linear"],
+            [
+              "+",
+              ["coalesce", ["get", "combined_count"], 0],
+              ["*", 3, ["coalesce", ["get", "checkpoint_pulse"], 0]],
+              ["*", 0.9, ["coalesce", ["get", "ambient_pulse"], 0]],
+            ],
+            0, 10,
+            2, 14,
+            6, 20,
+            11, 28,
+            17, 36,
+            25, 44,
+          ],
         ],
         "circle-blur": 0.25,
         "circle-opacity": [
@@ -1014,18 +1127,29 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
+          0, 0.08,
+          4, 0.14,
+          8, 0.24,
           10, 0.5,
           14, 0.62,
           18, 0.72,
         ],
         "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "symbol-sort-key": ["*", -1, ["coalesce", ["get", "combined_count"], 0]],
       },
       paint: {
         "icon-opacity": [
-          "case",
-          ["==", ["coalesce", ["get", "checkpoint_active"], 0], 1],
-          1,
-          0.9,
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0, 0,
+          2.8, 0,
+          4.5, 0.14,
+          6, 0.4,
+          9, 0.68,
+          10.8, 0.92,
+          14, 0.95,
         ],
       },
     });
@@ -1034,7 +1158,7 @@ useEffect(() => {
       id: VENUE_NAME_LABEL_LAYER,
       type: "symbol",
       source: VENUE_ACTIVITY_SOURCE,
-      minzoom: 10.5,
+      minzoom: 11.6,
       layout: {
         "text-field": ["get", "name"],
         "text-font": ["DIN Offc Pro Bold", "Arial Unicode MS Bold"],
@@ -1042,7 +1166,7 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
-          10.5, 12,
+          11.6, 11.5,
           14, 14,
           18, 16,
         ],
@@ -1052,6 +1176,7 @@ useEffect(() => {
         "text-max-width": 14,
         "text-allow-overlap": false,
         "text-ignore-placement": false,
+        "symbol-sort-key": ["*", -1, ["coalesce", ["get", "combined_count"], 0]],
       },
       paint: {
         "text-color": [
@@ -1141,12 +1266,12 @@ useEffect(() => {
     const src = m.getSource(VENUE_ACTIVITY_SOURCE) as mapboxgl.GeoJSONSource | undefined;
     if (!src) return;
 
-    const features = venues.map((v) => {
+    const features = filteredVenues.map((v) => {
       const { redTotal, greenTotal } = getCountsForVenue(
         v.id,
         presence,
         friendsById,
-        venues,
+        filteredVenues,
         meId
       );
       const inside = redTotal ?? 0;
@@ -1157,7 +1282,7 @@ useEffect(() => {
         arrivalPulseVenueId === v.id && Date.now() < arrivalPulseUntil
           ? Math.max(0, (arrivalPulseUntil - Date.now()) / 1600)
           : 0;
-
+      const ambientPulse = (Math.sin((Date.now() / 380) + (combined * 0.7)) + 1) / 2;
       return {
         type: "Feature" as const,
         properties: {
@@ -1168,6 +1293,7 @@ useEffect(() => {
           combined_count: combined,
           checkpoint_active: isActiveCheckpoint ? 1 : 0,
           checkpoint_pulse: pulseProgress,
+          ambient_pulse: ambientPulse,
         },
         geometry: {
           type: "Point" as const,
@@ -1181,7 +1307,7 @@ useEffect(() => {
       features,
     } as any);
   }, [
-    venues,
+    filteredVenues,
     presence,
     friendsById,
     meId,
@@ -1201,7 +1327,7 @@ useEffect(() => {
   const m = map.current;
   if (!m || !mapReady) return;
 
-  for (const v of venues) {
+  for (const v of filteredVenues) {
   
 
     addRadiusLayer(
@@ -1222,7 +1348,30 @@ useEffect(() => {
       0.15
     );
   }
-}, [venues, mapReady]);
+}, [filteredVenues, mapReady]);
+
+useEffect(() => {
+  if (!selectedVenueId) return;
+  const exists = filteredVenues.some((v) => v.id === selectedVenueId);
+  if (!exists) {
+    setSelectedVenueId(null);
+  }
+}, [filteredVenues, selectedVenueId]);
+
+useEffect(() => {
+  window.dispatchEvent(
+    new CustomEvent("map-venue-sheet-visibility", {
+      detail: { open: !!selectedVenue },
+    })
+  );
+  return () => {
+    window.dispatchEvent(
+      new CustomEvent("map-venue-sheet-visibility", {
+        detail: { open: false },
+      })
+    );
+  };
+}, [selectedVenue]);
 
 
   /* ---------------- SAVE PRESENCE (STABLE) ---------------- */
@@ -1457,6 +1606,14 @@ useEffect(() => {
       string,
       { venue: Venue; allCount: number; visibleUserIds: string[] }
     >();
+    const markerSizeForZoom = (zoom: number) => {
+      if (zoom <= 3) return 18;
+      if (zoom <= 5) return 22;
+      if (zoom <= 7) return 28;
+      if (zoom <= 9) return 34;
+      if (zoom <= 11) return 38;
+      return 42;
+    };
     const buildAvatarElement = (
       avatarUrl: string | null | undefined,
       label: string,
@@ -1503,6 +1660,8 @@ useEffect(() => {
       return avatar;
     };
 
+    const isGlobeView = mapZoom < 8;
+
     for (const id of candidateIds) {
       const latestP = latestPresenceByUser.get(id);
       if (!latestP) continue;
@@ -1532,6 +1691,7 @@ useEffect(() => {
       const p = activePresenceByUser.get(id);
       if (!p) continue;
       if (ghost) continue;
+      if (isGlobeView) continue;
 
       const profile = isMe ? myProfile : friendProfilesById[id];
       const label =
@@ -1543,22 +1703,28 @@ useEffect(() => {
             "Friend";
 
       const markerEl = document.createElement("button");
+      const markerSize = markerSizeForZoom(mapZoom);
       markerEl.type = "button";
-      markerEl.style.width = "42px";
-      markerEl.style.height = "42px";
+      markerEl.style.width = `${markerSize}px`;
+      markerEl.style.height = `${markerSize}px`;
       markerEl.style.borderRadius = "999px";
       markerEl.style.border = "0";
       markerEl.style.padding = "0";
       markerEl.style.background = "transparent";
       markerEl.style.overflow = "hidden";
       markerEl.style.boxShadow = isFriend || isMe
-        ? "0 0 0 6px rgba(56,189,248,0.18), 0 0 18px rgba(56,189,248,0.35)"
+        ? `0 0 0 ${Math.max(2, Math.round(markerSize * 0.14))}px rgba(56,189,248,0.18), 0 0 ${Math.max(8, Math.round(markerSize * 0.42))}px rgba(56,189,248,0.35)`
         : "none";
       markerEl.style.cursor = "pointer";
       markerEl.setAttribute("aria-label", `Open ${label} profile`);
 
       markerEl.appendChild(
-        buildAvatarElement(profile?.avatar_url, label, 42, 11)
+        buildAvatarElement(
+          profile?.avatar_url,
+          label,
+          markerSize,
+          Math.max(9, Math.round(markerSize * 0.26))
+        )
       );
 
       markerEl.onclick = (ev) => {
@@ -1575,6 +1741,8 @@ useEffect(() => {
         .addTo(m);
       presenceMarkers.current.set(id, marker);
     }
+
+    if (isGlobeView) return;
 
     for (const [venueId, bucket] of venueBuckets.entries()) {
       const visibleTop = bucket.visibleUserIds.slice(0, 3);
@@ -1632,6 +1800,7 @@ useEffect(() => {
     router,
     mapReady,
     venues,
+    mapZoom,
   ]);
 
   const rightSidebarFriends = useMemo(() => {
@@ -1658,7 +1827,7 @@ useEffect(() => {
     const now = Date.now();
     setLastArrowPressAt(now);
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + 15000);
+    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
     setCheckpointMotionEnabled(true);
     setCheckpointIndex((prev) => (prev - 1 + checkpoints.length) % checkpoints.length);
   };
@@ -1668,7 +1837,7 @@ useEffect(() => {
     const now = Date.now();
     setLastArrowPressAt(now);
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + 15000);
+    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
     setCheckpointMotionEnabled(true);
     setCheckpointIndex((prev) => (prev + 1) % checkpoints.length);
   };
@@ -1679,82 +1848,126 @@ useEffect(() => {
       onPointerDown={() => setLastPageInteractionAt(Date.now())}
     >
       <div ref={mapRef} className="w-full h-full" />
-      <button
-        type="button"
-        onClick={async () => {
-          if (!meId) return;
-          const now = Date.now();
-          setLastPageInteractionAt(now);
-          setAutoTourPausedUntil(now + 15000);
-          const next = !myGhostMode;
-          setMyGhostMode(next);
-          await supabase
-            .from("profiles")
-            .update({ ghost_mode: next })
-            .eq("id", meId);
-        }}
-        className="absolute left-3 top-14 z-20 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-xs font-medium text-white/90 backdrop-blur"
-      >
-        {myGhostMode ? "Ghost: On" : "Ghost: Off"}
-      </button>
-      <button
-        type="button"
-        onClick={() => setMapSidebarVisible((prev) => !prev)}
-        className="absolute right-2 top-14 z-20 rounded-full border border-white/15 bg-black/55 px-2.5 py-1.5 text-[11px] font-medium text-white/85 backdrop-blur"
-        aria-label={mapSidebarVisible ? "Hide friends sidebar" : "Show friends sidebar"}
-      >
-        {mapSidebarVisible ? "Friends →" : "← Friends"}
-      </button>
-      <aside
-        className={`absolute right-2 top-24 z-20 w-[80px] overflow-y-auto rounded-2xl border border-white/10 bg-black/30 p-1.5 backdrop-blur transition-all duration-200 ${
-          mapSidebarVisible ? "translate-x-0 opacity-100" : "translate-x-[110%] opacity-0 pointer-events-none"
-        }`}
-        style={{
-          bottom: `calc(env(safe-area-inset-bottom, 0px) + ${MAP_NAV_CLEARANCE_PX}px)`,
-        }}
-      >
-        <div className="space-y-1.5">
-          {rightSidebarFriends.map((f) => {
-            const label =
-              f.profile?.display_name ||
-              f.profile?.username ||
-              usernamesById[f.id] ||
-              "Friend";
+      <aside className="absolute right-3 top-14 z-20 w-[min(92vw,390px)] rounded-3xl border border-white/14 bg-[#090d16e6] p-2.5 backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-2">
+          <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
+            Categories
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!meId) return;
+              const now = Date.now();
+              setLastPageInteractionAt(now);
+              setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+              const next = !myGhostMode;
+              setMyGhostMode(next);
+              await supabase.from("profiles").update({ ghost_mode: next }).eq("id", meId);
+            }}
+            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+              myGhostMode
+                ? "border-violet-300/45 bg-violet-500/20 text-violet-100"
+                : "border-white/15 bg-white/5 text-white/80"
+            }`}
+          >
+            {myGhostMode ? "Ghost On" : "Ghost Off"}
+          </button>
+        </div>
+
+        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5">
+          {categoryFilters.map((filter) => {
+            const Icon = filter.icon;
+            const active = activeCategory === filter.key;
             return (
               <button
-                key={f.id}
-                onClick={() => router.push(`/profile/${f.id}`)}
-                className="group relative flex w-full justify-center py-0.5"
-                aria-label={`Open ${label} profile`}
+                key={filter.key}
+                type="button"
+                onClick={() => setActiveCategory(filter.key)}
+                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium text-white/90 transition"
+                style={{
+                  borderColor: active ? `${filter.accent}70` : "rgba(255,255,255,0.08)",
+                  background: active ? `${filter.accent}20` : "rgba(255,255,255,0.015)",
+                }}
+                aria-label={`Filter by ${filter.label}`}
               >
-                <div className={`relative rounded-full ${f.online ? "shadow-[0_0_18px_rgba(34,197,94,0.45)]" : ""}`}>
-                  {f.profile?.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={f.profile.avatar_url}
-                      alt={label}
-                      className="h-11 w-11 rounded-full border border-white/20 object-cover"
-                    />
-                  ) : (
-                    <div className="grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-white/10 text-[11px] font-semibold text-white">
-                      {initialsFromName(label)}
-                    </div>
-                  )}
-                  {f.online ? (
-                    <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-black bg-emerald-400" />
-                  ) : null}
+                <div className="flex items-center gap-1">
+                  <Icon size={11} style={{ color: active ? filter.accent : "rgba(255,255,255,0.62)" }} />
+                  <span>{filter.label}</span>
                 </div>
               </button>
             );
           })}
-          {rightSidebarFriends.length === 0 ? (
-            <div className="pt-1 text-center text-[11px] text-white/45">No crowd yet</div>
-          ) : null}
         </div>
       </aside>
+
+      <button
+        type="button"
+        onClick={() => setPanelMode((prev) => (prev === "friends" ? "categories" : "friends"))}
+        className={`absolute right-3 z-20 rounded-full border px-3 py-2 text-xs font-semibold backdrop-blur transition ${
+          panelMode === "friends"
+            ? "border-sky-300/45 bg-sky-500/20 text-sky-100 shadow-[0_0_18px_rgba(56,189,248,0.35)]"
+            : "border-white/15 bg-black/55 text-white/85"
+        } top-[154px]`}
+        aria-label={panelMode === "friends" ? "Hide friends sidebar" : "Show friends sidebar"}
+      >
+        Friends
+      </button>
+
+      {panelMode === "friends" ? (
+        <aside
+          className="absolute right-3 top-[194px] z-20 w-[108px] min-h-[172px] max-h-[290px] overflow-y-auto rounded-2xl border border-sky-300/20 bg-[#070c16d9] p-1.5 backdrop-blur-xl"
+        >
+          <div className="space-y-1.5">
+            {rightSidebarFriends.map((f) => {
+              const label =
+                f.profile?.display_name ||
+                f.profile?.username ||
+                usernamesById[f.id] ||
+                "Friend";
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => router.push(`/profile/${f.id}`)}
+                  className="group relative flex w-full items-center gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-1.5 py-1"
+                  aria-label={`Open ${label} profile`}
+                >
+                  <div className={`relative rounded-full ${f.online ? "shadow-[0_0_18px_rgba(59,130,246,0.45)]" : ""}`}>
+                    {f.profile?.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={f.profile.avatar_url}
+                        alt={label}
+                        className="h-9 w-9 rounded-full border border-white/20 object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-[10px] font-semibold text-white">
+                        {initialsFromName(label)}
+                      </div>
+                    )}
+                    {f.online ? (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-black bg-sky-400" />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <p className="truncate text-[10px] font-semibold text-white/90">
+                      {label}
+                    </p>
+                    <p className="truncate text-[9px] text-white/55">
+                      {f.online ? "Online now" : f.lastSeen ? formatLastSeen(f.lastSeen) : "Nearby"}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+            {rightSidebarFriends.length === 0 ? (
+              <div className="pt-1 text-center text-[11px] text-white/45">No crowd yet</div>
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
       {!selectedVenue ? (
       <div
-        className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-black/60 px-2.5 py-1.5 backdrop-blur"
+        className="absolute left-1/2 z-20 flex w-[min(92vw,460px)] -translate-x-1/2 items-center justify-between gap-2 rounded-full border border-white/15 bg-black/60 px-2.5 py-1.5 backdrop-blur"
         style={{
           bottom: `calc(env(safe-area-inset-bottom, 0px) + ${MAP_NAV_CLEARANCE_PX}px)`,
         }}
@@ -1773,10 +1986,10 @@ useEffect(() => {
             if (!activeCheckpoint) return;
             const now = Date.now();
             setLastPageInteractionAt(now);
-            setAutoTourPausedUntil(now + 15000);
+            setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
             setSelectedVenueId(activeCheckpoint.id);
           }}
-          className="max-w-[210px] truncate px-2 text-center text-xs font-medium text-white/90"
+          className="flex-1 truncate px-2 text-center text-sm font-medium text-white/90"
           aria-label="Open active checkpoint"
         >
           {activeCheckpoint
@@ -1795,47 +2008,65 @@ useEffect(() => {
       ) : null}
       {selectedVenue ? (
         <section
-          className="absolute inset-x-0 z-30 h-[62svh] max-h-[620px] rounded-t-3xl border-t border-white/15 bg-black/90 text-white shadow-[0_-18px_48px_rgba(0,0,0,0.45)] backdrop-blur md:h-1/2 overflow-hidden"
-          style={{
-            bottom: `calc(env(safe-area-inset-bottom, 0px) + ${MAP_NAV_CLEARANCE_PX - 10}px)`,
-          }}
+          className="absolute inset-x-0 bottom-0 z-30 h-[74svh] max-h-[760px] overflow-y-auto rounded-t-3xl border-t border-white/15 bg-[#06070ddd] text-white shadow-[0_-18px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl md:h-[70svh]"
         >
-          <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-3">
+          <div className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+18px)] pt-3">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-base font-semibold tracking-tight">📍 {selectedVenue.name}</p>
-                {selectedVenue.category ? (
-                  <p className="mt-0.5 text-xs text-white/60">{selectedVenue.category}</p>
-                ) : null}
+                <p className="text-base font-semibold tracking-tight">{selectedVenue.name}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
+                  {selectedVenue.category ? (
+                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">
+                      {selectedVenue.category}
+                    </span>
+                  ) : null}
+                  {you ? (
+                    <span className="rounded-full border border-sky-300/25 bg-sky-500/10 px-2 py-1 text-sky-100/90">
+                      {Math.round(distanceMeters(you.lat, you.lng, selectedVenue.lat, selectedVenue.lng))}m away
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <button
                 type="button"
                 onClick={closeVenueCard}
-                className="shrink-0 rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs text-white/85"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/20 bg-white/5 text-white/85"
                 aria-label="Close venue panel"
               >
-                ✕
+                <X size={14} />
               </button>
             </div>
             <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
-                  Venue Image
+                  Venue
                 </div>
-                <div className="grid h-[160px] place-items-center rounded-xl border border-dashed border-white/20 bg-black/35 text-center">
-                  <p className="text-sm font-medium text-white/80">Image coming soon</p>
-                </div>
+                {selectedVenue.image_url || selectedVenue.photo_url || selectedVenue.cover_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedVenue.image_url || selectedVenue.photo_url || selectedVenue.cover_image_url || ""}
+                    alt={selectedVenue.name}
+                    className="h-[172px] w-full rounded-xl border border-white/10 object-cover"
+                  />
+                ) : (
+                  <div className="grid h-[172px] place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-violet-500/12 via-sky-500/8 to-teal-400/10 text-center">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-white/85">{selectedVenue.name}</p>
+                      <p className="text-xs text-white/50">Venue photo coming soon</p>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="min-h-0 rounded-2xl border border-white/10 bg-white/5 p-3">
                 <div className="mb-2 grid grid-cols-2 gap-2 text-sm">
-                  <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                  <div className="rounded-xl border border-pink-300/20 bg-pink-500/10 px-3 py-2">
                     <p className="text-xs text-white/60">Inside</p>
                     <p className="font-semibold">{selectedVenuePeople.insideAll.length}</p>
                     <p className="text-[11px] text-white/50">
                       {selectedVenuePeople.insideFriends.length} friends • {selectedVenuePeople.insideFriendsRecent} recently
                     </p>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+                  <div className="rounded-xl border border-teal-300/20 bg-teal-500/10 px-3 py-2">
                     <p className="text-xs text-white/60">Nearby</p>
                     <p className="font-semibold">{selectedVenuePeople.nearbyAll.length}</p>
                     <p className="text-[11px] text-white/50">
@@ -1844,24 +2075,47 @@ useEffect(() => {
                   </div>
                 </div>
                 <div
-                  className="h-[calc(100%-86px)] space-y-3 overflow-y-auto overscroll-contain pr-1"
+                  className="space-y-3 pr-1"
                   style={{ WebkitOverflowScrolling: "touch" }}
                 >
                   <div className="border-b border-white/10 pb-3">
                     <h3 className="mb-1.5 text-xs font-semibold text-white/85">Friends Inside</h3>
                     {selectedVenuePeople.insideFriends.length ? (
-                      <div className="space-y-1.5">
-                        {selectedVenuePeople.insideFriends.map((friend) => (
-                          <div
-                            key={`${friend.user_id}-inside`}
-                            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs"
-                          >
-                            <p className="truncate">{friend.name}</p>
-                          </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center">
+                          {selectedVenuePeople.insideFriends.slice(0, 5).map((friend, index) => {
+                            const profile = friendProfilesById[friend.user_id];
+                            return (
+                              <div
+                                key={`${friend.user_id}-inside-avatar`}
+                                className="relative"
+                                style={{ marginLeft: index === 0 ? 0 : -8 }}
+                                title={friend.name}
+                              >
+                                {profile?.avatar_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={profile.avatar_url}
+                                    alt={friend.name}
+                                    className="h-9 w-9 rounded-full border border-white/25 object-cover"
+                                  />
+                                ) : (
+                                  <div className="grid h-9 w-9 place-items-center rounded-full border border-white/25 bg-white/10 text-[10px] font-semibold">
+                                    {initialsFromName(friend.name)}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {selectedVenuePeople.insideFriends.slice(0, 3).map((friend) => (
+                          <p key={`${friend.user_id}-inside-label`} className="truncate text-xs text-white/80">
+                            {friend.name}
+                          </p>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-white/50">Be the first there</p>
+                      <p className="text-xs text-white/50">No friends here yet. Be the first there.</p>
                     )}
                   </div>
                   <div>
@@ -1882,10 +2136,33 @@ useEffect(() => {
                     )}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // TODO: when venue-scoped story viewer is available, open it directly using selectedVenue.id.
+                    router.push(`/venue-activity?venueId=${encodeURIComponent(selectedVenue.id)}`);
+                    setActivityPlaceholderOpen(true);
+                  }}
+                  className="mt-3 w-full rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-left text-sm font-semibold text-violet-100"
+                >
+                  View Activity →
+                </button>
               </div>
             </div>
           </div>
         </section>
+      ) : null}
+      {activityPlaceholderOpen ? (
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+18px)] z-40 rounded-2xl border border-violet-300/30 bg-[#120a1ccc] p-3 text-xs text-violet-100 backdrop-blur">
+          Activity viewer handoff sent. TODO: wire this state to a venue-filtered stories modal when map-local viewer lands.
+          <button
+            type="button"
+            onClick={() => setActivityPlaceholderOpen(false)}
+            className="ml-2 underline underline-offset-2"
+          >
+            Dismiss
+          </button>
+        </div>
       ) : null}
     </div>
   );

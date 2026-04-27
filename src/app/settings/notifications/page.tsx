@@ -232,8 +232,8 @@ export default function NotificationSettingsPage() {
         >
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-medium">Friend posted story</div>
-              <div className="text-xs text-white/50 mt-1">Get notified on new stories.</div>
+              <div className="font-medium">Friend posted Moment</div>
+              <div className="text-xs text-white/50 mt-1">Get notified on new Moments.</div>
             </div>
             <div className={`h-6 w-11 rounded-full transition ${storiesEnabled ? "bg-accent-violet" : "bg-white/20"}`}>
               <div className={`h-5 w-5 rounded-full bg-white mt-0.5 transition ${storiesEnabled ? "translate-x-5" : "translate-x-0.5"}`} />

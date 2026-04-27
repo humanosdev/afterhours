@@ -44,6 +44,10 @@ export default function SettingsPage() {
   const [autoVenueTourEnabled, setAutoVenueTourEnabled] = useState(true);
   const [privateAccount, setPrivateAccount] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(true);
+  const [feedbackCategory, setFeedbackCategory] = useState<"feature" | "bug" | "general">("feature");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const goBackSafe = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -109,6 +113,37 @@ export default function SettingsPage() {
     }
   };
 
+  const submitFeedback = async () => {
+    const text = feedbackText.trim();
+    if (text.length < 8) {
+      setFeedbackMsg("Please write at least a short description.");
+      return;
+    }
+    setFeedbackSending(true);
+    setFeedbackMsg(null);
+    const res = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        category: feedbackCategory,
+        message: text,
+      }),
+    });
+    setFeedbackSending(false);
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      if (payload?.error === "feedback_email_not_configured") {
+        setFeedbackMsg("Feedback email is not configured on the server yet.");
+        return;
+      }
+      setFeedbackMsg("Could not send feedback right now. Please try again.");
+      return;
+    }
+    setFeedbackText("");
+    setFeedbackCategory("feature");
+    setFeedbackMsg("Thanks — feedback sent.");
+  };
+
   return (
     <div className="min-h-screen bg-black text-white p-6 pb-24">
       <button onClick={goBackSafe} className="mb-6 text-sm text-white/60">
@@ -165,6 +200,46 @@ export default function SettingsPage() {
               </div>
             </div>
           </button>
+        </section>
+        <section>
+          <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Feedback</div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="font-medium">Suggest a feature or report an issue</div>
+            <div className="mt-1 text-xs text-white/50">
+              This sends feedback directly to the team email.
+            </div>
+            <div className="mt-3 flex gap-2">
+              {(["feature", "bug", "general"] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setFeedbackCategory(opt)}
+                  className={`rounded-full border px-3 py-1 text-xs ${
+                    feedbackCategory === opt
+                      ? "border-white/40 bg-white/15 text-white"
+                      : "border-white/10 bg-transparent text-white/70"
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="What should we add or improve?"
+              className="mt-3 h-28 w-full resize-none rounded-xl border border-white/10 bg-black/30 p-3 text-sm outline-none focus:border-white/20"
+            />
+            {feedbackMsg ? <div className="mt-2 text-xs text-white/70">{feedbackMsg}</div> : null}
+            <button
+              type="button"
+              onClick={submitFeedback}
+              disabled={feedbackSending}
+              className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
+            >
+              {feedbackSending ? "Sending..." : "Send feedback"}
+            </button>
+          </div>
         </section>
 
         {sections.map((section) => (

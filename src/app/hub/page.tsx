@@ -14,6 +14,10 @@ type Venue = {
   name: string;
   lat: number;
   lng: number;
+  category?: string | null;
+  image_url?: string | null;
+  photo_url?: string | null;
+  cover_image_url?: string | null;
   inner_radius_m: number;
   outer_radius_m: number;
 };
@@ -74,6 +78,7 @@ export default function HubPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [myStoryFallback, setMyStoryFallback] = useState<string>("AH");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [storyVenueIds, setStoryVenueIds] = useState<Set<string>>(new Set());
 
   const [activeViewerGroup, setActiveViewerGroup] = useState<StoryViewerGroup | null>(null);
 
@@ -277,6 +282,34 @@ export default function HubPage() {
     return () => window.removeEventListener("story-posted", onStoryPosted);
   }, [friends, meId]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadStoryVenueLinks = async () => {
+      const { data, error } = await supabase
+        .from("stories")
+        .select("venue_id")
+        .not("venue_id", "is", null)
+        .limit(400);
+      if (error) {
+        // TODO: keep this fallback until venue_id is guaranteed on stories in all environments.
+        if (mounted) setStoryVenueIds(new Set());
+        return;
+      }
+      const ids = new Set<string>();
+      (data ?? []).forEach((row: any) => {
+        if (row?.venue_id) ids.add(row.venue_id);
+      });
+      if (mounted) setStoryVenueIds(ids);
+    };
+    loadStoryVenueLinks();
+    const onStoryPosted = () => loadStoryVenueLinks();
+    window.addEventListener("story-posted", onStoryPosted);
+    return () => {
+      mounted = false;
+      window.removeEventListener("story-posted", onStoryPosted);
+    };
+  }, []);
+
   /* ---------------- HELPERS ---------------- */
 
   const isActive = (ts: string) =>
@@ -439,23 +472,39 @@ const venuesToShow = venueCards.slice(0, 3);
       .map((p) => p.user_id);
     return Array.from(new Set(ids)).slice(0, 3);
   };
+
+  const myPresence = useMemo(
+    () => (meId ? presence.find((p) => p.user_id === meId) ?? null : null),
+    [presence, meId]
+  );
+  const liveFriendsCount = onlineFriends.length;
+  const liveVenuesCount = venueCards.filter((v: any) => v.total > 0).length;
+  const nearbyActivityCount = venueCards.reduce((sum: number, v: any) => sum + (v.total ?? 0), 0);
+  const trendingPlace = venueCards[0]?.name ?? null;
+  const pulseLine =
+    liveVenuesCount === 0
+      ? "Quiet right now"
+      : liveVenuesCount === 1
+      ? "1 place active nearby"
+      : `${liveVenuesCount} places active nearby`;
   /* ---------------- UI ---------------- */
 
   return (
     <ProtectedRoute>
-    <div className="min-h-screen bg-primary text-text-primary px-4 py-4 space-y-4">
+    <div className="min-h-screen bg-primary text-text-primary px-4 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+112px)] space-y-4">
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-xs font-semibold tracking-[0.24em] text-text-secondary">
+          <div className="text-xs font-semibold tracking-[0.24em] text-violet-300/75">
             AFTERHOURS
           </div>
-          <div className="mt-1 text-lg font-semibold">Hub</div>
+          <div className="mt-1 text-[30px] leading-none font-bold">What&apos;s alive right now</div>
+          <div className="mt-1 text-sm text-white/65">Friends, places, and activity near you.</div>
         </div>
         <button
           type="button"
           onClick={() => router.push("/notifications")}
-          className="relative rounded-full border border-subtle bg-secondary px-3 py-2 text-sm text-text-primary"
+          className="relative rounded-full border border-white/15 bg-white/5 px-3 py-2 text-sm text-text-primary backdrop-blur"
           aria-label="Open notifications"
         >
           ♡
@@ -467,9 +516,10 @@ const venuesToShow = venueCards.slice(0, 3);
         </button>
       </div>
 
-      {/* STORIES */}
+      {/* MOMENTS */}
+      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-3 backdrop-blur">
       <div className="scrollbar-none flex items-center gap-4 overflow-x-auto pb-1">
-          {/* YOUR STORY */}
+          {/* YOUR MOMENT */}
           <button
             type="button"
             onClick={async () => {
@@ -492,7 +542,7 @@ const venuesToShow = venueCards.slice(0, 3);
             <div className="relative">
               <StoryRing
                 src={avatarUrl}
-                alt="your story"
+                alt="your moment"
                 fallbackText={myStoryFallback}
                 size="lg"
                 active={hasMyActiveStory}
@@ -504,11 +554,11 @@ const venuesToShow = venueCards.slice(0, 3);
               ) : null}
             </div>
             <span className="mt-2 w-16 truncate text-center text-xs text-text-secondary">
-              Your story
+              Moments
             </span>
           </button>
 
-          {/* FRIEND STORIES */}
+          {/* FRIEND MOMENTS */}
           {friendStoryGroups.map((user) => (
             <button
               key={user.user_id}
@@ -534,9 +584,41 @@ const venuesToShow = venueCards.slice(0, 3);
             </button>
           ))}
       </div>
+      {friendStoryGroups.length === 0 ? (
+        <p className="mt-2 text-xs text-white/55">Post what&apos;s happening around you.</p>
+      ) : null}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 backdrop-blur">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">Live pulse</p>
+            <p className="text-xs text-white/55">{pulseLine}</p>
+          </div>
+          <span className="text-[11px] text-violet-300/85">Updated just now</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <div className="rounded-xl border border-sky-300/25 bg-sky-500/10 px-3 py-2">
+            <p className="text-[11px] text-white/60">Friends active</p>
+            <p className="text-lg font-semibold">{liveFriendsCount}</p>
+          </div>
+          <div className="rounded-xl border border-teal-300/25 bg-teal-500/10 px-3 py-2">
+            <p className="text-[11px] text-white/60">Places active</p>
+            <p className="text-lg font-semibold">{liveVenuesCount}</p>
+          </div>
+          <div className="rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 py-2">
+            <p className="text-[11px] text-white/60">Nearby now</p>
+            <p className="text-lg font-semibold">{nearbyActivityCount}</p>
+          </div>
+          <div className="rounded-xl border border-violet-300/25 bg-violet-500/10 px-3 py-2">
+            <p className="text-[11px] text-white/60">Trending place</p>
+            <p className="truncate text-sm font-semibold">{trendingPlace ?? "No activity yet"}</p>
+          </div>
+        </div>
+      </div>
 
       {/* ACTIVE FRIENDS */}
-      <div className="rounded-2xl border border-subtle bg-secondary p-4 space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 space-y-3 backdrop-blur">
         <div className="flex items-start justify-between gap-2">
           <SectionHeader
             title="Active friends"
@@ -545,22 +627,23 @@ const venuesToShow = venueCards.slice(0, 3);
           <button
             type="button"
             onClick={() => router.push("/profile/friends")}
-            className="rounded-full border border-subtle bg-surface px-3 py-1 text-xs text-text-secondary"
+            className="rounded-full border border-violet-300/30 bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-100"
           >
-            Friends
+            View all
           </button>
         </div>
 
         {onlineFriends.length === 0 ? (
           <EmptyState
-            title="Quiet right now"
-            description="Friends will appear here as they jump in."
+            title="No friends active yet"
+            description="They’ll show up here when they pop out."
             className="bg-surface"
           />
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="scrollbar-none flex items-center gap-3 overflow-x-auto pb-1">
             {onlineFriends.map((f) => {
               const name = profiles[f.user_id] || "Friend";
+              const venueName = f.venue_id ? venues.find((v) => v.id === f.venue_id)?.name ?? null : null;
               return (
                 <button
                   key={f.user_id}
@@ -568,19 +651,23 @@ const venuesToShow = venueCards.slice(0, 3);
                     const uname = profiles[f.user_id];
                     if (uname) router.push(`/u/${uname}`);
                   }}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-subtle bg-surface p-3 text-left"
+                  className="min-w-[120px] rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-left"
                 >
-                  <Avatar
-                    src={avatars[f.user_id] ?? null}
-                    fallbackText={name}
-                    size="sm"
-                    className="shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold">
-                      {name}
+                  <div className="flex items-center gap-2">
+                    <Avatar
+                      src={avatars[f.user_id] ?? null}
+                      fallbackText={name}
+                      size="sm"
+                      className="shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">
+                        {name}
+                      </div>
+                      <div className="text-[11px] text-white/60">
+                        {venueName ? `At ${venueName}` : "Online"}
+                      </div>
                     </div>
-                    <div className="text-xs text-text-secondary">Active</div>
                   </div>
                 </button>
               );
@@ -590,10 +677,10 @@ const venuesToShow = venueCards.slice(0, 3);
       </div>
 
       {/* VENUES */}
-      <div className="rounded-2xl border border-subtle bg-secondary p-4 space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 space-y-3 backdrop-blur">
         <SectionHeader
-          title="Venues with people"
-          subtitle="Where the night is happening"
+          title="Live Places"
+          subtitle="Where the night is happening right now"
         />
 
         {venuesToShow.length === 0 ? (
@@ -605,35 +692,55 @@ const venuesToShow = venueCards.slice(0, 3);
         ) : (
           <div className="space-y-3">
             {venuesToShow.map((v: any, index) => {
-              let vibe = "Quiet";
+              let vibe = "No activity yet";
               let vibeVariant: "neutral" | "cyan" | "violet" = "neutral";
-              if (v.total > 10) {
-                vibe = "LIT";
+              if (v.total >= 16) {
+                vibe = "Packed";
                 vibeVariant = "violet";
-              } else if (v.total > 4) {
+              } else if (v.total >= 8) {
                 vibe = "Active";
                 vibeVariant = "cyan";
-              } else if (v.total > 0) {
-                vibe = "Chill";
+              } else if (v.total >= 2) {
+                vibe = "Warming Up";
                 vibeVariant = "neutral";
               }
 
               const previewIds = friendPreviewForVenue(v.id);
+              const distanceMi =
+                myPresence
+                  ? distanceMeters(myPresence.lat, myPresence.lng, v.lat, v.lng) / 1609.34
+                  : null;
+              const hasActivity = storyVenueIds.has(v.id);
+              const venueImage = v.image_url || v.photo_url || v.cover_image_url || null;
 
               return (
                 <SocialCard
                   key={v.id}
-                  className="bg-surface"
+                  className="bg-surface border border-white/10"
                   interactive
                   onClick={() => router.push(`/map?venueId=${encodeURIComponent(v.id)}`)}
                 >
+                  {venueImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={venueImage}
+                      alt={v.name}
+                      className="mb-3 h-28 w-full rounded-xl border border-white/10 object-cover"
+                    />
+                  ) : (
+                    <div className="mb-3 grid h-28 w-full place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-violet-500/12 via-sky-500/8 to-teal-400/10">
+                      <p className="text-xs text-white/60">Venue photo coming soon</p>
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs text-text-secondary">
-                        #{index + 1}
-                      </div>
+                      <div className="text-xs text-violet-300/80">#{index + 1}</div>
                       <div className="mt-1 truncate text-base font-semibold">
                         {v.name}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-white/60">
+                        <span>{v.category ?? "Venue"}</span>
+                        {distanceMi !== null ? <span>• {distanceMi.toFixed(1)} mi</span> : null}
                       </div>
                     </div>
                     <StatusBadge label={vibe} variant={vibeVariant} />
@@ -664,7 +771,7 @@ const venuesToShow = venueCards.slice(0, 3);
                       <div className="text-xs text-text-secondary">
                         {v.friendsInside > 0
                           ? `${v.friendsInside} friends inside`
-                          : "Be the first there"}
+                          : "Waiting for the first check-in"}
                       </div>
                     )}
                   </div>
@@ -689,6 +796,20 @@ const venuesToShow = venueCards.slice(0, 3);
                       </div>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (hasActivity) {
+                        router.push(`/venue-activity?venueId=${encodeURIComponent(v.id)}`);
+                        return;
+                      }
+                      router.push(`/map?venueId=${encodeURIComponent(v.id)}`);
+                    }}
+                    className="mt-3 w-full rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-sm font-semibold text-violet-100"
+                  >
+                    {hasActivity ? "View Activity" : "Open on Map"}
+                  </button>
                 </SocialCard>
               );
             })}

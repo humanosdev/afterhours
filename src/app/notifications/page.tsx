@@ -130,7 +130,7 @@ export default function NotificationsPage() {
               : n.type === "friend_joined_venue"
               ? `${actorName} joined ${n.venue_name ?? "a venue"}`
               : n.type === "friend_story"
-              ? `${actorName} posted a new story`
+              ? `${actorName} posted a new Moment`
               : n.type === "friend_request_accepted"
               ? `You and ${actorName} are now connected`
               : n.type === "friends_active_bundle"

@@ -221,7 +221,7 @@ export default function StoryCameraModal({
           Close
         </button>
 
-        <div className="text-sm font-semibold text-white">New Story</div>
+        <div className="text-sm font-semibold text-white">New Moment</div>
 
         <button
           onClick={() =>
@@ -240,7 +240,7 @@ export default function StoryCameraModal({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={capturedUrl}
-            alt="Story preview"
+            alt="Moment preview"
             className="h-full w-full object-cover"
           />
         ) : cameraUnavailable ? (
@@ -281,7 +281,7 @@ export default function StoryCameraModal({
               disabled={uploading}
               className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-60"
             >
-              {uploading ? "Posting…" : "Post"}
+              {uploading ? "Posting…" : "Post Moment"}
             </button>
           </div>
         ) : (

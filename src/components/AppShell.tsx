@@ -21,6 +21,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [liveToasts, setLiveToasts] = useState<LiveToast[]>([]);
+  const [mapVenueSheetOpen, setMapVenueSheetOpen] = useState(false);
 
   const hideNavPaths = [
     "/login",
@@ -41,6 +42,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const immersive =
     pathname === "/map";
   const showFooter = !immersive && !pathname.startsWith("/chat");
+
+  useEffect(() => {
+    const onMapVenueSheetVisibility = (event: Event) => {
+      const custom = event as CustomEvent<{ open?: boolean }>;
+      setMapVenueSheetOpen(!!custom.detail?.open);
+    };
+    window.addEventListener("map-venue-sheet-visibility", onMapVenueSheetVisibility);
+    return () => window.removeEventListener("map-venue-sheet-visibility", onMapVenueSheetVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (pathname !== "/map") {
+      setMapVenueSheetOpen(false);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const openHandler = () => setStoryOpen(true);
@@ -136,8 +152,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             body = "Tap to open hub";
             route = "/hub";
           } else if (row.type === "friend_story") {
-            title = `${actorName} posted a new story`;
-            body = "Tap to open stories";
+            title = `${actorName} posted a new Moment`;
+            body = "Tap to open Moments";
             route = "/stories";
           } else if (row.type === "friend_request_accepted") {
             title = `You and ${actorName} are now connected`;
@@ -202,7 +218,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </footer>
       ) : null}
       <StoryCameraModal open={storyOpen} onClose={() => setStoryOpen(false)} />
-      {!hideNav && (
+      {!hideNav && !mapVenueSheetOpen && (
         <BottomNav onOpenStories={() => setStoryOpen(true)} unreadCount={unreadCount} />
       )}
     </div>

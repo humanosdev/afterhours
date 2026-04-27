@@ -344,7 +344,7 @@ export default function StoryViewerModal({
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
                 className="rounded-md bg-white/10 px-2 py-1 text-xs text-white"
-                aria-label="Story options"
+                aria-label="Moment options"
               >
                 •••
               </button>
@@ -354,7 +354,7 @@ export default function StoryViewerModal({
                   onClick={deleteStory}
                   className="absolute right-0 mt-1 rounded-md border border-red-500/30 bg-black px-2 py-1 text-xs text-red-300"
                 >
-                  Delete Story
+                  Delete Moment
                 </button>
               ) : null}
             </div>
@@ -366,13 +366,13 @@ export default function StoryViewerModal({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={activeStory.media_url}
-          alt="Story"
+          alt="Moment"
           className="absolute inset-0 m-auto max-h-[74vh] max-w-[92vw] object-contain"
           onError={close}
         />
 
-        <button type="button" className="absolute left-0 top-0 h-full w-1/2" onClick={prevStory} aria-label="Previous story" />
-        <button type="button" className="absolute right-0 top-0 h-full w-1/2" onClick={nextStory} aria-label="Next story" />
+        <button type="button" className="absolute left-0 top-0 h-full w-1/2" onClick={prevStory} aria-label="Previous Moment" />
+        <button type="button" className="absolute right-0 top-0 h-full w-1/2" onClick={nextStory} aria-label="Next Moment" />
       </div>
 
       <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-white/10 bg-black/70 px-3 py-3">

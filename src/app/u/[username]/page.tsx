@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
-import { Avatar } from "@/components/ui";
+import { Avatar, StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 
 async function unfriendUser(me: string, them: string) {
@@ -142,6 +142,8 @@ export default function UserProfile() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [isFriend, setIsFriend] = useState(false);
   const [venueText, setVenueText] = useState<string>("Not at a venue");
+  const [activeMomentsCount, setActiveMomentsCount] = useState(0);
+  const [latestActiveMomentId, setLatestActiveMomentId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
   const [requesting, setRequesting] = useState(false);
@@ -193,6 +195,40 @@ export default function UserProfile() {
       setIsBlocked(!!data);
     })();
   }, [me, profile]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const loadActiveMoments = async () => {
+      const { data: rows } = await supabase
+        .from("stories")
+        .select("id, image_url, created_at, expires_at")
+        .eq("user_id", profile.id)
+        .order("created_at", { ascending: false })
+        .limit(150);
+
+      const now = Date.now();
+      const activeMoments = (rows ?? []).filter((m: any) => {
+        if (!m?.image_url) return false;
+        const createdMs = new Date(m.created_at).getTime();
+        if (!Number.isFinite(createdMs)) return false;
+        const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
+        const expiresMs = m.expires_at ? new Date(m.expires_at).getTime() : fallbackExpiresMs;
+        return Number.isFinite(expiresMs) && expiresMs > now;
+      });
+
+      setActiveMomentsCount(activeMoments.length);
+      setLatestActiveMomentId((activeMoments[0] as any)?.id ?? null);
+    };
+
+    loadActiveMoments();
+    const onStoryPosted = () => loadActiveMoments();
+    window.addEventListener("story-posted", onStoryPosted);
+    const interval = window.setInterval(loadActiveMoments, 15000);
+    return () => {
+      window.removeEventListener("story-posted", onStoryPosted);
+      window.clearInterval(interval);
+    };
+  }, [profile?.id]);
 
   useEffect(() => {
     const onDocClick = () => setMenuOpen(false);
@@ -277,6 +313,7 @@ export default function UserProfile() {
   const isPrivate = !!profile.is_private;
   const canViewPrivateProfile = isOwnProfile || isFriend;
   const shouldHidePrivateProfile = isPrivate && !canViewPrivateProfile;
+  const hasLiveMoment = activeMomentsCount > 0;
 
   async function sendFriendRequestFromProfile() {
     if (!me || !them || requesting || isFriend || requestStatus !== "none") return;
@@ -372,25 +409,37 @@ export default function UserProfile() {
           ) : null}
         </div>
       </div>
-      <div className="flex items-center gap-4 mb-4">
-        <Avatar
-          src={profileAvatar}
-          fallbackText={profileName}
-          size="lg"
-        />
+      <div className="mb-4 flex items-center gap-4">
+        <button
+          type="button"
+          onClick={() => {
+            if (!latestActiveMomentId) return;
+            router.push(`/moments/${encodeURIComponent(latestActiveMomentId)}`);
+          }}
+          className="shrink-0"
+          aria-label="Open latest moment"
+        >
+          <StoryRing
+            src={profileAvatar}
+            alt={`${profile.username} avatar`}
+            fallbackText={profileName}
+            size="lg"
+            active={hasLiveMoment}
+          />
+        </button>
 
-  <div>
-    <div className="text-2xl font-semibold">
-      {profileName}
-    </div>
-    <div className="text-white/60 text-sm">
-      @{profile.username}
-    </div>
-    <div className="text-white/60 text-sm mt-1">
-      {venueText}
-    </div>
-  </div>
-</div>
+        <div>
+          <div className="text-2xl font-semibold">
+            {profileName}
+          </div>
+          <div className="text-sm text-white/60">
+            @{profile.username}
+          </div>
+          <div className="mt-1 text-sm text-white/60">
+            {venueText}
+          </div>
+        </div>
+      </div>
 
       {shouldHidePrivateProfile ? (
         <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
@@ -433,8 +482,8 @@ export default function UserProfile() {
 
       {!shouldHidePrivateProfile ? (
         <div className="mt-6">
-          <div className="text-sm text-white/60">Stories</div>
-          <ProfileStoriesGrid userId={profile.id} emptyLabel="No stories from this user yet." />
+          <div className="text-sm text-white/60">Moments</div>
+          <ProfileStoriesGrid userId={profile.id} emptyLabel="No Moments from this user yet." />
         </div>
       ) : null}
 

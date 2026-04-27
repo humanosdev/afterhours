@@ -7,7 +7,7 @@ export default function StoriesPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Legacy route bridge: keep one story experience (camera modal)
+    // Legacy route bridge: keep one Moment experience (camera modal)
     window.dispatchEvent(new Event("open-story-camera"));
     router.replace("/hub");
   }, [router]);
