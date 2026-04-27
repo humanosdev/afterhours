@@ -1,4 +1,10 @@
-export type NotificationType = "friend_online" | "friend_joined_venue";
+export type NotificationType =
+  | "friend_online"
+  | "friend_joined_venue"
+  | "friends_active_bundle"
+  | "friend_story"
+  | "friend_request_accepted"
+  | "venue_popping";
 
 export type NotificationRow = {
   id: string;

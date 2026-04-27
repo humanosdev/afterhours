@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-const PROTECTED_PREFIXES = ["/hub", "/map", "/chat", "/profile"];
+const PROTECTED_PREFIXES = ["/hub", "/map", "/chat", "/profile", "/settings", "/onboarding"];
+const AUTH_PAGES = ["/login", "/signup"];
+const ONBOARDING_PATH = "/onboarding";
 
 function isProtectedPath(pathname: string) {
   return PROTECTED_PREFIXES.some(
@@ -59,11 +61,35 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (session && (pathname === "/login" || pathname === "/signup")) {
-    const appUrl = req.nextUrl.clone();
-    appUrl.pathname = "/hub";
-    appUrl.search = "";
-    return NextResponse.redirect(appUrl);
+  if (session) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_complete")
+      .eq("id", session.user.id)
+      .maybeSingle();
+
+    const onboardingComplete = !!profile?.onboarding_complete;
+
+    if (AUTH_PAGES.includes(pathname)) {
+      const appUrl = req.nextUrl.clone();
+      appUrl.pathname = onboardingComplete ? "/hub" : ONBOARDING_PATH;
+      appUrl.search = "";
+      return NextResponse.redirect(appUrl);
+    }
+
+    if (!onboardingComplete && pathname !== ONBOARDING_PATH) {
+      const onboardingUrl = req.nextUrl.clone();
+      onboardingUrl.pathname = ONBOARDING_PATH;
+      onboardingUrl.search = "";
+      return NextResponse.redirect(onboardingUrl);
+    }
+
+    if (onboardingComplete && pathname === ONBOARDING_PATH) {
+      const appUrl = req.nextUrl.clone();
+      appUrl.pathname = "/hub";
+      appUrl.search = "";
+      return NextResponse.redirect(appUrl);
+    }
   }
 
   return res;

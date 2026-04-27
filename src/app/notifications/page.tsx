@@ -127,7 +127,15 @@ export default function NotificationsPage() {
           const message =
             n.type === "friend_online"
               ? `${actorName} went online`
-              : `${actorName} joined ${n.venue_name ?? "a venue"}`;
+              : n.type === "friend_joined_venue"
+              ? `${actorName} joined ${n.venue_name ?? "a venue"}`
+              : n.type === "friend_story"
+              ? `${actorName} posted a new story`
+              : n.type === "friend_request_accepted"
+              ? `You and ${actorName} are now connected`
+              : n.type === "friends_active_bundle"
+              ? `${actorName} and friends are out right now`
+              : `${n.venue_name ?? "A venue"} is heating up`;
 
           return (
             <button
@@ -138,6 +146,18 @@ export default function NotificationsPage() {
                   prev.map((row) => (row.id === n.id ? { ...row, read: true } : row))
                 );
                 await supabase.from("notifications").update({ read: true }).eq("id", n.id);
+                if (n.type === "friend_joined_venue" && n.venue_id) {
+                  router.push(`/map?venueId=${encodeURIComponent(n.venue_id)}`);
+                  return;
+                }
+                if (n.type === "friend_story") {
+                  router.push("/stories");
+                  return;
+                }
+                if (n.type === "friend_request_accepted") {
+                  if (n.actor_user_id) router.push(`/profile/${n.actor_user_id}`);
+                  return;
+                }
               }}
               className={`w-full text-left rounded-2xl border p-4 ${
                 n.read ? "border-white/10 bg-white/5" : "border-accent-violet/30 bg-accent-violet/10"
@@ -172,9 +192,7 @@ export default function NotificationsPage() {
                     {actorName}
                   </button>
                   <div className="text-sm text-white/85">
-                    {n.type === "friend_online"
-                      ? "went online"
-                      : `joined ${n.venue_name ?? "a venue"}`}
+                    {message}
                   </div>
                   <div className="text-xs text-white/50 mt-1">{relativeTime(n.created_at)}</div>
                 </div>

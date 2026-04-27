@@ -1,9 +1,21 @@
+ "use client";
+
 import { appConfig } from "@/lib/appConfig";
+import { useRouter } from "next/navigation";
 
 export default function PrivacyPage() {
+  const router = useRouter();
+
   return (
     <div className="min-h-screen bg-black text-white px-6 py-10">
       <div className="mx-auto max-w-2xl">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="mb-4 inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10"
+        >
+          ← Back
+        </button>
         <h1 className="text-3xl font-semibold">Privacy Policy</h1>
         <p className="mt-3 text-sm text-white/60">
           Last updated: {new Date().toLocaleDateString()}

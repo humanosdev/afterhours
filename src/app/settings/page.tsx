@@ -18,7 +18,7 @@ const sections = [
       {
         href: "/settings/notifications",
         label: "Notification preferences",
-        desc: "Control friend online and venue alerts.",
+        desc: "Control push, social alerts, and quiet hours.",
       },
     ],
   },
