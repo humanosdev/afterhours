@@ -1661,6 +1661,46 @@ useEffect(() => {
     };
 
     const isGlobeView = mapZoom < 8;
+    const coordinateKeyForPresence = (p: PresenceRow) =>
+      `${p.lat.toFixed(5)}:${p.lng.toFixed(5)}`;
+    const nonVenueOverlapGroups = new Map<string, string[]>();
+
+    if (!isGlobeView) {
+      for (const id of candidateIds) {
+        const latestP = latestPresenceByUser.get(id);
+        if (!latestP) continue;
+        if (hiddenIds.has(id)) continue;
+        const isMe = id === meId;
+        const isFriend = !!friendsById[id];
+        if (!isMe && !isFriend) continue;
+        const ghost = isMe ? myGhostMode : !!friendProfilesById[id]?.ghost_mode;
+        if (ghost) continue;
+        if (findContainingVenue(latestP)) continue;
+        const p = activePresenceByUser.get(id);
+        if (!p) continue;
+        const key = coordinateKeyForPresence(p);
+        const bucket = nonVenueOverlapGroups.get(key) ?? [];
+        bucket.push(id);
+        nonVenueOverlapGroups.set(key, bucket);
+      }
+    }
+
+    const markerOffsetPosition = (
+      p: PresenceRow,
+      id: string
+    ): [number, number] => {
+      const key = coordinateKeyForPresence(p);
+      const group = nonVenueOverlapGroups.get(key);
+      if (!group || group.length <= 1) return [p.lng, p.lat];
+      const idx = Math.max(0, group.indexOf(id));
+      const angle = (idx / group.length) * Math.PI * 2;
+      const radiusMeters = Math.min(22, Math.max(7, 5 + group.length * 1.5));
+      const latRad = (p.lat * Math.PI) / 180;
+      const safeCos = Math.max(0.2, Math.cos(latRad));
+      const dLat = (radiusMeters / 111320) * Math.sin(angle);
+      const dLng = (radiusMeters / (111320 * safeCos)) * Math.cos(angle);
+      return [p.lng + dLng, p.lat + dLat];
+    };
 
     for (const id of candidateIds) {
       const latestP = latestPresenceByUser.get(id);
@@ -1736,8 +1776,9 @@ useEffect(() => {
         router.push(`/profile/${id}`);
       };
 
+      const [markerLng, markerLat] = markerOffsetPosition(p, id);
       const marker = new mapboxgl.Marker({ element: markerEl })
-        .setLngLat([p.lng, p.lat])
+        .setLngLat([markerLng, markerLat])
         .addTo(m);
       presenceMarkers.current.set(id, marker);
     }
