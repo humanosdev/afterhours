@@ -76,7 +76,7 @@ export default function NotificationSettingsPage() {
   }) {
     if (!userId) return;
     setSaving(true);
-    await supabase.from("notification_preferences").upsert({
+    const { error } = await supabase.from("notification_preferences").upsert({
       user_id: userId,
       push_enabled: next.pushEnabled,
       friend_activity_enabled: next.friendActivityEnabled,
@@ -87,6 +87,11 @@ export default function NotificationSettingsPage() {
       quiet_hours_end: next.quietEnd || null,
     });
     setSaving(false);
+    if (error) {
+      setUiMsg("Could not save notification settings. Please try again.");
+      return false;
+    }
+    return true;
   }
 
   if (loading) {
@@ -107,11 +112,22 @@ export default function NotificationSettingsPage() {
           onClick={async () => {
             if (!userId) return;
             const next = !pushEnabled;
-            setPushEnabled(next);
             if (next) {
               const result = await registerPushSubscription(userId);
               if (!result.ok) {
-                setUiMsg("Push permission is blocked. Enable notifications in browser settings.");
+                const reasonText =
+                  result.reason === "permission_denied"
+                    ? "Push permission is blocked. Enable notifications in browser settings."
+                    : result.reason === "unsupported"
+                      ? "Push is unsupported here. On iPhone, use Add to Home Screen and open the app from there."
+                      : result.reason === "missing_vapid"
+                        ? "Push is not configured yet on this deploy."
+                        : result.reason === "subscribe_failed"
+                          ? "Push subscription failed on this device. Try from Home Screen app and re-allow notifications."
+                        : result.reason === "db_error"
+                          ? "Push subscription could not be saved."
+                          : "Push could not be enabled on this device.";
+                setUiMsg(reasonText);
                 setPushEnabled(false);
                 await save({
                   pushEnabled: false,
@@ -125,8 +141,7 @@ export default function NotificationSettingsPage() {
                 return;
               }
             }
-            setUiMsg(null);
-            await save({
+            const ok = await save({
               pushEnabled: next,
               friendActivityEnabled,
               venuePopEnabled,
@@ -135,6 +150,10 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
+            if (ok) {
+              setPushEnabled(next);
+              setUiMsg(null);
+            }
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -155,8 +174,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !friendActivityEnabled;
-            setFriendActivityEnabled(next);
-            await save({
+            const ok = await save({
               pushEnabled,
               friendActivityEnabled: next,
               venuePopEnabled,
@@ -165,6 +183,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
+            if (ok) setFriendActivityEnabled(next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -186,8 +205,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !venuePopEnabled;
-            setVenuePopEnabled(next);
-            await save({
+            const ok = await save({
               pushEnabled,
               friendActivityEnabled,
               venuePopEnabled: next,
@@ -196,6 +214,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
+            if (ok) setVenuePopEnabled(next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -217,8 +236,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !storiesEnabled;
-            setStoriesEnabled(next);
-            await save({
+            const ok = await save({
               pushEnabled,
               friendActivityEnabled,
               venuePopEnabled,
@@ -227,6 +245,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
+            if (ok) setStoriesEnabled(next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -244,8 +263,7 @@ export default function NotificationSettingsPage() {
         <button
           onClick={async () => {
             const next = !friendRequestEnabled;
-            setFriendRequestEnabled(next);
-            await save({
+            const ok = await save({
               pushEnabled,
               friendActivityEnabled,
               venuePopEnabled,
@@ -254,6 +272,7 @@ export default function NotificationSettingsPage() {
               quietStart,
               quietEnd,
             });
+            if (ok) setFriendRequestEnabled(next);
           }}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
@@ -277,8 +296,7 @@ export default function NotificationSettingsPage() {
               value={quietStart}
               onChange={async (e) => {
                 const next = e.target.value;
-                setQuietStart(next);
-                await save({
+                const ok = await save({
                   pushEnabled,
                   friendActivityEnabled,
                   venuePopEnabled,
@@ -287,6 +305,7 @@ export default function NotificationSettingsPage() {
                   quietStart: next,
                   quietEnd,
                 });
+                if (ok) setQuietStart(next);
               }}
               className="rounded-xl border border-white/10 bg-black/20 p-2 text-sm outline-none"
             />
@@ -295,8 +314,7 @@ export default function NotificationSettingsPage() {
               value={quietEnd}
               onChange={async (e) => {
                 const next = e.target.value;
-                setQuietEnd(next);
-                await save({
+                const ok = await save({
                   pushEnabled,
                   friendActivityEnabled,
                   venuePopEnabled,
@@ -305,6 +323,7 @@ export default function NotificationSettingsPage() {
                   quietStart,
                   quietEnd: next,
                 });
+                if (ok) setQuietEnd(next);
               }}
               className="rounded-xl border border-white/10 bg-black/20 p-2 text-sm outline-none"
             />

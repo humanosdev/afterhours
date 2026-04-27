@@ -12,41 +12,45 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export async function registerPushSubscription(userId: string) {
-  if (typeof window === "undefined") return { ok: false, reason: "no_window" as const };
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    return { ok: false, reason: "unsupported" as const };
+  try {
+    if (typeof window === "undefined") return { ok: false, reason: "no_window" as const };
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return { ok: false, reason: "unsupported" as const };
+    }
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidPublicKey) return { ok: false, reason: "missing_vapid" as const };
+
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return { ok: false, reason: "permission_denied" as const };
+
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    const subscription =
+      existing ??
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      }));
+
+    const json = subscription.toJSON();
+    const endpoint = json.endpoint;
+    const keys = json.keys ?? {};
+    if (!endpoint || !keys.p256dh || !keys.auth) {
+      return { ok: false, reason: "invalid_subscription" as const };
+    }
+
+    const { error } = await supabase.from("push_subscriptions").upsert(
+      {
+        user_id: userId,
+        endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+      },
+      { onConflict: "user_id,endpoint" }
+    );
+    if (error) return { ok: false, reason: "db_error" as const };
+    return { ok: true as const };
+  } catch {
+    return { ok: false, reason: "subscribe_failed" as const };
   }
-  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  if (!vapidPublicKey) return { ok: false, reason: "missing_vapid" as const };
-
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return { ok: false, reason: "permission_denied" as const };
-
-  const registration = await navigator.serviceWorker.ready;
-  const existing = await registration.pushManager.getSubscription();
-  const subscription =
-    existing ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-    }));
-
-  const json = subscription.toJSON();
-  const endpoint = json.endpoint;
-  const keys = json.keys ?? {};
-  if (!endpoint || !keys.p256dh || !keys.auth) {
-    return { ok: false, reason: "invalid_subscription" as const };
-  }
-
-  const { error } = await supabase.from("push_subscriptions").upsert(
-    {
-      user_id: userId,
-      endpoint,
-      p256dh: keys.p256dh,
-      auth: keys.auth,
-    },
-    { onConflict: "user_id,endpoint" }
-  );
-  if (error) return { ok: false, reason: "db_error" as const };
-  return { ok: true as const };
 }
