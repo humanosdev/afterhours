@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 type ChatRow = {
   id: string;
@@ -474,6 +475,7 @@ export default function ChatPage() {
   };
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-black text-white">
       <div className="sticky top-0 z-20 border-b border-white/10 bg-black/90 px-4 pt-4 pb-3 backdrop-blur">
         <div className="flex items-center justify-between">
@@ -622,5 +624,6 @@ export default function ChatPage() {
         )}
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

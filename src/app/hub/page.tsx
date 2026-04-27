@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Avatar, EmptyState, SectionHeader, SocialCard, StatusBadge, StoryRing } from "@/components/ui";
 import StoryViewerModal, { type StoryViewerGroup } from "@/components/StoryViewerModal";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 /* ---------------- TYPES ---------------- */
 
@@ -441,6 +442,7 @@ const venuesToShow = venueCards.slice(0, 3);
   /* ---------------- UI ---------------- */
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-primary text-text-primary px-4 py-4 space-y-4">
       {/* Header */}
       <div className="flex items-end justify-between">
@@ -701,5 +703,6 @@ const venuesToShow = venueCards.slice(0, 3);
         }}
       />
     </div>
+    </ProtectedRoute>
 );
 }

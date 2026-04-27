@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -128,6 +129,7 @@ useEffect(() => {
   const nameToShow = displayName || username;
 
  return (
+  <ProtectedRoute>
   <div className="min-h-screen bg-black text-white p-6 relative">
     
     {/* HEADER */}
@@ -215,5 +217,6 @@ useEffect(() => {
   <ProfileStoriesGrid userId={userId} />
 </div>
   </div>
+  </ProtectedRoute>
 );
 }

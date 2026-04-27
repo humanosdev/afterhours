@@ -9,6 +9,7 @@ import {
   getMyFriendIds,
   getNotificationPreferences,
 } from "@/lib/notifications";
+import ProtectedRoute from "@/components/ProtectedRoute";
 // Dev venue radii — off by default for MVP (enable locally when debugging zones)
 const SHOW_DEV_RADII = false;
 
@@ -1892,14 +1893,16 @@ useEffect(() => {
 
 export default function Home() {
   return (
-    <Suspense
-      fallback={
-        <div className="grid h-screen w-screen place-items-center bg-primary text-text-secondary">
-          Loading map...
-        </div>
-      }
-    >
-      <MapPageContent />
-    </Suspense>
+    <ProtectedRoute>
+      <Suspense
+        fallback={
+          <div className="grid h-screen w-screen place-items-center bg-primary text-text-secondary">
+            Loading map...
+          </div>
+        }
+      >
+        <MapPageContent />
+      </Suspense>
+    </ProtectedRoute>
   );
 }
