@@ -1,0 +1,40 @@
+import { appConfig } from "@/lib/appConfig";
+
+export default function TermsPage() {
+  return (
+    <div className="min-h-screen bg-black text-white px-6 py-10">
+      <div className="mx-auto max-w-2xl">
+        <h1 className="text-3xl font-semibold">Terms of Service</h1>
+        <p className="mt-3 text-sm text-white/60">
+          Last updated: {new Date().toLocaleDateString()}
+        </p>
+
+        <div className="mt-8 space-y-6 text-sm leading-relaxed text-white/85">
+          <section>
+            <h2 className="text-white font-semibold mb-2">Eligibility</h2>
+            <p>
+              You must be at least {appConfig.minimumAge} years old to use {appConfig.appName}.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-white font-semibold mb-2">Acceptable use</h2>
+            <p>
+              Use {appConfig.appName} respectfully. Harassment, impersonation, abuse, or attempts to misuse
+              real-time location signals are prohibited.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-white font-semibold mb-2">Account responsibility</h2>
+            <p>
+              You are responsible for your account activity and credentials. Contact {appConfig.supportEmail}
+              if your account is compromised.
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
