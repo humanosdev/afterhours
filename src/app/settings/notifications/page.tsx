@@ -25,6 +25,15 @@ export default function NotificationSettingsPage() {
   const [quietStart, setQuietStart] = useState("");
   const [quietEnd, setQuietEnd] = useState("");
   const [uiMsg, setUiMsg] = useState<string | null>(null);
+  const [initialPrefs, setInitialPrefs] = useState<{
+    pushEnabled: boolean;
+    friendActivityEnabled: boolean;
+    venuePopEnabled: boolean;
+    friendRequestEnabled: boolean;
+    storiesEnabled: boolean;
+    quietStart: string;
+    quietEnd: string;
+  } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -57,6 +66,15 @@ export default function NotificationSettingsPage() {
       setStoriesEnabled(data?.stories_enabled ?? true);
       setQuietStart(data?.quiet_hours_start ? String(data.quiet_hours_start).slice(0, 5) : "");
       setQuietEnd(data?.quiet_hours_end ? String(data.quiet_hours_end).slice(0, 5) : "");
+      setInitialPrefs({
+        pushEnabled: data?.push_enabled ?? true,
+        friendActivityEnabled: data?.friend_activity_enabled ?? true,
+        venuePopEnabled: data?.venue_pop_enabled ?? true,
+        friendRequestEnabled: data?.friend_request_enabled ?? true,
+        storiesEnabled: data?.stories_enabled ?? true,
+        quietStart: data?.quiet_hours_start ? String(data.quiet_hours_start).slice(0, 5) : "",
+        quietEnd: data?.quiet_hours_end ? String(data.quiet_hours_end).slice(0, 5) : "",
+      });
       setLoading(false);
     })();
 
@@ -102,6 +120,51 @@ export default function NotificationSettingsPage() {
     }
   }
 
+  const currentPrefs = {
+    pushEnabled,
+    friendActivityEnabled,
+    venuePopEnabled,
+    friendRequestEnabled,
+    storiesEnabled,
+    quietStart,
+    quietEnd,
+  };
+  const hasUnsavedChanges = !!initialPrefs && JSON.stringify(initialPrefs) !== JSON.stringify(currentPrefs);
+
+  async function handleSaveChanges() {
+    if (!userId || saving) return;
+    setUiMsg(null);
+    const wasPushEnabled = initialPrefs?.pushEnabled ?? pushEnabled;
+    let pushWarning: string | null = null;
+
+    // Push registration should only happen when user is enabling push.
+    if (!wasPushEnabled && pushEnabled) {
+      const result = await registerPushSubscription(userId);
+      console.info("push registration result:", result);
+      if (!result.ok) {
+        pushWarning =
+          result.reason === "permission_denied"
+            ? "Push permission is blocked. Enable notifications in browser settings."
+            : result.reason === "unsupported"
+              ? "Push is unsupported here. On iPhone, use Add to Home Screen and open the app from there."
+              : result.reason === "missing_vapid"
+                ? "Push is not configured yet on this deploy."
+                : result.reason === "subscribe_failed"
+                  ? "Push subscription failed on this device. Try from Home Screen app and re-allow notifications."
+                  : result.reason === "db_error"
+                    ? "Push subscription could not be saved."
+                    : "Push could not be enabled on this device.";
+        // Keep the user's preference saved even if subscription failed.
+        // They may resolve permissions/PWA context later and retry without losing settings.
+      }
+    }
+
+    const ok = await save(currentPrefs);
+    if (!ok) return;
+    setInitialPrefs(currentPrefs);
+    setUiMsg(pushWarning ? `${pushWarning} Preference saved.` : "Notification settings saved.");
+  }
+
   if (loading) {
     return <div className="min-h-screen bg-black text-white p-6">Loading…</div>;
   }
@@ -117,54 +180,7 @@ export default function NotificationSettingsPage() {
 
       <div className="mt-6 space-y-3">
         <button
-          onClick={async () => {
-            if (!userId) return;
-            const next = !pushEnabled;
-            setPushEnabled(next);
-            if (next) {
-              const result = await registerPushSubscription(userId);
-              if (!result.ok) {
-                const reasonText =
-                  result.reason === "permission_denied"
-                    ? "Push permission is blocked. Enable notifications in browser settings."
-                    : result.reason === "unsupported"
-                      ? "Push is unsupported here. On iPhone, use Add to Home Screen and open the app from there."
-                      : result.reason === "missing_vapid"
-                        ? "Push is not configured yet on this deploy."
-                        : result.reason === "subscribe_failed"
-                          ? "Push subscription failed on this device. Try from Home Screen app and re-allow notifications."
-                        : result.reason === "db_error"
-                          ? "Push subscription could not be saved."
-                          : "Push could not be enabled on this device.";
-                setUiMsg(reasonText);
-                setPushEnabled(false);
-                await save({
-                  pushEnabled: false,
-                  friendActivityEnabled,
-                  venuePopEnabled,
-                  friendRequestEnabled,
-                  storiesEnabled,
-                  quietStart,
-                  quietEnd,
-                });
-                return;
-              }
-            }
-            const ok = await save({
-              pushEnabled: next,
-              friendActivityEnabled,
-              venuePopEnabled,
-              friendRequestEnabled,
-              storiesEnabled,
-              quietStart,
-              quietEnd,
-            });
-            if (ok) {
-              setUiMsg(null);
-            } else {
-              setPushEnabled(!next);
-            }
-          }}
+          onClick={() => setPushEnabled((v) => !v)}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -182,20 +198,7 @@ export default function NotificationSettingsPage() {
           </div>
         </button>
         <button
-          onClick={async () => {
-            const next = !friendActivityEnabled;
-            setFriendActivityEnabled(next);
-            const ok = await save({
-              pushEnabled,
-              friendActivityEnabled: next,
-              venuePopEnabled,
-              friendRequestEnabled,
-              storiesEnabled,
-              quietStart,
-              quietEnd,
-            });
-            if (!ok) setFriendActivityEnabled(!next);
-          }}
+          onClick={() => setFriendActivityEnabled((v) => !v)}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -214,20 +217,7 @@ export default function NotificationSettingsPage() {
         </button>
 
         <button
-          onClick={async () => {
-            const next = !venuePopEnabled;
-            setVenuePopEnabled(next);
-            const ok = await save({
-              pushEnabled,
-              friendActivityEnabled,
-              venuePopEnabled: next,
-              friendRequestEnabled,
-              storiesEnabled,
-              quietStart,
-              quietEnd,
-            });
-            if (!ok) setVenuePopEnabled(!next);
-          }}
+          onClick={() => setVenuePopEnabled((v) => !v)}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -246,20 +236,7 @@ export default function NotificationSettingsPage() {
         </button>
 
         <button
-          onClick={async () => {
-            const next = !storiesEnabled;
-            setStoriesEnabled(next);
-            const ok = await save({
-              pushEnabled,
-              friendActivityEnabled,
-              venuePopEnabled,
-              friendRequestEnabled,
-              storiesEnabled: next,
-              quietStart,
-              quietEnd,
-            });
-            if (!ok) setStoriesEnabled(!next);
-          }}
+          onClick={() => setStoriesEnabled((v) => !v)}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -274,20 +251,7 @@ export default function NotificationSettingsPage() {
         </button>
 
         <button
-          onClick={async () => {
-            const next = !friendRequestEnabled;
-            setFriendRequestEnabled(next);
-            const ok = await save({
-              pushEnabled,
-              friendActivityEnabled,
-              venuePopEnabled,
-              friendRequestEnabled: next,
-              storiesEnabled,
-              quietStart,
-              quietEnd,
-            });
-            if (!ok) setFriendRequestEnabled(!next);
-          }}
+          onClick={() => setFriendRequestEnabled((v) => !v)}
           className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
         >
           <div className="flex items-center justify-between">
@@ -308,41 +272,25 @@ export default function NotificationSettingsPage() {
             <input
               type="time"
               value={quietStart}
-              onChange={async (e) => {
-                const next = e.target.value;
-                const ok = await save({
-                  pushEnabled,
-                  friendActivityEnabled,
-                  venuePopEnabled,
-                  friendRequestEnabled,
-                  storiesEnabled,
-                  quietStart: next,
-                  quietEnd,
-                });
-                if (ok) setQuietStart(next);
-              }}
+              onChange={(e) => setQuietStart(e.target.value)}
               className="rounded-xl border border-white/10 bg-black/20 p-2 text-sm outline-none"
             />
             <input
               type="time"
               value={quietEnd}
-              onChange={async (e) => {
-                const next = e.target.value;
-                const ok = await save({
-                  pushEnabled,
-                  friendActivityEnabled,
-                  venuePopEnabled,
-                  friendRequestEnabled,
-                  storiesEnabled,
-                  quietStart,
-                  quietEnd: next,
-                });
-                if (ok) setQuietEnd(next);
-              }}
+              onChange={(e) => setQuietEnd(e.target.value)}
               className="rounded-xl border border-white/10 bg-black/20 p-2 text-sm outline-none"
             />
           </div>
         </div>
+        <button
+          type="button"
+          onClick={handleSaveChanges}
+          disabled={saving || !hasUnsavedChanges}
+          className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-45"
+        >
+          {saving ? "Saving..." : "Save changes"}
+        </button>
       </div>
 
       {uiMsg ? <div className="mt-4 text-xs text-amber-300">{uiMsg}</div> : null}
