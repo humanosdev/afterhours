@@ -369,6 +369,7 @@ export default function UserProfile() {
 
   const them = profile.id;
   const profileName = profile.display_name || `@${profile.username}`;
+  const nameUnderAvatar = profile.display_name?.trim() || profile.username;
   const profileAvatar = profile.avatar_url?.trim() ? profile.avatar_url : null;
   const isOwnProfile = !!me && me === them;
   const isPrivate = !!profile.is_private;
@@ -427,16 +428,20 @@ export default function UserProfile() {
   return (
     <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
       <div className="mx-auto flex w-full flex-1 flex-col">
-        <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+        <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start gap-x-1 border-b border-white/[0.08] pb-3 pt-0.5">
           <button
             type="button"
             onClick={goBackSafe}
-            className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/85"
+            className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/85 justify-self-start"
             aria-label="Go back"
           >
             ←
           </button>
-          <div className="relative">
+          <div className="flex min-w-0 items-center justify-center gap-2 px-1">
+            <h1 className="shrink-0 text-[17px] font-bold tracking-tight">Profile</h1>
+            <span className="truncate text-[14px] font-semibold text-white/45">@{profile.username}</span>
+          </div>
+          <div className="relative flex justify-end">
             <button
               type="button"
               onClick={(e) => {
@@ -509,22 +514,62 @@ export default function UserProfile() {
         </div>
 
         <div className="pt-5">
-          <div className="flex items-start gap-3.5">
-            <button type="button" onClick={openMomentsTab} className="shrink-0" aria-label="Open active Moment or Moments tab">
-              <StoryRing
-                src={profileAvatar}
-                alt={`${profile.username} avatar`}
-                fallbackText={profileName}
-                size="xl"
-                active={hasLiveMoment}
-              />
-            </button>
-            <div className="min-w-0 flex-1 pt-1">
-              <p className="truncate text-[1.375rem] font-bold leading-tight tracking-tight">{profileName}</p>
-              <p className="mt-0.5 truncate text-[14px] text-white/48">@{profile.username}</p>
-              <p className="mt-2 inline-flex max-w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] font-medium text-white/65 ring-1 ring-white/[0.08]">
-                {activeLabel}
+          <div className="flex items-start gap-4 sm:gap-5">
+            <div className="flex w-[5.25rem] shrink-0 flex-col items-center sm:w-24">
+              <button type="button" onClick={openMomentsTab} className="shrink-0" aria-label="Open active Moment or Moments tab">
+                <StoryRing
+                  src={profileAvatar}
+                  alt={`${profile.username} avatar`}
+                  fallbackText={profileName}
+                  size="xl"
+                  active={hasLiveMoment}
+                />
+              </button>
+              <p className="mt-2.5 w-full max-w-[11rem] text-center text-[0.9375rem] font-semibold leading-snug tracking-tight text-white line-clamp-2">
+                {nameUnderAvatar}
               </p>
+            </div>
+            <div className="flex min-h-[5.5rem] min-w-0 flex-1 flex-col justify-center gap-3 sm:min-h-[6rem]">
+              <div className="grid w-full grid-cols-4 gap-x-1 text-center sm:gap-x-2">
+                <button
+                  type="button"
+                  onClick={openFriendsViewer}
+                  disabled={shouldHidePrivateProfile}
+                  className="min-w-0 px-0.5 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">
+                    {shouldHidePrivateProfile ? "—" : friendCount}
+                  </p>
+                  <p className="mt-1 text-[11px] text-white/48">Friends</p>
+                </button>
+                <div className="min-w-0 px-0.5">
+                  <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">
+                    {shouldHidePrivateProfile ? "—" : places.length}
+                  </p>
+                  <p className="mt-1 text-[11px] text-white/48">Places</p>
+                </div>
+                <div className="min-w-0 px-0.5">
+                  <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">
+                    {shouldHidePrivateProfile ? "—" : momentsCount}
+                  </p>
+                  <p className="mt-1 text-[11px] text-white/48">Moments</p>
+                </div>
+                <div className="min-w-0 px-0.5">
+                  <p className="truncate text-lg font-semibold text-white sm:text-xl">
+                    {shouldHidePrivateProfile ? "—" : statusValue}
+                  </p>
+                  <p className="mt-1 text-[11px] text-white/48">Status</p>
+                </div>
+              </div>
+              {!shouldHidePrivateProfile ? (
+                <p className="w-full max-w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium leading-snug text-white/65 ring-1 ring-white/[0.08] sm:text-[12px]">
+                  {activeLabel}
+                </p>
+              ) : (
+                <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium text-white/45 ring-1 ring-white/[0.08] sm:text-[12px]">
+                  Private account
+                </p>
+              )}
             </div>
           </div>
 
@@ -535,28 +580,6 @@ export default function UserProfile() {
               <p className="mt-4 text-[14px] text-white/38">No bio yet.</p>
             )
           ) : null}
-
-          <div className="mt-5 flex justify-between border-y border-white/[0.08] py-3.5 text-center">
-            <button type="button" onClick={openFriendsViewer} disabled={shouldHidePrivateProfile} className="min-w-0 flex-1 px-1 disabled:cursor-not-allowed disabled:opacity-45">
-              <p className="text-xl font-semibold tabular-nums text-white">{friendCount}</p>
-              <p className="mt-0.5 text-[12px] text-white/48">Friends</p>
-            </button>
-            <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
-            <div className="min-w-0 flex-1 px-1">
-              <p className="text-xl font-semibold tabular-nums text-white">{shouldHidePrivateProfile ? 0 : places.length}</p>
-              <p className="mt-0.5 text-[12px] text-white/48">Places</p>
-            </div>
-            <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
-            <div className="min-w-0 flex-1 px-1">
-              <p className="text-xl font-semibold tabular-nums text-white">{shouldHidePrivateProfile ? 0 : momentsCount}</p>
-              <p className="mt-0.5 text-[12px] text-white/48">Moments</p>
-            </div>
-            <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
-            <div className="min-w-0 flex-1 px-1">
-              <p className="truncate text-xl font-semibold text-white">{shouldHidePrivateProfile ? "—" : statusValue}</p>
-              <p className="mt-0.5 text-[12px] text-white/48">Status</p>
-            </div>
-          </div>
 
           {!shouldHidePrivateProfile ? (
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -638,8 +661,8 @@ export default function UserProfile() {
 
         {!shouldHidePrivateProfile ? (
           <>
-            <div className="mt-6 border-b border-white/[0.08]">
-              <nav className="-mb-px flex gap-6">
+            <div className="mt-5 border-b border-white/[0.08]">
+              <nav className="-mb-px flex gap-5 sm:gap-6">
                 {profileTabs.map((tab) => (
                   <button
                     key={tab.key}
@@ -662,8 +685,8 @@ export default function UserProfile() {
               {activeTab === "moments" ? (
                 <ProfileStoriesGrid
                   userId={profile.id}
-                  emptyLabel="No moments yet"
-                  emptySubtitle="When they post, it’ll show up here."
+                  emptyLabel="Nothing posted yet"
+                  emptySubtitle="When they drop a moment, it lands here."
                 />
               ) : null}
 

@@ -14,6 +14,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import {
   createNotification,
@@ -23,6 +24,41 @@ import {
 import ProtectedRoute from "@/components/ProtectedRoute";
 // Dev venue radii — off by default for MVP (enable locally when debugging zones)
 const SHOW_DEV_RADII = false;
+
+const MAP_STYLE_DAY = "mapbox://styles/mapbox/light-v11";
+const MAP_STYLE_NIGHT = "mapbox://styles/mapbox/dark-v11";
+
+/** Local device clock: light map 7:00–17:59, night from 18:00 until before 7:00. */
+function localHourIsMapDaytime(date = new Date()): boolean {
+  const h = date.getHours();
+  return h >= 7 && h < 18;
+}
+
+function mapStyleUrlForDayMode(day: boolean): string {
+  return day ? MAP_STYLE_DAY : MAP_STYLE_NIGHT;
+}
+
+function applyMapAtmosphereForMode(m: mapboxgl.Map, dayMode: boolean) {
+  if (dayMode) {
+    m.setFog({
+      range: [1, 10],
+      color: "#e8e4df",
+      "high-color": "#a8c4e8",
+      "horizon-blend": 0.28,
+      "space-color": "#c8dcf5",
+      "star-intensity": 0,
+    });
+  } else {
+    m.setFog({
+      range: [0.85, 8],
+      color: "#14141c",
+      "high-color": "#06060c",
+      "horizon-blend": 0.1,
+      "space-color": "#000000",
+      "star-intensity": 0.62,
+    });
+  }
+}
 
 /* ================= TYPES ================= */
 
@@ -298,7 +334,8 @@ type VenuePerson = {
 const ONLINE_WINDOW_MS = 5 * 60_000;
 const RECENT_VENUE_WINDOW_MS = 120 * 60_000;
 const AUTO_TOUR_PAUSE_MS = 2200;
-const AUTO_TOUR_IDLE_GRACE_MS = 2200;
+/** Min time since last map/page interaction before auto venue cycling may run (still 2s between hops once eligible). */
+const AUTO_TOUR_IDLE_GRACE_MS = 12_000;
 const AUTO_TOUR_ARROW_GRACE_MS = 2200;
 
 
@@ -313,6 +350,9 @@ const AUTO_TOUR_ARROW_GRACE_MS = 2200;
   const [myGhostMode, setMyGhostMode] = useState(false);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [mapReady, setMapReady] = useState(false);
+  const [mapDayMode, setMapDayMode] = useState(false);
+  const [mapStyleEpoch, setMapStyleEpoch] = useState(0);
+  const lastAppliedMapStyleRef = useRef<string | null>(null);
 
   const [friendsById, setFriendsById] = useState<Record<string, true>>({});
   useEffect(() => {
@@ -656,23 +696,77 @@ useEffect(() => {
   if (!mapRef.current || map.current) return;
 
   mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
+  const initialDay = localHourIsMapDaytime();
+  const styleUrl = mapStyleUrlForDayMode(initialDay);
+  setMapDayMode(initialDay);
+  lastAppliedMapStyleRef.current = styleUrl;
+
   const m = new mapboxgl.Map({
     container: mapRef.current,
-    style: "mapbox://styles/mapbox/dark-v11",
+    style: styleUrl,
     center: [-75.1636, 39.9526], // stable default
     zoom: 14,
   });
 
   map.current = m;
 
-  m.on("load", () => setMapReady(true));
+  m.on("load", () => {
+    applyMapAtmosphereForMode(m, initialDay);
+    setMapReady(true);
+  });
   m.on("zoomend", () => setMapZoom(m.getZoom()));
 
   return () => {
+    lastAppliedMapStyleRef.current = null;
     m.remove();
     map.current = null;
   };
 }, []);
+
+  useEffect(() => {
+    const tick = () => setMapDayMode(localHourIsMapDaytime());
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+
+    const url = mapStyleUrlForDayMode(mapDayMode);
+    if (lastAppliedMapStyleRef.current === url) return;
+
+    lastAppliedMapStyleRef.current = url;
+    const targetDay = mapDayMode;
+
+    let cancelled = false;
+    const onStyleLoad = () => {
+      m.off("style.load", onStyleLoad);
+      if (cancelled) return;
+      applyMapAtmosphereForMode(m, targetDay);
+      setMapStyleEpoch((e) => e + 1);
+    };
+
+    m.on("style.load", onStyleLoad);
+    m.setStyle(url);
+
+    return () => {
+      cancelled = true;
+      try {
+        m.off("style.load", onStyleLoad);
+      } catch {
+        /* map destroyed */
+      }
+    };
+  }, [mapDayMode, mapReady]);
 
 /* ---------------- FOLLOW USER ---------------- */
 
@@ -1354,7 +1448,7 @@ useEffect(() => {
         /* map teardown */
       }
     };
-  }, [mapReady]);
+  }, [mapReady, mapStyleEpoch]);
 
   /* ---------------- VENUE HEAT FLOORS: data only (no layer churn) ---------------- */
   useEffect(() => {
@@ -1411,6 +1505,7 @@ useEffect(() => {
     friendsById,
     meId,
     mapReady,
+    mapStyleEpoch,
     hiddenIds,
     activeCheckpoint?.id,
     arrivalPulseVenueId,
@@ -2047,82 +2142,87 @@ useEffect(() => {
     setCheckpointIndex((prev) => (prev + 1) % checkpoints.length);
   };
 
+  const ghostToggle =
+    meId ? (
+      <button
+        type="button"
+        onClick={async () => {
+          const now = Date.now();
+          setLastPageInteractionAt(now);
+          setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+          const next = !myGhostMode;
+          setMyGhostMode(next);
+          await supabase.from("profiles").update({ ghost_mode: next }).eq("id", meId);
+        }}
+        className={`self-end rounded-full border px-3 py-1.5 text-[11px] font-semibold backdrop-blur transition ${
+          myGhostMode
+            ? "border-violet-300/45 bg-violet-500/25 text-violet-100"
+            : "border-white/15 bg-black/55 text-white/85"
+        }`}
+      >
+        {myGhostMode ? "Ghost on" : "Ghost off"}
+      </button>
+    ) : null;
+
     return (
     <div
       className="w-screen h-screen relative"
       onPointerDown={() => setLastPageInteractionAt(Date.now())}
     >
       <div ref={mapRef} className="w-full h-full" />
-      <aside className="absolute right-3 top-14 z-20 w-[min(92vw,390px)] rounded-3xl border border-white/14 bg-[#090d16e6] p-2.5 backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-2">
-          <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
-            Categories
-          </p>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!meId) return;
-              const now = Date.now();
-              setLastPageInteractionAt(now);
-              setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
-              const next = !myGhostMode;
-              setMyGhostMode(next);
-              await supabase.from("profiles").update({ ghost_mode: next }).eq("id", meId);
-            }}
-            className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
-              myGhostMode
-                ? "border-violet-300/45 bg-violet-500/20 text-violet-100"
-                : "border-white/15 bg-white/5 text-white/80"
-            }`}
-          >
-            {myGhostMode ? "Ghost On" : "Ghost Off"}
-          </button>
-        </div>
+      <div className="absolute right-3 z-20 flex w-[min(90vw,360px)] flex-col items-stretch gap-2 top-[calc(env(safe-area-inset-top,0px)+52px)]">
+        <aside className="rounded-2xl border border-white/[0.12] bg-[#090d16ee] p-2 backdrop-blur-xl">
+          <div className="scrollbar-none flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
+            {categoryFilters.map((filter) => {
+              const Icon = filter.icon;
+              const active = activeCategory === filter.key;
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setActiveCategory(filter.key)}
+                  className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
+                  style={{
+                    borderColor: active ? `${filter.accent}99` : "rgba(255,255,255,0.08)",
+                    background: active ? `${filter.accent}28` : "rgba(255,255,255,0.015)",
+                    color: active ? filter.accent : "rgba(255,255,255,0.88)",
+                  }}
+                  aria-label={`Filter by ${filter.label}`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Icon size={11} strokeWidth={active ? 2.25 : 1.85} className="shrink-0" />
+                    <span>{filter.label}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
 
-        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5">
-          {categoryFilters.map((filter) => {
-            const Icon = filter.icon;
-            const active = activeCategory === filter.key;
-            return (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => setActiveCategory(filter.key)}
-                className="shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
-                style={{
-                  borderColor: active ? `${filter.accent}99` : "rgba(255,255,255,0.08)",
-                  background: active ? `${filter.accent}28` : "rgba(255,255,255,0.015)",
-                  color: active ? filter.accent : "rgba(255,255,255,0.88)",
-                }}
-                aria-label={`Filter by ${filter.label}`}
-              >
-                <div className="flex items-center gap-1">
-                  <Icon size={11} strokeWidth={active ? 2.25 : 1.85} className="shrink-0" />
-                  <span>{filter.label}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </aside>
-
-      <button
-        type="button"
-        onClick={() => setPanelMode((prev) => (prev === "friends" ? "categories" : "friends"))}
-        className={`absolute right-3 z-20 rounded-full border px-3 py-2 text-xs font-semibold backdrop-blur transition ${
-          panelMode === "friends"
-            ? "border-sky-300/45 bg-sky-500/20 text-sky-100 shadow-[0_0_18px_rgba(56,189,248,0.35)]"
-            : "border-white/15 bg-black/55 text-white/85"
-        } top-[154px]`}
-        aria-label={panelMode === "friends" ? "Hide friends sidebar" : "Show friends sidebar"}
-      >
-        Friends
-      </button>
-
-      {panelMode === "friends" ? (
-        <aside
-          className="absolute right-3 top-[194px] z-20 w-[108px] min-h-[172px] max-h-[290px] overflow-y-auto rounded-2xl border border-sky-300/20 bg-[#070c16d9] p-1.5 backdrop-blur-xl"
+        <button
+          type="button"
+          onClick={() => setPanelMode((prev) => (prev === "friends" ? "categories" : "friends"))}
+          className={`self-end inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold backdrop-blur transition ${
+            panelMode === "friends"
+              ? "border-sky-300/45 bg-sky-500/20 text-sky-100 shadow-[0_0_18px_rgba(56,189,248,0.35)]"
+              : "border-white/15 bg-black/55 text-white/85"
+          }`}
+          aria-expanded={panelMode === "friends"}
+          aria-label={panelMode === "friends" ? "Hide friends list" : "Show friends list"}
         >
+          Friends
+          <ChevronDown
+            size={14}
+            strokeWidth={2}
+            className={`shrink-0 opacity-80 transition-transform duration-200 ${panelMode === "friends" ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+        </button>
+
+        {panelMode === "friends" ? ghostToggle : null}
+
+        {panelMode === "friends" ? (
+          <aside className="w-[112px] min-h-[160px] max-h-[min(42vh,280px)] self-end overflow-y-auto rounded-xl border border-sky-300/20 bg-[#070c16ee] p-1.5 backdrop-blur-xl">
           <div className="space-y-1.5">
             {rightSidebarFriends.map((f) => {
               const label =
@@ -2171,7 +2271,9 @@ useEffect(() => {
             ) : null}
           </div>
         </aside>
-      ) : null}
+        ) : null}
+        {panelMode !== "friends" ? ghostToggle : null}
+      </div>
       {!selectedVenue ? (
       <div
         className="absolute left-1/2 z-20 flex w-[min(92vw,460px)] -translate-x-1/2 items-center justify-between gap-2 rounded-full border border-white/15 bg-black/60 px-2.5 py-1.5 backdrop-blur"
@@ -2217,8 +2319,8 @@ useEffect(() => {
         <section
           className="absolute inset-x-0 bottom-0 z-30 h-[74svh] max-h-[760px] overflow-y-auto rounded-t-3xl border-t border-white/15 bg-[#06070ddd] text-white shadow-[0_-18px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl md:h-[70svh]"
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+18px)] pt-3">
-            <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="mx-auto flex w-full max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+16px)] pt-2.5">
+            <div className="mb-2.5 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-base font-semibold tracking-tight">{selectedVenue.name}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
@@ -2244,7 +2346,7 @@ useEffect(() => {
               </button>
             </div>
             <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-2.5">
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
                   Venue
                 </div>
@@ -2253,10 +2355,10 @@ useEffect(() => {
                   <img
                     src={selectedVenue.image_url || selectedVenue.photo_url || selectedVenue.cover_image_url || ""}
                     alt={selectedVenue.name}
-                    className="h-[172px] w-full rounded-xl border border-white/10 object-cover"
+                    className="h-[140px] w-full rounded-[12px] border border-white/10 object-cover"
                   />
                 ) : (
-                  <div className="grid h-[172px] place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-violet-500/12 via-sky-500/8 to-teal-400/10 text-center">
+                  <div className="grid h-[140px] place-items-center rounded-[12px] border border-white/10 bg-gradient-to-br from-violet-500/12 via-sky-500/8 to-teal-400/10 text-center">
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-white/85">{selectedVenue.name}</p>
                       <p className="text-xs text-white/50">Venue photo coming soon</p>
@@ -2264,7 +2366,7 @@ useEffect(() => {
                   </div>
                 )}
               </div>
-              <div className="min-h-0 rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="min-h-0 rounded-xl border border-white/[0.08] bg-white/[0.04] p-2.5">
                 <div className="mb-2 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-xl border border-pink-300/20 bg-pink-500/10 px-3 py-2">
                     <p className="text-xs text-white/60">Inside</p>

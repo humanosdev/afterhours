@@ -185,6 +185,7 @@ export default function ProfilePage() {
   }
 
   const nameToShow = displayName || username || "You";
+  const nameUnderAvatar = displayName?.trim() || username || "You";
   const hasLiveMoment = activeMomentsCount > 0;
   const activeLabel = venueText.startsWith("At ")
     ? venueText
@@ -212,9 +213,14 @@ export default function ProfilePage() {
     <ProtectedRoute>
       <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
         <div className="mx-auto flex w-full flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-            <h1 className="text-[17px] font-bold tracking-tight">Profile</h1>
-            <div className="relative">
+          <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[17px] font-bold tracking-tight">Profile</h1>
+              <p className="mt-0.5 truncate text-[14px] font-semibold text-white/45">
+                @{username ?? "user"}
+              </p>
+            </div>
+            <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setMenuOpen(!menuOpen)}
@@ -251,25 +257,50 @@ export default function ProfilePage() {
           </div>
 
           <div className="pt-5">
-            <div className="flex items-start gap-3.5">
-              <button
-                type="button"
-                onClick={openMomentsTab}
-                className="shrink-0"
-                aria-label="Open active Moment or Moments tab"
-              >
-                <StoryRing
-                  src={avatarUrl}
-                  alt="profile avatar"
-                  fallbackText={nameToShow}
-                  size="xl"
-                  active={hasLiveMoment}
-                />
-              </button>
-              <div className="min-w-0 flex-1 pt-1">
-                <p className="truncate text-[1.375rem] font-bold leading-tight tracking-tight">{nameToShow}</p>
-                <p className="mt-0.5 truncate text-[14px] text-white/48">@{username ?? "user"}</p>
-                <p className="mt-2 inline-flex max-w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] font-medium text-white/65 ring-1 ring-white/[0.08]">
+            <div className="flex items-start gap-4 sm:gap-5">
+              <div className="flex w-[5.25rem] shrink-0 flex-col items-center sm:w-24">
+                <button
+                  type="button"
+                  onClick={openMomentsTab}
+                  className="shrink-0"
+                  aria-label="Open active Moment or Moments tab"
+                >
+                  <StoryRing
+                    src={avatarUrl}
+                    alt="profile avatar"
+                    fallbackText={nameToShow}
+                    size="xl"
+                    active={hasLiveMoment}
+                  />
+                </button>
+                <p className="mt-2.5 w-full max-w-[11rem] text-center text-[0.9375rem] font-semibold leading-snug tracking-tight text-white line-clamp-2">
+                  {nameUnderAvatar}
+                </p>
+              </div>
+              <div className="flex min-h-[5.5rem] min-w-0 flex-1 flex-col justify-center gap-3 sm:min-h-[6rem]">
+                <div className="grid w-full grid-cols-4 gap-x-1 text-center sm:gap-x-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/profile/friends")}
+                    className="min-w-0 px-0.5"
+                  >
+                    <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{friendCount}</p>
+                    <p className="mt-1 text-[11px] text-white/48">Friends</p>
+                  </button>
+                  <div className="min-w-0 px-0.5">
+                    <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{places.length}</p>
+                    <p className="mt-1 text-[11px] text-white/48">Places</p>
+                  </div>
+                  <div className="min-w-0 px-0.5">
+                    <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{momentsCount}</p>
+                    <p className="mt-1 text-[11px] text-white/48">Moments</p>
+                  </div>
+                  <div className="min-w-0 px-0.5">
+                    <p className="truncate text-lg font-semibold text-white sm:text-xl">{statusValue}</p>
+                    <p className="mt-1 text-[11px] text-white/48">Status</p>
+                  </div>
+                </div>
+                <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium leading-snug text-white/65 ring-1 ring-white/[0.08] sm:text-[12px]">
                   {activeLabel}
                 </p>
               </div>
@@ -280,28 +311,6 @@ export default function ProfilePage() {
             ) : (
               <p className="mt-4 text-[14px] text-white/38">Add a line so people know your vibe.</p>
             )}
-
-            <div className="mt-5 flex justify-between border-y border-white/[0.08] py-3.5 text-center">
-              <button type="button" onClick={() => router.push("/profile/friends")} className="min-w-0 flex-1 px-1">
-                <p className="text-xl font-semibold tabular-nums text-white">{friendCount}</p>
-                <p className="mt-0.5 text-[12px] text-white/48">Friends</p>
-              </button>
-              <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
-              <div className="min-w-0 flex-1 px-1">
-                <p className="text-xl font-semibold tabular-nums text-white">{places.length}</p>
-                <p className="mt-0.5 text-[12px] text-white/48">Places</p>
-              </div>
-              <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
-              <div className="min-w-0 flex-1 px-1">
-                <p className="text-xl font-semibold tabular-nums text-white">{momentsCount}</p>
-                <p className="mt-0.5 text-[12px] text-white/48">Moments</p>
-              </div>
-              <div className="w-px shrink-0 self-stretch bg-white/[0.08]" aria-hidden />
-              <div className="min-w-0 flex-1 px-1">
-                <p className="truncate text-xl font-semibold text-white">{statusValue}</p>
-                <p className="mt-0.5 text-[12px] text-white/48">Status</p>
-              </div>
-            </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
@@ -328,8 +337,8 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="mt-6 border-b border-white/[0.08]">
-            <nav className="-mb-px flex gap-6">
+          <div className="mt-5 border-b border-white/[0.08]">
+            <nav className="-mb-px flex gap-5 sm:gap-6">
               {profileTabs.map((tab) => (
                 <button
                   key={tab.key}
@@ -352,8 +361,8 @@ export default function ProfilePage() {
             {activeTab === "moments" ? (
               <ProfileStoriesGrid
                 userId={userId}
-                emptyLabel="No moments yet"
-                emptySubtitle="When you post, they’ll show up here."
+                emptyLabel="Your grid is waiting"
+                emptySubtitle="Drop a moment from tonight — it shows up here first."
               />
             ) : null}
 

@@ -71,3 +71,17 @@ body {
     transform: translateY(0) scale(1);
   }
 }
+
+/* Mapbox: tuck logo + attribution below the map frame (under bottom nav / home bar). */
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-bottom-right {
+  bottom: calc(env(safe-area-inset-bottom, 0px) - 4.5rem) !important;
+}
+.mapboxgl-ctrl-attrib {
+  font-size: 10px !important;
+  line-height: 1.25 !important;
+  opacity: 0.82;
+}
+.mapboxgl-ctrl-attrib-button {
+  opacity: 0.85;
+}
