@@ -298,7 +298,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     let mode: "none" | "top" | "bottom" = "none";
     let didTrigger = false;
     let lastTriggerAt = 0;
-    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let reloadTimer: number | null = null;
 
     const atTop = () => window.scrollY <= 2;
     const atBottom = () =>
@@ -354,7 +354,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("touchcancel", onTouchEnd);
-      if (reloadTimer) clearTimeout(reloadTimer);
+      if (reloadTimer !== null) window.clearTimeout(reloadTimer);
     };
   }, [pullRefreshEnabled]);
 
