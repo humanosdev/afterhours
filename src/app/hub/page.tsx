@@ -287,6 +287,7 @@ export default function HubPage() {
           };
         })
         .filter((s) => !s.is_share)
+        .filter((s) => !!s.expires_at)
         .filter((s) => !!s.media_url)
         .filter((s) => {
           const createdMs = new Date(s.created_at).getTime();

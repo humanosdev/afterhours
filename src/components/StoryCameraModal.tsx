@@ -203,7 +203,16 @@ export default function StoryCameraModal({
     insertError = firstAttempt.error;
 
     if (insertError && String(insertError.message ?? "").includes("media_url")) {
-      const secondAttempt = await supabase.from("stories").insert(basePayload);
+      const secondAttempt = await supabase.from("stories").insert(
+        mode === "shares"
+          ? {
+              ...basePayload,
+              is_share: true,
+              share_visible: true,
+              share_hidden: false,
+            }
+          : basePayload
+      );
       insertError = secondAttempt.error;
     }
 
