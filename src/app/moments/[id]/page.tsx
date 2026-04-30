@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Avatar } from "@/components/ui";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { formatRelativeTime } from "@/lib/time";
 
 type ViewerComment = {
   id: string;
@@ -19,11 +20,16 @@ type MomentRow = {
   user_id: string;
   media_url: string;
   created_at: string;
+  is_share?: boolean;
+  share_visible?: boolean;
+  share_hidden?: boolean;
 };
 
 export default function MomentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const archiveView = searchParams.get("view") === "archive";
   const [moment, setMoment] = useState<MomentRow | null>(null);
   const [owner, setOwner] = useState<{ username: string | null; avatar_url: string | null } | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
@@ -40,17 +46,36 @@ export default function MomentDetailPage() {
       } = await supabase.auth.getUser();
       setMeId(user?.id ?? null);
 
-      const { data: m } = await supabase
+      const preferredMoment = await supabase
         .from("stories")
-        .select("id, user_id, image_url, created_at")
+        .select("id, user_id, image_url, created_at, is_share, share_visible, share_hidden")
         .eq("id", id)
         .maybeSingle();
+      const fallbackMoment = preferredMoment.error
+        ? await supabase
+            .from("stories")
+            .select("id, user_id, image_url, created_at")
+            .eq("id", id)
+            .maybeSingle()
+        : null;
+      const m = (preferredMoment.data ??
+        (fallbackMoment?.data
+          ? {
+              ...fallbackMoment.data,
+              is_share: false,
+              share_visible: false,
+              share_hidden: false,
+            }
+          : null)) as any;
       if (!m) return;
       setMoment({
         id: m.id,
         user_id: m.user_id,
         media_url: m.image_url,
         created_at: m.created_at,
+        is_share: !!m.is_share,
+        share_visible: !!m.share_visible,
+        share_hidden: !!m.share_hidden,
       });
 
       const [{ data: ownerRow }, likesRes, likedRes, commentsRes] = await Promise.all([
@@ -59,7 +84,9 @@ export default function MomentDetailPage() {
         user?.id
           ? supabase.from("story_likes").select("id").eq("story_id", m.id).eq("user_id", user.id).maybeSingle()
           : Promise.resolve({ data: null } as any),
-        supabase.from("story_comments").select("id, user_id, content").eq("story_id", m.id).order("created_at", { ascending: true }),
+        archiveView
+          ? Promise.resolve({ data: [] } as any)
+          : supabase.from("story_comments").select("id, user_id, content").eq("story_id", m.id).order("created_at", { ascending: true }),
       ]);
 
       setOwner({
@@ -92,15 +119,11 @@ export default function MomentDetailPage() {
         }))
       );
     })();
-  }, [id]);
+  }, [id, archiveView]);
 
   const relativeTime = useMemo(() => {
     if (!moment?.created_at) return "";
-    const ms = Date.now() - new Date(moment.created_at).getTime();
-    const mins = Math.max(0, Math.floor(ms / 60000));
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m`;
-    return `${Math.floor(mins / 60)}h`;
+    return formatRelativeTime(moment.created_at);
   }, [moment?.created_at]);
 
   const toggleLike = async () => {
@@ -143,6 +166,8 @@ export default function MomentDetailPage() {
 
   const deleteMoment = async () => {
     if (!moment || !meId || moment.user_id !== meId) return;
+    const confirmed = window.confirm("Delete this Moment? This can’t be undone.");
+    if (!confirmed) return;
     const { error } = await supabase
       .from("stories")
       .delete()
@@ -153,15 +178,74 @@ export default function MomentDetailPage() {
     router.back();
   };
 
+  const toggleShareVisibility = async () => {
+    if (!moment || !meId || moment.user_id !== meId || !moment.is_share) return;
+    const next = !moment.share_visible;
+    const { error } = await supabase
+      .from("stories")
+      .update({ share_visible: next })
+      .eq("id", moment.id)
+      .eq("user_id", meId);
+    if (error) {
+      alert("Could not update share visibility.");
+      return;
+    }
+    setMoment((prev) => (prev ? { ...prev, share_visible: next } : prev));
+    window.dispatchEvent(new Event("story-posted"));
+    setMenuOpen(false);
+  };
+
+  const toggleHideShare = async () => {
+    if (!moment || !meId || moment.user_id !== meId || !moment.is_share) return;
+    const next = !moment.share_hidden;
+    const { error } = await supabase
+      .from("stories")
+      .update({ share_hidden: next })
+      .eq("id", moment.id)
+      .eq("user_id", meId);
+    if (error) {
+      alert("Could not update hidden status.");
+      return;
+    }
+    setMoment((prev) => (prev ? { ...prev, share_hidden: next } : prev));
+    window.dispatchEvent(new Event("story-posted"));
+    setMenuOpen(false);
+  };
+
+  const addMomentToShares = async () => {
+    if (!moment || !meId || moment.user_id !== meId || moment.is_share) return;
+    const { error } = await supabase
+      .from("stories")
+      .update({ is_share: true, share_visible: true, share_hidden: false })
+      .eq("id", moment.id)
+      .eq("user_id", meId);
+    if (error) {
+      alert("Could not add this moment to Shares.");
+      return;
+    }
+    setMoment((prev) =>
+      prev
+        ? { ...prev, is_share: true, share_visible: true, share_hidden: false }
+        : prev
+    );
+    window.dispatchEvent(new Event("story-posted"));
+    setMenuOpen(false);
+  };
+
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-black text-white">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+      <div className="min-h-[100dvh] bg-black text-white">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
           <button type="button" onClick={() => router.back()} className="text-sm text-white/80">
             ← Back
           </button>
           <div className="text-xs text-white/70">
             {(owner?.username ?? "user") + " · " + relativeTime}
+            {archiveView && moment?.created_at ? (
+              <span className="ml-1 text-white/55">
+                · {new Date(moment.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </span>
+            ) : null}
           </div>
           {moment && meId && moment.user_id === meId ? (
             <div className="relative">
@@ -174,13 +258,41 @@ export default function MomentDetailPage() {
                 •••
               </button>
               {menuOpen ? (
-                <button
-                  type="button"
-                  onClick={deleteMoment}
-                  className="absolute right-0 mt-1 rounded-md border border-red-500/30 bg-black px-2 py-1 text-xs text-red-300"
-                >
-                  Delete Moment
-                </button>
+                <div className="absolute right-0 mt-1 overflow-hidden rounded-md border border-white/15 bg-black/95">
+                  {moment?.is_share ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={toggleShareVisibility}
+                        className="block w-full whitespace-nowrap px-2.5 py-1.5 text-left text-xs text-white/90 hover:bg-white/10"
+                      >
+                        {moment.share_visible ? "Hide from others" : "Show to others"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleHideShare}
+                        className="block w-full whitespace-nowrap px-2.5 py-1.5 text-left text-xs text-white/90 hover:bg-white/10"
+                      >
+                        {moment.share_hidden ? "Unhide share" : "Hide share"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={addMomentToShares}
+                      className="block w-full whitespace-nowrap px-2.5 py-1.5 text-left text-xs text-white/90 hover:bg-white/10"
+                    >
+                      Add to Shares
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={deleteMoment}
+                    className="block w-full whitespace-nowrap px-2.5 py-1.5 text-left text-xs text-red-300 hover:bg-red-500/20"
+                  >
+                    Delete Moment
+                  </button>
+                </div>
               ) : null}
             </div>
           ) : (
@@ -207,38 +319,41 @@ export default function MomentDetailPage() {
               >
                 {liked ? "♥" : "♡"} {likesCount}
               </button>
+              {!archiveView ? (
+                <>
+                  <div className="max-h-48 space-y-2 overflow-auto rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    {comments.length ? (
+                      comments.map((c) => (
+                        <div key={c.id} className="flex items-start gap-2 text-xs text-white/85">
+                          <Avatar src={c.avatar_url} fallbackText={c.username ?? "u"} size="xs" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold">{c.username ?? "user"}</p>
+                            <p className="break-words">{c.content}</p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-white/50">No comments yet</div>
+                    )}
+                  </div>
 
-              <div className="max-h-48 space-y-2 overflow-auto rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                {comments.length ? (
-                  comments.map((c) => (
-                    <div key={c.id} className="flex items-start gap-2 text-xs text-white/85">
-                      <Avatar src={c.avatar_url} fallbackText={c.username ?? "u"} size="xs" />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold">{c.username ?? "user"}</p>
-                        <p className="break-words">{c.content}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-xs text-white/50">No comments yet</div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="Add a comment..."
-                  className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs text-white outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={sendComment}
-                  className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
-                >
-                  Send
-                </button>
-              </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      placeholder="Add a comment..."
+                      className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={sendComment}
+                      className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
+                    >
+                      Send
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </div>
           </>
         ) : (

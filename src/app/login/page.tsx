@@ -84,8 +84,14 @@ export default function LoginPage() {
         ? new URLSearchParams(window.location.search).get("next")
         : null;
     if (profile?.onboarding_complete) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("ah_has_logged_in", "1");
+      }
       router.push(next || "/hub");
     } else {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("ah_has_logged_in", "1");
+      }
       router.push("/onboarding");
     }
   }

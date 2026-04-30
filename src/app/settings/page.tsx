@@ -32,9 +32,9 @@ const sections = [
   {
     title: "Legal",
     items: [
-      { href: "/terms", label: "Terms of Service", desc: "Understand how AfterHours works." },
+      { href: "/terms", label: "Terms of Service", desc: "Understand how Intencity works." },
       { href: "/privacy", label: "Privacy Policy", desc: "How your data is handled." },
-      { href: "/guidelines", label: "Community Guidelines", desc: "Keep AfterHours safe and respectful." },
+      { href: "/guidelines", label: "Community Guidelines", desc: "Keep Intencity safe and respectful." },
     ],
   },
 ];
@@ -145,20 +145,29 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white p-6 pb-24">
-      <button onClick={goBackSafe} className="mb-6 text-sm text-white/60">
-        ←
-      </button>
-      <h1 className="text-2xl font-semibold">Settings</h1>
-      <p className="mt-2 text-sm text-white/60">Manage your account, alerts, and privacy controls.</p>
+    <div className="min-h-[100dvh] bg-black text-white px-4 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] sm:px-5">
+      <div className="flex items-center gap-2 border-b border-white/[0.08] pb-3">
+        <button
+          type="button"
+          onClick={goBackSafe}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/80"
+          aria-label="Back"
+        >
+          ←
+        </button>
+        <div className="min-w-0">
+          <h1 className="text-[1.25rem] font-bold tracking-tight">Settings</h1>
+          <p className="mt-0.5 text-[13px] text-white/48">Account, alerts, and privacy.</p>
+        </div>
+      </div>
 
-      <div className="mt-6 space-y-6">
+      <div className="mt-5 space-y-5">
         <section>
           <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Map</div>
           <button
             type="button"
             onClick={toggleAutoVenueTour}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition-colors hover:bg-white/10"
+            className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-3 text-left transition-colors hover:bg-white/[0.07]"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -182,7 +191,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={togglePrivateAccount}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition-colors hover:bg-white/10"
+            className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-3 text-left transition-colors hover:bg-white/[0.07]"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -203,7 +212,7 @@ export default function SettingsPage() {
         </section>
         <section>
           <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Feedback</div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3">
             <div className="font-medium">Suggest a feature or report an issue</div>
             <div className="mt-1 text-xs text-white/50">
               This sends feedback directly to the team email.
@@ -250,7 +259,7 @@ export default function SettingsPage() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="block rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors"
+                  className="block rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-3 transition-colors hover:bg-white/[0.07]"
                 >
                   <div className="font-medium">{item.label}</div>
                   <div className="text-xs text-white/50 mt-1">{item.desc}</div>

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import { createNotification } from "@/lib/notifications";
+import { getPresenceFreshness } from "@/lib/presence";
 
 async function unfriendUser(me: string, them: string) {
   console.log("ME:", me);
@@ -124,6 +125,7 @@ type Profile = {
   bio: string | null;
   avatar_url: string | null;
   is_private: boolean | null;
+  ghost_mode: boolean | null;
 };
 
 export default function UserProfile() {
@@ -143,6 +145,7 @@ export default function UserProfile() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [isFriend, setIsFriend] = useState(false);
   const [venueText, setVenueText] = useState<string>("Not at a venue");
+  const [presenceUpdatedAt, setPresenceUpdatedAt] = useState<string | null>(null);
   const [activeMomentsCount, setActiveMomentsCount] = useState(0);
   const [momentsCount, setMomentsCount] = useState(0);
   const [friendCount, setFriendCount] = useState(0);
@@ -151,11 +154,8 @@ export default function UserProfile() {
   const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
   const [requesting, setRequesting] = useState(false);
   const [latestMomentOwnerId, setLatestMomentOwnerId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"moments" | "places" | "saved">("moments");
+  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places" | "saved">("shares");
   const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
-
-  const isActive = (ts: string) =>
-    Date.now() - new Date(ts).getTime() < 5 * 60_000;
 
   useEffect(() => {
     if (!username) return;
@@ -163,7 +163,7 @@ export default function UserProfile() {
     (async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, username, display_name, bio, avatar_url, is_private")
+        .select("id, username, display_name, bio, avatar_url, is_private, ghost_mode")
         .eq("username", username)
         .single();
 
@@ -299,6 +299,11 @@ export default function UserProfile() {
       else if (pendingOutgoing) setRequestStatus("outgoing");
       else setRequestStatus("none");
 
+      if (profile.ghost_mode) {
+        setVenueText("Not at a venue");
+        return;
+      }
+
       if (!friend) {
         setVenueText("Not at a venue");
         return;
@@ -310,8 +315,9 @@ export default function UserProfile() {
         .select("venue_id, updated_at")
         .eq("user_id", them)
         .maybeSingle();
+      setPresenceUpdatedAt(pres?.updated_at ?? null);
 
-      if (!pres?.venue_id || !pres.updated_at || !isActive(pres.updated_at)) {
+      if (!pres?.venue_id || !pres.updated_at) {
         setVenueText("Not at a venue");
         return;
       }
@@ -322,7 +328,13 @@ export default function UserProfile() {
         .eq("id", pres.venue_id)
         .maybeSingle();
 
-      if (v?.name) setVenueText(`At ${v.name}`);
+      if (!v?.name) {
+        setVenueText("Not at a venue");
+        return;
+      }
+      const freshness = getPresenceFreshness(pres.updated_at);
+      if (freshness === "live") setVenueText(`At ${v.name}`);
+      else if (freshness === "recent") setVenueText(`Recently at ${v.name}`);
       else setVenueText("Not at a venue");
     })();
   }, [me, profile]);
@@ -389,9 +401,10 @@ export default function UserProfile() {
       : venueText === "Not at a venue"
         ? "Not at a venue"
         : "Last active recently";
-  const statusValue = hasLiveMoment ? "Active" : "Away";
+  const statusValue = getPresenceFreshness(presenceUpdatedAt) === "live" ? "Online" : "Away";
   const profileTabs = [
-    { key: "moments" as const, label: "Moments" },
+    { key: "shares" as const, label: "Shares" },
+    ...(isOwnProfile ? [{ key: "archive" as const, label: "Archive" }] : []),
     { key: "places" as const, label: "Places" },
     { key: "saved" as const, label: "Saved" },
   ];
@@ -400,7 +413,7 @@ export default function UserProfile() {
       router.push(`/moments/${encodeURIComponent(latestActiveMomentId)}`);
       return;
     }
-    setActiveTab("moments");
+    setActiveTab(isOwnProfile ? "archive" : "shares");
   };
 
   async function sendFriendRequestFromProfile() {
@@ -530,7 +543,11 @@ export default function UserProfile() {
               </p>
             </div>
             <div className="flex min-h-[5.5rem] min-w-0 flex-1 flex-col justify-center gap-3 sm:min-h-[6rem]">
-              <div className="grid w-full grid-cols-4 gap-x-1 text-center sm:gap-x-2">
+              <div
+                className={`grid w-full gap-x-1 text-center sm:gap-x-2 ${
+                  isOwnProfile ? "grid-cols-3" : "grid-cols-4"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={openFriendsViewer}
@@ -552,14 +569,16 @@ export default function UserProfile() {
                   <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">
                     {shouldHidePrivateProfile ? "—" : momentsCount}
                   </p>
-                  <p className="mt-1 text-[11px] text-white/48">Moments</p>
+                  <p className="mt-1 text-[11px] text-white/48">Shares</p>
                 </div>
-                <div className="min-w-0 px-0.5">
-                  <p className="truncate text-lg font-semibold text-white sm:text-xl">
-                    {shouldHidePrivateProfile ? "—" : statusValue}
-                  </p>
-                  <p className="mt-1 text-[11px] text-white/48">Status</p>
-                </div>
+                {!isOwnProfile ? (
+                  <div className="min-w-0 px-0.5">
+                    <p className="truncate text-lg font-semibold text-white sm:text-xl">
+                      {shouldHidePrivateProfile ? "—" : statusValue}
+                    </p>
+                    <p className="mt-1 text-[11px] text-white/48">Status</p>
+                  </div>
+                ) : null}
               </div>
               {!shouldHidePrivateProfile ? (
                 <p className="w-full max-w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium leading-snug text-white/65 ring-1 ring-white/[0.08] sm:text-[12px]">
@@ -600,7 +619,7 @@ export default function UserProfile() {
                           ? `${window.location.origin}/u/${encodeURIComponent(profile.username)}`
                           : "";
                       if (navigator.share) {
-                        await navigator.share({ title: `${profileName} on AfterHours`, url: shareUrl });
+                        await navigator.share({ title: `${profileName} on Intencity`, url: shareUrl });
                         return;
                       }
                       if (shareUrl) await navigator.clipboard.writeText(shareUrl);
@@ -674,7 +693,7 @@ export default function UserProfile() {
                   >
                     {tab.label}
                     {activeTab === tab.key ? (
-                      <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-accent-violet shadow-[0_0_12px_rgba(168,85,247,0.35)]" />
+                      <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-accent-violet shadow-[0_0_12px_rgba(122,60,255,0.42)]" />
                     ) : null}
                   </button>
                 ))}
@@ -682,11 +701,23 @@ export default function UserProfile() {
             </div>
 
             <div className="pt-3">
-              {activeTab === "moments" ? (
+              {activeTab === "shares" ? (
                 <ProfileStoriesGrid
                   userId={profile.id}
-                  emptyLabel="Nothing posted yet"
-                  emptySubtitle="When they drop a moment, it lands here."
+                  viewerId={me}
+                  mode="shares"
+                  emptyLabel="No shares yet"
+                  emptySubtitle="Shares appear here when they choose to show them."
+                />
+              ) : null}
+
+              {activeTab === "archive" ? (
+                <ProfileStoriesGrid
+                  userId={profile.id}
+                  viewerId={me}
+                  mode="archive"
+                  emptyLabel="No archived moments available"
+                  emptySubtitle="Archive is only available to the account owner."
                 />
               ) : null}
 

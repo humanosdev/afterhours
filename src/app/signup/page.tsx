@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { appConfig } from "@/lib/appConfig";
 import { useRouter } from "next/navigation";
@@ -16,6 +16,20 @@ export default function SignupPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [agreedToPolicies, setAgreedToPolicies] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (!session) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_complete")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      router.replace(profile?.onboarding_complete ? "/hub" : "/onboarding");
+    })();
+  }, [router]);
 
   function isTempleEmail(value: string) {
     return value.toLowerCase().trim().endsWith("@temple.edu");
@@ -64,7 +78,7 @@ export default function SignupPage() {
 
   if (!isTempleEmail(email)) {
     setLoading(false);
-    setMsg("Use a Temple University email to join AfterHours.");
+    setMsg("Use a Temple University email to join Intencity.");
     return;
   }
 
@@ -93,6 +107,9 @@ export default function SignupPage() {
 
   const { data: sessionData } = await supabase.auth.getSession();
   if (sessionData.session) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("ah_has_logged_in", "1");
+    }
     await ensureProfileExists(sessionData.session.user.id);
     await fetch("/api/legal/consent", {
       method: "POST",

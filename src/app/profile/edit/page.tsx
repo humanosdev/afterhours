@@ -1,9 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import Cropper from "react-easy-crop";
+import type { Area, Point } from "react-easy-crop";
+import "react-easy-crop/react-easy-crop.css";
+
+async function cropImageToSquare(
+  imageSrc: string,
+  cropArea: Area,
+  outputType = "image/jpeg"
+) {
+  const image = new Image();
+  image.src = imageSrc;
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Could not load selected image"));
+  });
+
+  const maxOutputSize = 1400;
+  const sourceSize = Math.max(1, Math.round(Math.min(cropArea.width, cropArea.height)));
+  const targetSize = Math.min(maxOutputSize, sourceSize);
+  const canvas = document.createElement("canvas");
+  canvas.width = targetSize;
+  canvas.height = targetSize;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not initialize image crop");
+
+  ctx.drawImage(
+    image,
+    cropArea.x,
+    cropArea.y,
+    sourceSize,
+    sourceSize,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, outputType, 0.92)
+  );
+  if (!blob) throw new Error("Could not crop image");
+  return blob;
+}
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -25,6 +68,11 @@ export default function EditProfilePage() {
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 const [userId, setUserId] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [pendingAvatarName, setPendingAvatarName] = useState("avatar.jpg");
 
   /* ---------- Load profile ---------- */
   useEffect(() => {
@@ -97,34 +145,19 @@ const [userId, setUserId] = useState<string | null>(null);
     router.push("/profile");
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black text-white p-6">
-        Loading…
-      </div>
-    );
-  }
 const uploadAvatar = async (file: File) => {
   if (!userId) return;
   setError(null);
 
-  const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
-  const maxBytes = 8 * 1024 * 1024;
-
-  if (!allowedMimeTypes.includes(file.type)) {
-    setError("Unsupported image format. Please upload JPG, PNG, WEBP, or HEIC.");
-    return;
-  }
-
+  const maxBytes = 5 * 1024 * 1024;
   if (file.size > maxBytes) {
-    setError("Image is too large. Please choose an image under 8MB.");
+    setError("Processed image is still too large. Please zoom/crop tighter and try again.");
     return;
   }
 
   setUploadingAvatar(true);
 
-  const fileExt = file.name.split(".").pop();
-  const filePath = `${userId}/avatar.${fileExt}`;
+  const filePath = `${userId}/avatar.jpg`;
 
   const { error: uploadError } = await supabase.storage
     .from("avatars")
@@ -132,12 +165,10 @@ const uploadAvatar = async (file: File) => {
 
   if (uploadError) {
     const raw = uploadError.message?.toLowerCase?.() ?? "";
-    if (raw.includes("mime")) {
-      setError("Unsupported image format. Please upload JPG, PNG, WEBP, or HEIC.");
-    } else if (raw.includes("size")) {
+    if (raw.includes("size")) {
       setError("Image is too large. Please choose an image under 8MB.");
     } else {
-      setError("Could not upload profile picture. Please try a JPG or PNG image.");
+      setError("Could not upload profile picture. Please try another image.");
     }
     setUploadingAvatar(false);
     return;
@@ -163,24 +194,141 @@ const uploadAvatar = async (file: File) => {
   setAvatarUrl(publicUrl);
   setUploadingAvatar(false);
 };
-  return (
-    <div className="min-h-screen bg-black text-white p-6">
-      {/* Back */}
-      <button
-        onClick={goBackSafe}
-        className="mb-6 text-sm text-white/60"
-      >
-        ←
-      </button>
 
-      <h1 className="text-2xl font-semibold mb-6">Edit profile</h1>
+const validateAvatarFile = (file: File) => {
+  const maxBytes = 25 * 1024 * 1024;
+  const type = (file.type || "").toLowerCase();
+  if (!type.startsWith("image/")) {
+    setError("Please choose an image from your camera roll.");
+    return false;
+  }
+  if (file.size > maxBytes) {
+    setError("Image is too large. Please choose one under 25MB.");
+    return false;
+  }
+  return true;
+};
+
+const resetCropState = useCallback(() => {
+  if (cropSrc) URL.revokeObjectURL(cropSrc);
+  setCropSrc(null);
+  setCrop({ x: 0, y: 0 });
+  setZoom(1);
+  setCroppedAreaPixels(null);
+  setPendingAvatarName("avatar.jpg");
+}, [cropSrc]);
+
+const onCropComplete = useCallback((_croppedArea: Area, croppedPixels: Area) => {
+  setCroppedAreaPixels(croppedPixels);
+}, []);
+
+const startAvatarCrop = (file: File) => {
+  if (!validateAvatarFile(file)) return;
+  setError(null);
+  const objectUrl = URL.createObjectURL(file);
+  setCropSrc(objectUrl);
+  setPendingAvatarName(file.name || "avatar.jpg");
+  setCrop({ x: 0, y: 0 });
+  setZoom(1);
+  setCroppedAreaPixels(null);
+};
+
+const confirmAvatarCrop = async () => {
+  if (!cropSrc || !croppedAreaPixels) {
+    setError("Please adjust crop before saving.");
+    return;
+  }
+  try {
+    const croppedBlob = await cropImageToSquare(cropSrc, croppedAreaPixels, "image/jpeg");
+    const croppedFile = new File([croppedBlob], pendingAvatarName.replace(/\.[^.]+$/, ".jpg"), {
+      type: "image/jpeg",
+    });
+    resetCropState();
+    await uploadAvatar(croppedFile);
+  } catch {
+    setError("Could not crop profile picture. Please try another image.");
+  }
+};
+
+useEffect(() => {
+  return () => {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+  };
+}, [cropSrc]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-black px-4 text-[14px] text-white/50">
+        Loading…
+      </div>
+    );
+  }
+  return (
+    <div className="min-h-[100dvh] bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
+      <div className="mb-5 flex items-center gap-2 border-b border-white/[0.08] pb-3">
+        <button
+          type="button"
+          onClick={goBackSafe}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/80"
+          aria-label="Back"
+        >
+          ←
+        </button>
+        <h1 className="text-[1.25rem] font-bold tracking-tight">Edit profile</h1>
+      </div>
 
       {error && (
-        <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-400">
+        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
           {error}
         </div>
       )}
-<div className="flex flex-col items-center mb-6">
+{cropSrc && (
+  <div className="fixed inset-0 z-[170] bg-black/90">
+    <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
+      <button
+        type="button"
+        onClick={resetCropState}
+        className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white"
+      >
+        Cancel
+      </button>
+      <div className="text-sm font-semibold text-white">Crop profile photo</div>
+      <button
+        type="button"
+        onClick={confirmAvatarCrop}
+        className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-black"
+      >
+        Use photo
+      </button>
+    </div>
+    <div className="absolute inset-x-0 bottom-[120px] top-[96px]">
+      <Cropper
+        image={cropSrc}
+        crop={crop}
+        zoom={zoom}
+        aspect={1}
+        cropShape="round"
+        showGrid={false}
+        onCropChange={setCrop}
+        onZoomChange={setZoom}
+        onCropComplete={onCropComplete}
+      />
+    </div>
+    <div className="absolute inset-x-0 bottom-[calc(env(safe-area-inset-bottom,0px)+24px)] px-6">
+      <label className="mb-2 block text-center text-xs text-white/70">Zoom</label>
+      <input
+        type="range"
+        min={1}
+        max={3}
+        step={0.01}
+        value={zoom}
+        onChange={(e) => setZoom(Number(e.target.value))}
+        className="w-full accent-accent-violet"
+      />
+    </div>
+  </div>
+)}
+<div className="mb-6 flex flex-col items-center">
   <label className="cursor-pointer">
     <Avatar
       src={avatarUrl}
@@ -195,7 +343,7 @@ const uploadAvatar = async (file: File) => {
       className="hidden"
       onChange={(e) => {
         if (e.target.files?.[0]) {
-          uploadAvatar(e.target.files[0]);
+          startAvatarCrop(e.target.files[0]);
         }
         e.currentTarget.value = "";
       }}
@@ -206,7 +354,7 @@ const uploadAvatar = async (file: File) => {
     {uploadingAvatar ? "Uploading profile picture..." : "Tap to change profile picture"}
   </p>
   <p className="text-[11px] text-white/40 mt-1">
-    Supported formats: JPG, PNG, WEBP, HEIC (max 8MB)
+    Most camera-roll images supported · we optimize to lightweight JPG automatically
   </p>
 </div>
       {/* Username */}

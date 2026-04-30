@@ -4,13 +4,13 @@ import { DEV_PURGE_SERVICE_WORKER_SCRIPT } from "@/lib/devPurgeServiceWorkerScri
 import "./globals.css";
 
 export const metadata = {
-  title: "AfterHours",
+  title: "Intencity",
   description: "See where the night is happening",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "AfterHours",
+    title: "Intencity",
   },
   icons: {
     icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],

@@ -18,10 +18,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [storyOpen, setStoryOpen] = useState(false);
+  const [composerKind, setComposerKind] = useState<"moments" | "shares">("moments");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"both" | "shares_only">("both");
+  const [createTab, setCreateTab] = useState<"moments" | "shares">("moments");
   const [unreadCount, setUnreadCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [liveToasts, setLiveToasts] = useState<LiveToast[]>([]);
   const [mapVenueSheetOpen, setMapVenueSheetOpen] = useState(false);
+  const [gestureRefreshing, setGestureRefreshing] = useState(false);
 
   const hideNavPaths = [
     "/login",
@@ -43,6 +48,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname === "/map";
   const showFooter = !immersive && !pathname.startsWith("/chat");
 
+  const pullRefreshEnabled =
+    pathname === "/hub" ||
+    pathname === "/profile" ||
+    pathname === "/notifications" ||
+    pathname === "/chat" ||
+    pathname.startsWith("/chat/") ||
+    pathname.startsWith("/profile/friends") ||
+    pathname.startsWith("/u/") ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/");
+
   useEffect(() => {
     const onMapVenueSheetVisibility = (event: Event) => {
       const custom = event as CustomEvent<{ open?: boolean }>;
@@ -59,9 +75,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
-    const openHandler = () => setStoryOpen(true);
+    const openHandler = () => {
+      setComposerKind("moments");
+      setStoryOpen(true);
+    };
+    const openCreateHandler = (event: Event) => {
+      const custom = event as CustomEvent<{ mode?: "both" | "shares_only"; tab?: "moments" | "shares" }>;
+      const mode = custom.detail?.mode === "shares_only" ? "shares_only" : "both";
+      setCreateMode(mode);
+      setCreateTab(custom.detail?.tab ?? (mode === "shares_only" ? "shares" : "moments"));
+      setCreateOpen(true);
+    };
     window.addEventListener("open-story-camera", openHandler);
-    return () => window.removeEventListener("open-story-camera", openHandler);
+    window.addEventListener("open-create-composer", openCreateHandler as EventListener);
+    return () => {
+      window.removeEventListener("open-story-camera", openHandler);
+      window.removeEventListener("open-create-composer", openCreateHandler as EventListener);
+    };
   }, []);
 
   useEffect(() => {
@@ -205,7 +235,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               : Promise.resolve({ data: null, error: null } as any),
           ]);
           const actorName = actor?.display_name || actor?.username || "Someone";
-          let title = "AfterHours";
+          let title = "Intencity";
           let body = "Something new is happening.";
           let route = "/notifications";
           if (row.type === "friend_joined_venue") {
@@ -260,9 +290,82 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [currentUserId]);
 
+  useEffect(() => {
+    if (!pullRefreshEnabled) return;
+    if (typeof window === "undefined") return;
+
+    let startY: number | null = null;
+    let mode: "none" | "top" | "bottom" = "none";
+    let didTrigger = false;
+    let lastTriggerAt = 0;
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const atTop = () => window.scrollY <= 2;
+    const atBottom = () =>
+      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      startY = e.touches[0]?.clientY ?? null;
+      didTrigger = false;
+      if (atTop()) mode = "top";
+      else if (atBottom()) mode = "bottom";
+      else mode = "none";
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (startY === null || didTrigger) return;
+      const y = e.touches[0]?.clientY;
+      if (typeof y !== "number") return;
+      const dy = y - startY;
+      const now = Date.now();
+      if (now - lastTriggerAt < 1200) return;
+
+      if (mode === "top" && dy >= 85) {
+        didTrigger = true;
+        lastTriggerAt = now;
+        setGestureRefreshing(true);
+        reloadTimer = window.setTimeout(() => {
+          window.location.reload();
+        }, 280);
+      } else if (mode === "bottom" && dy <= -85) {
+        didTrigger = true;
+        lastTriggerAt = now;
+        setGestureRefreshing(true);
+        reloadTimer = window.setTimeout(() => {
+          window.location.reload();
+        }, 280);
+      }
+    };
+
+    const onTouchEnd = () => {
+      startY = null;
+      mode = "none";
+      didTrigger = false;
+    };
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", onTouchEnd);
+      if (reloadTimer) clearTimeout(reloadTimer);
+    };
+  }, [pullRefreshEnabled]);
+
   return (
     <div className={hideNav || immersive ? "" : "pb-24"}>
       <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+10px)] z-[80] mx-auto flex w-full max-w-md flex-col gap-2 px-3">
+        {gestureRefreshing ? (
+          <div className="pointer-events-none mx-auto rounded-full border border-white/20 bg-black/65 px-3 py-1.5 backdrop-blur">
+            <span className="block h-4 w-4 animate-spin rounded-full border-2 border-white/85 border-t-transparent" />
+          </div>
+        ) : null}
         {liveToasts.map((toast) => (
           <button
             key={toast.id}
@@ -271,7 +374,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               setLiveToasts((prev) => prev.filter((t) => t.id !== toast.id));
               router.push(toast.route);
             }}
-            className="pointer-events-auto rounded-2xl border border-accent-violet/35 bg-[#12121acc] px-3 py-3 text-left shadow-[0_0_0_1px_rgba(139,92,246,0.2),0_8px_30px_rgba(139,92,246,0.18)] backdrop-blur animate-[toastIn_.26s_ease-out]"
+            className="pointer-events-auto rounded-2xl border border-accent-violet/35 bg-[#12121acc] px-3 py-3 text-left shadow-[0_0_0_1px_rgba(122,60,255,0.22),0_8px_30px_rgba(122,60,255,0.2)] backdrop-blur animate-[toastIn_.26s_ease-out]"
           >
             <div className="text-sm font-semibold text-white">{toast.title}</div>
             <div className="mt-0.5 text-xs text-text-secondary">{toast.body}</div>
@@ -290,9 +393,66 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </footer>
       ) : null}
-      <StoryCameraModal open={storyOpen} onClose={() => setStoryOpen(false)} />
+      {createOpen ? (
+        <div className="fixed inset-0 z-[120] bg-black/65 backdrop-blur-sm">
+          <button
+            type="button"
+            className="absolute inset-0 h-full w-full"
+            onClick={() => setCreateOpen(false)}
+            aria-label="Close create menu"
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-white/15 bg-[#0a0c12] px-4 pb-[calc(env(safe-area-inset-bottom,0px)+16px)] pt-3">
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" aria-hidden />
+            {createMode === "both" ? (
+              <div className="mb-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] p-1">
+                <button
+                  type="button"
+                  onClick={() => setCreateTab("moments")}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+                    createTab === "moments" ? "bg-accent-violet/28 text-white" : "text-white/70"
+                  }`}
+                >
+                  Moments
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateTab("shares")}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+                    createTab === "shares" ? "bg-accent-violet/28 text-white" : "text-white/70"
+                  }`}
+                >
+                  Shares
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setCreateOpen(false);
+                setComposerKind(createMode === "shares_only" ? "shares" : createTab);
+                setStoryOpen(true);
+              }}
+              className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black"
+            >
+              {createMode === "shares_only" || createTab === "shares" ? "Create share" : "Create moment"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <StoryCameraModal
+        open={storyOpen}
+        mode={composerKind}
+        onClose={() => setStoryOpen(false)}
+      />
       {!hideNav && !mapVenueSheetOpen && (
-        <BottomNav onOpenStories={() => setStoryOpen(true)} unreadCount={unreadCount} />
+        <BottomNav
+          onOpenStories={() => {
+            setCreateMode("both");
+            setCreateTab("moments");
+            setCreateOpen(true);
+          }}
+          unreadCount={unreadCount}
+        />
       )}
     </div>
   );

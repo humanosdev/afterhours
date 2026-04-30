@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
 import { Avatar, StoryRing } from "@/components/ui";
 import StoryViewerModal, { type StoryViewerGroup } from "@/components/StoryViewerModal";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
+import { formatRelativeTime } from "@/lib/time";
 
 /* ---------------- TYPES ---------------- */
 
@@ -49,6 +50,13 @@ type StoryGroup = {
   stories: Story[];
 };
 
+type ShareItem = {
+  id: string;
+  user_id: string;
+  image_url: string;
+  created_at: string;
+};
+
 /* ---------------- UTILS ---------------- */
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -75,11 +83,13 @@ export default function HubPage() {
   const [friends, setFriends] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
+  const [friendGhostById, setFriendGhostById] = useState<Record<string, boolean>>({});
   const [meId, setMeId] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [myStoryFallback, setMyStoryFallback] = useState<string>("AH");
   const [unreadCount, setUnreadCount] = useState(0);
   const [storyVenueIds, setStoryVenueIds] = useState<Set<string>>(new Set());
+  const [friendShares, setFriendShares] = useState<ShareItem[]>([]);
 
   const [activeViewerGroup, setActiveViewerGroup] = useState<StoryViewerGroup | null>(null);
 
@@ -163,17 +173,20 @@ export default function HubPage() {
 
       const { data: prof } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url")
+        .select("id, username, avatar_url, ghost_mode")
         .in("id", ids);
 
       const map: Record<string, string> = {};
       const av: Record<string, string | null> = {};
+      const ghostMap: Record<string, boolean> = {};
       prof?.forEach((p: any) => {
         map[p.id] = p.username;
         av[p.id] = p.avatar_url ?? null;
+        ghostMap[p.id] = !!p.ghost_mode;
       });
       setProfiles(map);
       setAvatars(av);
+      setFriendGhostById(ghostMap);
     };
 
     loadFriends();
@@ -284,6 +297,48 @@ export default function HubPage() {
   }, [friends, meId]);
 
   useEffect(() => {
+    if (!friends.length) {
+      setFriendShares([]);
+      return;
+    }
+    let mounted = true;
+    const loadFriendShares = async () => {
+      const preferred = await supabase
+        .from("stories")
+        .select("id, user_id, image_url, created_at, is_share, share_visible, share_hidden")
+        .in("user_id", friends)
+        .eq("is_share", true)
+        .eq("share_visible", true)
+        .eq("share_hidden", false)
+        .order("created_at", { ascending: false })
+        .limit(120);
+
+      if (preferred.error) {
+        if (mounted) setFriendShares([]);
+        return;
+      }
+      if (!mounted) return;
+      setFriendShares(
+        ((preferred.data ?? []) as any[])
+          .map((row) => ({
+            id: row.id as string,
+            user_id: row.user_id as string,
+            image_url: (row.image_url ?? "") as string,
+            created_at: row.created_at as string,
+          }))
+          .filter((row) => !!row.image_url)
+      );
+    };
+    loadFriendShares();
+    const onStoryPosted = () => loadFriendShares();
+    window.addEventListener("story-posted", onStoryPosted);
+    return () => {
+      mounted = false;
+      window.removeEventListener("story-posted", onStoryPosted);
+    };
+  }, [friends]);
+
+  useEffect(() => {
     let mounted = true;
     const loadStoryVenueLinks = async () => {
       const { data, error } = await supabase
@@ -313,11 +368,12 @@ export default function HubPage() {
 
   /* ---------------- HELPERS ---------------- */
 
-  const isActive = (ts: string) =>
-    Date.now() - new Date(ts).getTime() < 5 * 60_000;
-
   const onlineFriends = presence.filter(
-    (p) => friends.includes(p.user_id) && isActive(p.updated_at)
+    (p) =>
+      friends.includes(p.user_id) &&
+      !friendGhostById[p.user_id] &&
+      isValidCoordinatePair(p.lat, p.lng) &&
+      isPresenceLive(p.updated_at)
   );
 
   /* ---------------- GROUP STORIES ---------------- */
@@ -422,7 +478,8 @@ const getVenueStats = (venue: Venue) => {
   let friendsNearby = 0;
 
   for (const p of presence) {
-    if (!isActive(p.updated_at)) continue;
+    if (!isValidCoordinatePair(p.lat, p.lng)) continue;
+    if (!isPresenceLive(p.updated_at)) continue;
 
     const d = distanceMeters(p.lat, p.lng, venue.lat, venue.lng);
 
@@ -444,50 +501,15 @@ const getVenueStats = (venue: Venue) => {
   };
 };
 
-const venueCards = venues
-  .map((v) => {
-    const stats = getVenueStats(v);
-    return { ...v, ...stats };
-  })
-  .sort((a, b) => {
-    // Expected ranking:
-    // 1) total activity (inside + nearby) desc
-    // 2) if tie, prioritize venues with friends present (inside or nearby) desc
-    if (b.total !== a.total) return b.total - a.total;
-    if (b.friendsTotal !== a.friendsTotal) return b.friendsTotal - a.friendsTotal;
-    return 0;
-  });
-
-// Always show top 3 venues for quick jump-to-map navigation.
-const venuesToShow = venueCards.slice(0, 3);
-
-  // UI-only helper: preview a few friend names present at/near a venue
-  const friendPreviewForVenue = (venueId: string) => {
-    const ids = presence
-      .filter(
-        (p) =>
-          p.venue_id === venueId &&
-          friends.includes(p.user_id) &&
-          isActive(p.updated_at)
-      )
-      .map((p) => p.user_id);
-    return Array.from(new Set(ids)).slice(0, 3);
-  };
-
-  const myPresence = useMemo(
-    () => (meId ? presence.find((p) => p.user_id === meId) ?? null : null),
-    [presence, meId]
+  const friendShareCards = useMemo(
+    () =>
+      friendShares.map((share) => {
+        const username = profiles[share.user_id] || "friend";
+        const avatar = avatars[share.user_id] ?? null;
+        return { ...share, username, avatar };
+      }),
+    [friendShares, profiles, avatars]
   );
-  const liveFriendsCount = onlineFriends.length;
-  const liveVenuesCount = venueCards.filter((v: any) => v.total > 0).length;
-  const nearbyActivityCount = venueCards.reduce((sum: number, v: any) => sum + (v.total ?? 0), 0);
-  const trendingPlace = venueCards[0]?.name ?? null;
-  const pulseLine =
-    liveVenuesCount === 0
-      ? "Quiet right now"
-      : liveVenuesCount === 1
-      ? "1 place active nearby"
-      : `${liveVenuesCount} places active nearby`;
   /* ---------------- UI ---------------- */
 
   return (
@@ -496,7 +518,12 @@ const venuesToShow = venueCards.slice(0, 3);
       <div className="flex w-full flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+8px)] sm:px-5 sm:pt-3">
       {/* Top bar — IG-style thin chrome; story strip is the hero below */}
       <header className="flex items-center justify-between gap-3 pb-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/38">AfterHours</p>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/intencity-letter-logo-hub.png"
+          alt="Intencity"
+          className="h-9 w-9 object-contain opacity-95"
+        />
         <button
           type="button"
           onClick={() => router.push("/notifications")}
@@ -505,7 +532,7 @@ const venuesToShow = venueCards.slice(0, 3);
         >
           ♡
           {unreadCount > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 min-w-[1.125rem] rounded-full bg-accent-violet px-1 py-0.5 text-center text-[10px] font-semibold leading-none text-white shadow-[0_0_12px_rgba(168,85,247,0.45)]">
+            <span className="absolute -right-0.5 -top-0.5 min-w-[1.125rem] rounded-full bg-accent-violet px-1 py-0.5 text-center text-[10px] font-semibold leading-none text-white shadow-[0_0_12px_rgba(122,60,255,0.5)]">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           ) : null}
@@ -513,7 +540,7 @@ const venuesToShow = venueCards.slice(0, 3);
       </header>
 
       {/* Moments — large story rings first (dominant like Instagram home) */}
-      <section className="-mx-4 border-b border-white/[0.08] pb-4 pt-1 sm:-mx-5" aria-labelledby="hub-moments-heading">
+      <section className="-mx-4 border-b border-white/[0.08] pb-3 pt-0 sm:-mx-5" aria-labelledby="hub-moments-heading">
         <h2 id="hub-moments-heading" className="sr-only">
           Moments
         </h2>
@@ -531,9 +558,17 @@ const venuesToShow = venueCards.slice(0, 3);
                     return;
                   }
                 }
-                window.dispatchEvent(new Event("open-story-camera"));
+                window.dispatchEvent(
+                  new CustomEvent("open-create-composer", {
+                    detail: { mode: "both", tab: "moments" },
+                  })
+                );
               } else {
-                window.dispatchEvent(new Event("open-story-camera"));
+                window.dispatchEvent(
+                  new CustomEvent("open-create-composer", {
+                    detail: { mode: "both", tab: "moments" },
+                  })
+                );
               }
             }}
             className="flex w-[84px] shrink-0 flex-col items-center"
@@ -547,12 +582,12 @@ const venuesToShow = venueCards.slice(0, 3);
                 active={hasMyActiveStory}
               />
               {!hasMyActiveStory ? (
-                <div className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border-2 border-black bg-accent-violet text-text-primary shadow-[0_0_14px_rgba(168,85,247,0.55)]">
+                <div className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border-2 border-black bg-accent-violet text-text-primary shadow-[0_0_14px_rgba(122,60,255,0.58)]">
                   <span className="text-[13px] font-semibold leading-none">+</span>
                 </div>
               ) : null}
             </div>
-            <span className="mt-2 w-full truncate text-center text-[12px] leading-tight text-white/55">Your story</span>
+            <span className="mt-2 w-full truncate text-center text-[12px] leading-tight text-white/55">Your moment</span>
           </button>
 
           {/* FRIEND MOMENTS */}
@@ -581,57 +616,26 @@ const venuesToShow = venueCards.slice(0, 3);
             </button>
           ))}
         </div>
-        {friendStoryGroups.length === 0 ? (
-          <p className="mt-2 px-4 text-center text-[12px] text-white/42 sm:px-5">Post what&apos;s happening around you.</p>
-        ) : null}
       </section>
-
-      <div className="pt-5">
-        <h1 className="text-[1.375rem] font-bold leading-[1.15] tracking-tight text-white">What&apos;s alive right now</h1>
-        <p className="mt-1 text-[13px] leading-snug text-white/48">Friends, places, and activity near you.</p>
-      </div>
-
-      <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
-
-      {/* Live pulse — compact metrics */}
-      <section className="space-y-2">
-        <p className="text-[17px] font-semibold leading-snug text-white">{pulseLine}</p>
-        <p className="text-[13px] text-white/48">
-          <span className="font-semibold text-white/90">{liveFriendsCount}</span> friends
-          <span className="mx-1.5 text-white/25">·</span>
-          <span className="font-semibold text-white/90">{liveVenuesCount}</span> places
-          <span className="mx-1.5 text-white/25">·</span>
-          <span className="font-semibold text-white/90">{nearbyActivityCount}</span> nearby
-        </p>
-        {trendingPlace ? (
-          <p className="text-[12px] text-white/42">
-            Trending <span className="text-white/65">{trendingPlace}</span>
-          </p>
-        ) : (
-          <p className="text-[12px] text-white/42">No trending spot yet — be the first there.</p>
-        )}
-      </section>
-
-      <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
 
       {/* Active friends */}
-      <section className="space-y-2.5">
+      <section className="pt-4 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-[15px] font-semibold text-white">Active friends</h2>
           <button
             type="button"
             onClick={() => router.push("/profile/friends")}
-            className="text-[13px] font-semibold text-violet-300/95"
+            className="rounded-full border border-white/[0.12] bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-white/78"
           >
-            See all
+            Open friends
           </button>
         </div>
-        <p className="text-[12px] text-white/42">Online in the last few minutes</p>
-
         {onlineFriends.length === 0 ? (
           <div className="py-5 text-center">
-            <p className="text-[14px] text-white/72">No friends active yet</p>
-            <p className="mt-1 text-[12px] text-white/42">They&apos;ll show up here when they pop out.</p>
+            <p className="text-[15px] font-semibold text-white/85">No friends live right now</p>
+            <p className="mt-1.5 max-w-xs mx-auto text-[13px] leading-snug text-white/42">
+              When people step out, they surface here first.
+            </p>
           </div>
         ) : (
           <div className="scrollbar-none -mx-0.5 flex gap-4 overflow-x-auto px-0.5 pb-0.5">
@@ -669,115 +673,49 @@ const venuesToShow = venueCards.slice(0, 3);
 
       <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
 
-      {/* Live places — dense rows: thumb | meta | chevron */}
       <section>
-        <h2 className="text-[15px] font-semibold text-white">Live Places</h2>
-        <p className="mt-0.5 text-[12px] text-white/42">Open on map or view activity</p>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[15px] font-semibold text-white">Live Places</h2>
+          <button
+            type="button"
+            onClick={() => router.push("/live-places")}
+            className="rounded-full border border-white/[0.12] bg-white/[0.04] px-3 py-1.5 text-[11px] font-medium text-white/78"
+          >
+            Open live places
+          </button>
+        </div>
+      </section>
 
-        {venuesToShow.length === 0 ? (
-          <div className="py-8 text-center">
-            <p className="text-[14px] text-white/65">Quiet right now</p>
-            <p className="mt-1 text-[12px] text-white/38">Venues show up as people get nearby.</p>
-          </div>
+      <div className="my-4 h-px bg-white/[0.08]" aria-hidden />
+
+      <section>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-[15px] font-semibold text-white">Friends shares</h2>
+        </div>
+        {friendShareCards.length === 0 ? (
+          <p className="py-4 text-center text-[13px] text-white/45">Be the first to share.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-white/[0.08]">
-            {venuesToShow.map((v: any) => {
-              let vibe = "Quiet";
-              if (v.total >= 16) vibe = "Packed";
-              else if (v.total >= 8) vibe = "Active";
-              else if (v.total >= 2) vibe = "Warming up";
-
-              const previewIds = friendPreviewForVenue(v.id);
-              const distanceMi =
-                myPresence
-                  ? distanceMeters(myPresence.lat, myPresence.lng, v.lat, v.lng) / 1609.34
-                  : null;
-              const hasActivity = storyVenueIds.has(v.id);
-              const venueImage = v.image_url || v.photo_url || v.cover_image_url || null;
-
-              return (
-                <li key={v.id} className="py-3 first:pt-0">
-                  <button
-                    type="button"
-                    className="flex w-full gap-3 text-left"
-                    onClick={() => router.push(`/map?venueId=${encodeURIComponent(v.id)}`)}
-                  >
-                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[10px] bg-white/[0.06] ring-1 ring-white/[0.08]">
-                      {venueImage ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={venueImage} alt={v.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="grid h-full w-full place-items-center text-[10px] font-medium text-white/35">
-                          AH
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <p className="truncate text-[15px] font-semibold leading-tight text-white">{v.name}</p>
-                      <p className="mt-0.5 truncate text-[12px] text-white/45">
-                        {vibe}
-                        <span className="text-white/25"> · </span>
-                        {v.category ?? "Venue"}
-                        {distanceMi !== null ? (
-                          <>
-                            <span className="text-white/25"> · </span>
-                            {distanceMi.toFixed(1)} mi
-                          </>
-                        ) : null}
-                      </p>
-                      <p className="mt-1 text-[11px] text-white/38">
-                        {v.total} around · {v.inside} in · {v.nearby} near
-                        {previewIds.length > 0 ? (
-                          <span className="text-white/25"> · </span>
-                        ) : null}
-                        {previewIds.length > 0 ? (
-                          <span className="text-white/50">
-                            {v.friendsInside > 0 ? `${v.friendsInside} friends` : "Friends here"}
-                          </span>
-                        ) : v.friendsInside === 0 ? (
-                          <span className="text-white/35"> · First check-in wins</span>
-                        ) : null}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end justify-center gap-0.5 pr-0.5">
-                      <span className="text-[16px] font-bold tabular-nums text-white">{v.total}</span>
-                      <ChevronRight className="text-white/30" size={18} strokeWidth={2} aria-hidden />
-                    </div>
-                  </button>
-                  <div className="mt-2 flex items-center justify-between gap-2 pl-[68px]">
-                    {previewIds.length > 0 ? (
-                      <div className="flex -space-x-1.5">
-                        {previewIds.map((id: string) => (
-                          <Avatar
-                            key={id}
-                            src={avatars[id] ?? null}
-                            fallbackText={profiles[id] || "F"}
-                            size="xs"
-                            className="ring-2 ring-[#0a0a0c]"
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="min-w-0" aria-hidden />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (hasActivity) {
-                          router.push(`/venue-activity?venueId=${encodeURIComponent(v.id)}`);
-                          return;
-                        }
-                        router.push(`/map?venueId=${encodeURIComponent(v.id)}`);
-                      }}
-                      className="rounded-[10px] bg-white/[0.08] px-3 py-2 text-[12px] font-semibold text-white/90 ring-1 ring-white/[0.08] transition hover:bg-white/[0.11]"
-                    >
-                      {hasActivity ? "View activity" : "Map"}
-                    </button>
+          <div className="space-y-3">
+            {friendShareCards.map((share) => (
+              <button
+                key={share.id}
+                type="button"
+                onClick={() => router.push(`/moments/${encodeURIComponent(share.id)}`)}
+                className="w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] text-left"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={share.image_url} alt="Share" className="h-[240px] w-full object-cover" />
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <Avatar src={share.avatar} fallbackText={share.username} size="xs" />
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] font-semibold text-white">{share.username}</p>
+                    <p className="truncate text-[11px] text-white/50">{formatRelativeTime(share.created_at)}</p>
                   </div>
-                </li>
-              );
-            })}
-          </ul>
+                </div>
+              </button>
+            ))}
+            <p className="pt-1 text-center text-[12px] text-white/42">Be the first to share.</p>
+          </div>
         )}
       </section>
 

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Avatar } from "@/components/ui";
 import { createNotification } from "@/lib/notifications";
+import { getPresenceFreshness, isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
 
 type ProfileLite = {
   id: string;
@@ -13,6 +14,7 @@ type ProfileLite = {
   display_name?: string | null;
   avatar_url?: string | null;
   is_private?: boolean | null;
+  ghost_mode?: boolean | null;
 };
 type FriendRequestRow = {
   id: string;
@@ -21,12 +23,8 @@ type FriendRequestRow = {
   status: "pending" | "accepted" | "declined" | "canceled";
   created_at: string;
 };
-type PresenceRow = { user_id: string; venue_id: string | null; updated_at: string };
+type PresenceRow = { user_id: string; venue_id: string | null; updated_at: string; lat: number; lng: number };
 type VenueRow = { id: string; name: string };
-
-function isActive(ts: string) {
-  return Date.now() - new Date(ts).getTime() < 5 * 60_000;
-}
 
 function normalizeUsername(v: string) {
   return v.trim().replace(/^@/, "").toLowerCase();
@@ -81,7 +79,7 @@ function FriendsPageContent() {
     setMsg(null);
     const { data: target } = await supabase
       .from("profiles")
-      .select("id, username, display_name, avatar_url, is_private")
+      .select("id, username, display_name, avatar_url, is_private, ghost_mode")
       .eq("username", usernameToView)
       .maybeSingle();
     if (!target?.id) {
@@ -131,7 +129,7 @@ function FriendsPageContent() {
     }
     const { data: friendRows } = await supabase
       .from("profiles")
-      .select("id, username, display_name, avatar_url, is_private")
+      .select("id, username, display_name, avatar_url, is_private, ghost_mode")
       .in("id", friendIds);
     setFriends((friendRows ?? []) as ProfileLite[]);
   }
@@ -165,7 +163,7 @@ function FriendsPageContent() {
     if (idsToResolve.length > 0) {
       const { data: resolved } = await supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, is_private")
+        .select("id, username, display_name, avatar_url, is_private, ghost_mode")
         .in("id", idsToResolve);
       const map: Record<string, ProfileLite> = {};
       for (const row of (resolved ?? []) as any[]) {
@@ -191,14 +189,14 @@ function FriendsPageContent() {
 
     const { data: friendRows } = await supabase
       .from("profiles")
-      .select("id, username, display_name, avatar_url, is_private")
+      .select("id, username, display_name, avatar_url, is_private, ghost_mode")
       .in("id", friendIds);
     const friendProfiles = (friendRows ?? []) as ProfileLite[];
     setFriends(friendProfiles);
 
     const { data: presenceRows } = await supabase
       .from("user_presence")
-      .select("user_id, venue_id, updated_at")
+      .select("user_id, venue_id, updated_at, lat, lng")
       .in("user_id", friendIds);
     const pMap: Record<string, PresenceRow> = {};
     for (const p of (presenceRows ?? []) as PresenceRow[]) {
@@ -242,7 +240,7 @@ function FriendsPageContent() {
       setSearching(true);
       const { data } = await supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, is_private")
+        .select("id, username, display_name, avatar_url, is_private, ghost_mode")
         .ilike("username", q)
         .limit(1);
       if (!alive) return;
@@ -337,15 +335,28 @@ function FriendsPageContent() {
   }, [friends, search]);
 
   const activeFriends = useMemo(
-    () => filteredFriends.filter((f) => presenceById[f.id] && isActive(presenceById[f.id].updated_at)),
+    () =>
+      filteredFriends.filter((f) => {
+        const p = presenceById[f.id];
+        if (!p) return false;
+        if (f.ghost_mode) return false;
+        if (!isValidCoordinatePair(p.lat, p.lng)) return false;
+        return isPresenceLive(p.updated_at);
+      }),
     [filteredFriends, presenceById]
   );
 
-  if (loading) return <div className="min-h-screen bg-black text-white p-6">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] bg-black px-6 pb-6 pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white">
+        Loading…
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="sticky top-0 z-20 border-b border-white/10 bg-black/90 px-4 pt-4 pb-3 backdrop-blur">
+    <div className="min-h-[100dvh] bg-black text-white">
+      <div className="sticky top-0 z-20 border-b border-white/10 bg-black/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+10px)] backdrop-blur">
         <div className="flex items-center justify-between">
           <button onClick={goBackSafe} className="text-lg text-white/70" aria-label="Back">
             ←
@@ -485,9 +496,14 @@ function FriendsPageContent() {
           ) : (
             filteredFriends.map((f) => {
               const p = presenceById[f.id];
-              const status = p && isActive(p.updated_at)
-                ? (p.venue_id && venueById[p.venue_id] ? `At ${venueById[p.venue_id]}` : "Active now")
-                : "Offline";
+              const freshness = p ? getPresenceFreshness(p.updated_at) : "stale";
+              const status = f.ghost_mode
+                ? "Offline"
+                : freshness === "live"
+                  ? (p?.venue_id && venueById[p.venue_id] ? `At ${venueById[p.venue_id]}` : "Active now")
+                  : freshness === "recent"
+                    ? (p?.venue_id && venueById[p.venue_id] ? `Recently at ${venueById[p.venue_id]}` : "Recently active")
+                    : "Offline";
               const subtitle = viewerTarget
                 ? (f.is_private ? `@${f.username} · Private` : `@${f.username}`)
                 : `@${f.username} · ${status}`;
@@ -515,7 +531,7 @@ export default function FriendsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-black p-6 text-sm text-white/60">
+        <div className="min-h-[100dvh] bg-black p-6 pt-[calc(env(safe-area-inset-top,0px)+12px)] text-sm text-white/60">
           Loading friends...
         </div>
       }

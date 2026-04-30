@@ -175,7 +175,7 @@ export async function createNotification(params: {
     .eq("id", actorId)
     .maybeSingle();
   const actorName = actor?.display_name || actor?.username || "Someone";
-  let pushTitle = "AfterHours";
+  let pushTitle = "Intencity";
   let pushBody = "Something new is happening.";
   if (type === "friend_online") {
     pushTitle = "Friends active";

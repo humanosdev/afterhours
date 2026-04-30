@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const userAgent = req.headers.get("user-agent") ?? "unknown";
   const submittedBy = session.user.email ?? session.user.id;
-  const subject = `[AfterHours feedback] ${category}`;
+  const subject = `[Intencity feedback] ${category}`;
   const text = [
     `Submitted by: ${submittedBy}`,
     `User ID: ${session.user.id}`,

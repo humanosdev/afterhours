@@ -43,14 +43,6 @@ export function Avatar({
       ? "from-accent-cyan/80 to-accent-violet/60"
       : "from-accent-violet/80 to-accent-cyan/60";
 
-  const initials = (() => {
-    const clean = (fallbackText ?? "").trim();
-    if (!clean) return "AH";
-    const parts = clean.split(/\s+/).filter(Boolean);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-  })();
-
   const image = src && !imageFailed ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -61,8 +53,22 @@ export function Avatar({
       onError={() => setImageFailed(true)}
     />
   ) : (
-    <div className="grid h-full w-full place-items-center font-semibold text-text-secondary">
-      {initials}
+    <div
+      className="grid h-full w-full place-items-center bg-gradient-to-br from-[#9c6bff] via-[#7a3cff] to-[#5a26d9]"
+      aria-label={fallbackText ? `${fallbackText} avatar` : "Default avatar"}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="h-[60%] w-[60%] text-white/95"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle cx="12" cy="8.25" r="3.5" fill="currentColor" />
+        <path
+          d="M5 19.25C5 15.9363 7.68629 13.25 11 13.25H13C16.3137 13.25 19 15.9363 19 19.25V20.25H5V19.25Z"
+          fill="currentColor"
+        />
+      </svg>
     </div>
   );
 

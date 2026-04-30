@@ -2,9 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===== AfterHours tokens (minimal CSS vars) ===== */
+/* ===== Intencity tokens (minimal CSS vars) ===== */
 :root {
-  --ah-bg-primary: #0e0e12;
+  --ah-bg-primary: #000000;
   --ah-bg-secondary: #15151b;
   --ah-surface: #1b1b23;
   --ah-surface-hover: #23232d;
@@ -14,9 +14,9 @@
   --ah-text-secondary: #a1a1aa;
   --ah-text-muted: #71717a;
 
-  --ah-accent-violet: #8b5cf6;
-  --ah-accent-violet-active: #a78bfa;
-  --ah-accent-violet-glow: rgba(139, 92, 246, 0.35);
+  --ah-accent-violet: #7a3cff;
+  --ah-accent-violet-active: #9c6bff;
+  --ah-accent-violet-glow: rgba(122, 60, 255, 0.4);
   --ah-accent-cyan: #22d3ee;
 }
 

@@ -63,8 +63,8 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-primary text-text-primary">
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-[calc(env(safe-area-inset-bottom,0px)+22px)] pt-[calc(env(safe-area-inset-top,0px)+18px)]">
-        <div className="rounded-2xl border border-subtle bg-secondary p-5 shadow-[0_0_30px_rgba(139,92,246,0.16)]">
-          <h1 className="text-3xl font-semibold tracking-tight">AfterHours</h1>
+        <div className="rounded-2xl border border-subtle bg-secondary p-5 shadow-[0_0_30px_rgba(122,60,255,0.2)]">
+          <h1 className="text-3xl font-semibold tracking-tight">Intencity</h1>
           <p className="mt-2 text-sm text-text-secondary">
             See where the night is happening.
           </p>
@@ -131,7 +131,7 @@ export default function OnboardingPage() {
           disabled={!userId || saving}
           className="mt-auto w-full rounded-2xl bg-accent-violet py-3 text-base font-semibold text-white shadow-glow-violet disabled:opacity-50"
         >
-          {saving ? "Entering..." : "Enter AfterHours"}
+          {saving ? "Entering..." : "Enter Intencity"}
         </button>
       </div>
     </div>

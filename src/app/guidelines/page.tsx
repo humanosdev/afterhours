@@ -4,7 +4,7 @@ export default function GuidelinesPage() {
       <div className="mx-auto max-w-2xl">
         <h1 className="text-3xl font-semibold">Community Guidelines</h1>
         <p className="mt-3 text-sm text-white/60">
-          Keep AfterHours safe, social, and respectful.
+          Keep Intencity safe, social, and respectful.
         </p>
 
         <div className="mt-8 space-y-5 text-sm leading-relaxed text-white/85">

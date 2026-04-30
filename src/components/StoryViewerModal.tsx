@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Avatar } from "@/components/ui";
+import { formatRelativeTime } from "@/lib/time";
 
 export type StoryViewerStory = {
   id: string;
@@ -87,13 +88,7 @@ export default function StoryViewerModal({
   }, [open, currentUserId]);
 
   const relativeTime = (createdAt: string) => {
-    const diff = Date.now() - new Date(createdAt).getTime();
-    if (!Number.isFinite(diff) || diff < 0) return "just now";
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    return `${hours}h`;
+    return formatRelativeTime(createdAt);
   };
 
   const close = () => {
@@ -272,6 +267,8 @@ export default function StoryViewerModal({
     const canDelete =
       comment.user_id === currentUserId || activeStory.user_id === currentUserId;
     if (!canDelete) return;
+    const confirmed = window.confirm("Delete this comment?");
+    if (!confirmed) return;
     const { error } = await supabase.from("story_comments").delete().eq("id", comment.id);
     if (error) {
       console.error(error);
@@ -283,6 +280,8 @@ export default function StoryViewerModal({
 
   const deleteStory = async () => {
     if (!activeStory || !currentUserId || activeStory.user_id !== currentUserId) return;
+    const confirmed = window.confirm("Delete this Moment? This can’t be undone.");
+    if (!confirmed) return;
     const { error } = await supabase
       .from("stories")
       .delete()
@@ -320,7 +319,10 @@ export default function StoryViewerModal({
         if (end - start > 90) close();
       }}
     >
-      <div className="absolute left-0 right-0 top-0 z-10 px-3 pt-3" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="absolute left-0 right-0 top-0 z-10 px-3 pb-1 pt-[calc(env(safe-area-inset-top,0px)+10px)]"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex gap-1.5">
           {stories.map((story, i) => (
             <div key={story.id} className="h-0.5 flex-1 overflow-hidden rounded-full bg-white/25">

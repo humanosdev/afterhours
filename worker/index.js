@@ -4,10 +4,10 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: "AfterHours", body: event.data.text() };
+    payload = { title: "Intencity", body: event.data.text() };
   }
 
-  const title = payload.title || "AfterHours";
+  const title = payload.title || "Intencity";
   const body = payload.body || "You have a new update.";
   const data = payload.data || {};
 

@@ -1,5 +1,5 @@
 export const appConfig = {
-  appName: "AfterHours",
+  appName: "Intencity",
   description: "See where your friends are going out in real time.",
   supportEmail: "humanosdev@gmail.com",
   minimumAge: 18,

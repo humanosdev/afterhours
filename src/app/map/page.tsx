@@ -6,27 +6,34 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   UtensilsCrossed,
-  MoonStar,
   Sparkles,
   GraduationCap,
-  Trees,
   Grid3X3,
   X,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  LocateFixed,
 } from "lucide-react";
 import {
   createNotification,
   getMyFriendIds,
   getNotificationPreferences,
 } from "@/lib/notifications";
+import {
+  LIVE_WINDOW_MS,
+  getPresenceFreshness,
+  isPresenceLive,
+  isValidCoordinatePair,
+} from "@/lib/presence";
+import { formatRelativeTime } from "@/lib/time";
 import ProtectedRoute from "@/components/ProtectedRoute";
 // Dev venue radii — off by default for MVP (enable locally when debugging zones)
 const SHOW_DEV_RADII = false;
 
 const MAP_STYLE_DAY = "mapbox://styles/mapbox/light-v11";
 const MAP_STYLE_NIGHT = "mapbox://styles/mapbox/dark-v11";
+const MAP_BRAND_TINT_LAYER = "map-brand-tone-overlay";
 
 /** Local device clock: light map 7:00–17:59, night from 18:00 until before 7:00. */
 function localHourIsMapDaytime(date = new Date()): boolean {
@@ -42,21 +49,99 @@ function applyMapAtmosphereForMode(m: mapboxgl.Map, dayMode: boolean) {
   if (dayMode) {
     m.setFog({
       range: [1, 10],
-      color: "#e8e4df",
-      "high-color": "#a8c4e8",
-      "horizon-blend": 0.28,
-      "space-color": "#c8dcf5",
+      color: "#f6f4fa",
+      "high-color": "#ece7f4",
+      "horizon-blend": 0.26,
+      "space-color": "#f7f5fb",
       "star-intensity": 0,
     });
   } else {
     m.setFog({
       range: [0.85, 8],
-      color: "#14141c",
-      "high-color": "#06060c",
+      color: "#09080d",
+      "high-color": "#0e0b16",
       "horizon-blend": 0.1,
-      "space-color": "#000000",
+      "space-color": "#09080d",
       "star-intensity": 0.62,
     });
+  }
+}
+
+function applyBrandedBasemapTheme(m: mapboxgl.Map, dayMode: boolean) {
+  const roadColor = dayMode ? "#d8d2e6" : "#2a2038";
+  const roadOutlineColor = dayMode ? "#c8c0d8" : "#3a2b50";
+  const labelColor = dayMode ? "#3a3347" : "#d7d0e8";
+  const mutedLabelColor = dayMode ? "#746b82" : "#8f82a8";
+  const waterColor = dayMode ? "#e8e3f5" : "#151022";
+  const parkColor = dayMode ? "#ece7f4" : "#181321";
+  const landColor = dayMode ? "#f8f7fc" : "#0e0b16";
+  const bgColor = dayMode ? "#f7f5fb" : "#09080d";
+
+  const safeSetPaint = (layerId: string, paint: any, value: unknown) => {
+    try {
+      if (m.getLayer(layerId)) m.setPaintProperty(layerId, paint as any, value as any);
+    } catch {
+      /* layer/paint mismatch across style revisions */
+    }
+  };
+
+  const style = m.getStyle();
+  for (const layer of style.layers ?? []) {
+    const id = layer.id.toLowerCase();
+    const type = layer.type;
+
+    if (type === "background") {
+      safeSetPaint(layer.id, "background-color", bgColor);
+      continue;
+    }
+
+    if (type === "fill") {
+      if (id.includes("water")) {
+        safeSetPaint(layer.id, "fill-color", waterColor);
+      } else if (id.includes("park")) {
+        safeSetPaint(layer.id, "fill-color", parkColor);
+      } else if (id.includes("land") || id.includes("landuse")) {
+        safeSetPaint(layer.id, "fill-color", landColor);
+      }
+      continue;
+    }
+
+    if (type === "line") {
+      if (id.includes("road")) {
+        safeSetPaint(layer.id, "line-color", roadColor);
+      }
+      if (id.includes("bridge") || id.includes("tunnel")) {
+        safeSetPaint(layer.id, "line-color", roadOutlineColor);
+      }
+      continue;
+    }
+
+    if (type === "symbol" && id.includes("label")) {
+      const color = id.includes("place") || id.includes("road") ? labelColor : mutedLabelColor;
+      safeSetPaint(layer.id, "text-color", color);
+      safeSetPaint(layer.id, "text-halo-color", dayMode ? "rgba(247,245,251,0.88)" : "rgba(9,8,13,0.88)");
+      safeSetPaint(layer.id, "text-halo-width", dayMode ? 0.8 : 0.7);
+    }
+  }
+
+  // Subtle brand tint that keeps heat/activity layers visually dominant.
+  if (m.getLayer(MAP_BRAND_TINT_LAYER)) {
+    safeSetPaint(MAP_BRAND_TINT_LAYER, "background-color", "#7a3cff");
+    safeSetPaint(MAP_BRAND_TINT_LAYER, "background-opacity", dayMode ? 0.04 : 0.07);
+    return;
+  }
+
+  try {
+    m.addLayer({
+      id: MAP_BRAND_TINT_LAYER,
+      type: "background",
+      paint: {
+        "background-color": "#7a3cff",
+        "background-opacity": dayMode ? 0.04 : 0.07,
+      },
+    });
+  } catch {
+    /* style may still be settling */
   }
 }
 
@@ -151,7 +236,7 @@ function safeSetMapCursor(m: mapboxgl.Map | null, cursor: string) {
   if (canvas) canvas.style.cursor = cursor;
 }
 
-/** Substrings matched against `venue.category` for green dining-style map pins. */
+/** Substrings matched against `venue.category` for food-style map markers. */
 const DINING_PIN_CATEGORY_MATCHERS = [
   "food",
   "restaurant",
@@ -172,9 +257,19 @@ function isDiningVenueCategory(category: string | null | undefined) {
 }
 
 /** Same name hints as the Campus map filter — keep in sync when adding buildings. */
-const CAMPUS_VENUE_NAME_SUBSTRINGS = ["ego hall", "johnson", "morgan", "pearson"];
+const CAMPUS_VENUE_NAME_SUBSTRINGS = [
+  "ego hall",
+  "johnson",
+  "morgan",
+  "pearson",
+  "howard gittis",
+  "gittis",
+  "student center",
+];
 
-const CAMPUS_PIN_CATEGORY_MATCHERS = ["campus", "school", "university", "college", "dorm"];
+const CAMPUS_PIN_CATEGORY_MATCHERS = ["campus", "school", "university", "college", "dorm", "student center"];
+const EVENTS_PIN_CATEGORY_MATCHERS = ["event", "music", "show", "concert", "festival", "party"];
+const NIGHTLIFE_PIN_CATEGORY_MATCHERS = ["nightlife", "bar", "club", "lounge", "party"];
 
 function isCampusVenue(v: { category: string; name: string }) {
   const source = `${v.category ?? ""}`.toLowerCase();
@@ -183,15 +278,140 @@ function isCampusVenue(v: { category: string; name: string }) {
   return CAMPUS_VENUE_NAME_SUBSTRINGS.some((fragment) => name.includes(fragment));
 }
 
-type NeonPinVariant = "default" | "dining" | "campus";
+type VenueCategoryIconKey = "all" | "nightlife" | "campus" | "food" | "events";
 
-function resolveVenuePinVariant(v: { category: string; name: string }): NeonPinVariant {
-  if (isCampusVenue(v)) return "campus";
-  if (isDiningVenueCategory(v.category)) return "dining";
-  return "default";
+function isEventVenueCategory(category: string | null | undefined) {
+  const s = `${category ?? ""}`.toLowerCase();
+  return EVENTS_PIN_CATEGORY_MATCHERS.some((token) => s.includes(token));
 }
 
-function createNeonPinImage(variant: NeonPinVariant = "default") {
+function isNightlifeVenueCategory(category: string | null | undefined) {
+  const s = `${category ?? ""}`.toLowerCase();
+  return NIGHTLIFE_PIN_CATEGORY_MATCHERS.some((token) => s.includes(token));
+}
+
+function resolveVenueCategoryIconKey(v: { category: string; name: string }): VenueCategoryIconKey {
+  if (isCampusVenue(v)) return "campus";
+  if (isDiningVenueCategory(v.category)) return "food";
+  if (isEventVenueCategory(v.category)) return "events";
+  if (isNightlifeVenueCategory(v.category)) return "nightlife";
+  return "all";
+}
+
+function markerColorForCategory(key: VenueCategoryIconKey): string {
+  switch (key) {
+    case "nightlife":
+      return "#D946EF";
+    case "campus":
+      return "#3B82F6";
+    case "food":
+      return "#F59E0B";
+    case "events":
+      return "#06B6D4";
+    case "all":
+    default:
+      return "#8B5CF6";
+  }
+}
+
+function drawCategoryGlyph(ctx: CanvasRenderingContext2D, key: VenueCategoryIconKey, cx: number, cy: number) {
+  ctx.save();
+  ctx.strokeStyle = "#ffffff";
+  ctx.fillStyle = "#ffffff";
+  ctx.lineWidth = 2.7;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (key === "nightlife") {
+    // Margarita glass + straw.
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy - 8);
+    ctx.lineTo(cx + 8, cy - 8);
+    ctx.lineTo(cx + 3, cy + 2);
+    ctx.lineTo(cx - 3, cy + 2);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 2);
+    ctx.lineTo(cx, cy + 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy + 8);
+    ctx.lineTo(cx + 5, cy + 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 4, cy - 12);
+    ctx.lineTo(cx + 11, cy - 21);
+    ctx.stroke();
+  } else if (key === "campus") {
+    ctx.beginPath();
+    ctx.moveTo(cx - 10, cy - 2);
+    ctx.lineTo(cx, cy - 9);
+    ctx.lineTo(cx + 10, cy - 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 8, cy - 1);
+    ctx.lineTo(cx - 8, cy + 9);
+    ctx.moveTo(cx - 3, cy - 1);
+    ctx.lineTo(cx - 3, cy + 9);
+    ctx.moveTo(cx + 3, cy - 1);
+    ctx.lineTo(cx + 3, cy + 9);
+    ctx.moveTo(cx + 8, cy - 1);
+    ctx.lineTo(cx + 8, cy + 9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 11, cy + 9);
+    ctx.lineTo(cx + 11, cy + 9);
+    ctx.stroke();
+  } else if (key === "food") {
+    // Fork + knife
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, cy - 9);
+    ctx.lineTo(cx - 7, cy + 9);
+    ctx.moveTo(cx - 10, cy - 9);
+    ctx.lineTo(cx - 10, cy - 4);
+    ctx.moveTo(cx - 7, cy - 9);
+    ctx.lineTo(cx - 7, cy - 4);
+    ctx.moveTo(cx - 4, cy - 9);
+    ctx.lineTo(cx - 4, cy - 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 6, cy - 9);
+    ctx.lineTo(cx + 2, cy + 9);
+    ctx.moveTo(cx + 6, cy - 9);
+    ctx.lineTo(cx + 10, cy + 9);
+    ctx.stroke();
+  } else if (key === "events") {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 10);
+    ctx.lineTo(cx + 3.2, cy - 2.6);
+    ctx.lineTo(cx + 10, cy);
+    ctx.lineTo(cx + 3.6, cy + 3.1);
+    ctx.lineTo(cx + 1.1, cy + 10);
+    ctx.lineTo(cx - 2.2, cy + 3.4);
+    ctx.lineTo(cx - 10, cy);
+    ctx.lineTo(cx - 2.8, cy - 2.8);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    // All/default grid dots
+    const r = 2.2;
+    const points = [
+      [cx - 5.5, cy - 5.5],
+      [cx + 5.5, cy - 5.5],
+      [cx - 5.5, cy + 5.5],
+      [cx + 5.5, cy + 5.5],
+    ];
+    for (const [x, y] of points) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function createCategoryMarkerImage(key: VenueCategoryIconKey = "all") {
   const size = 96;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -204,30 +424,16 @@ function createNeonPinImage(variant: NeonPinVariant = "default") {
   const circleR = 18;
   const tipY = 74;
 
-  let glow0: string;
-  let glowMid: string;
-  let glowEdge: string;
-  let fill: string;
-  let shadowRgb: string;
-  if (variant === "dining") {
-    glow0 = "rgba(34, 197, 94, 0.95)";
-    glowMid = "rgba(34, 197, 94, 0.65)";
-    glowEdge = "rgba(34, 197, 94, 0)";
-    fill = "#22c55e";
-    shadowRgb = "34,197,94";
-  } else if (variant === "campus") {
-    glow0 = "rgba(239, 68, 68, 0.95)";
-    glowMid = "rgba(239, 68, 68, 0.65)";
-    glowEdge = "rgba(239, 68, 68, 0)";
-    fill = "#ef4444";
-    shadowRgb = "239,68,68";
-  } else {
-    glow0 = "rgba(139, 92, 246, 0.95)";
-    glowMid = "rgba(139, 92, 246, 0.65)";
-    glowEdge = "rgba(139, 92, 246, 0)";
-    fill = "#8b5cf6";
-    shadowRgb = "139,92,246";
-  }
+  const fill = markerColorForCategory(key);
+  const rgb = fill
+    .replace("#", "")
+    .match(/.{1,2}/g)
+    ?.map((v) => parseInt(v, 16)) ?? [139, 92, 246];
+  const [r, g, b] = rgb;
+  const glow0 = `rgba(${r}, ${g}, ${b}, 0.95)`;
+  const glowMid = `rgba(${r}, ${g}, ${b}, 0.65)`;
+  const glowEdge = `rgba(${r}, ${g}, ${b}, 0)`;
+  const shadowRgb = `${r},${g},${b}`;
 
   const glow = ctx.createRadialGradient(cx, circleCy, 6, cx, circleCy, 36);
   glow.addColorStop(0, glow0);
@@ -255,8 +461,15 @@ function createNeonPinImage(variant: NeonPinVariant = "default") {
 
   ctx.beginPath();
   ctx.arc(cx, circleCy, circleR * 0.48, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.fillStyle = fill;
   ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(cx, circleCy, circleR * 0.78, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.fill();
+
+  drawCategoryGlyph(ctx, key, cx, circleCy);
 
   return ctx.getImageData(0, 0, size, size);
 }
@@ -322,6 +535,9 @@ function MapPageContent() {
   const map = useRef<mapboxgl.Map | null>(null);
   const hasRunInitialPresence = useRef(false);
   const hasCenteredToUser = useRef(false);
+  const youRef = useRef<{ lng: number; lat: number } | null>(null);
+  const selfPresenceCoordsRef = useRef<{ lng: number; lat: number } | null>(null);
+  const doubleTapCycleRef = useRef<0 | 1>(0);
 
 type VenuePerson = {
   user_id: string;
@@ -331,8 +547,6 @@ type VenuePerson = {
   isRecentPresence: boolean;
 };
 
-const ONLINE_WINDOW_MS = 5 * 60_000;
-const RECENT_VENUE_WINDOW_MS = 120 * 60_000;
 const AUTO_TOUR_PAUSE_MS = 2200;
 /** Min time since last map/page interaction before auto venue cycling may run (still 2s between hops once eligible). */
 const AUTO_TOUR_IDLE_GRACE_MS = 12_000;
@@ -372,6 +586,7 @@ const AUTO_TOUR_ARROW_GRACE_MS = 2200;
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [usernamesById, setUsernamesById] = useState<Record<string, string>>({});
   const [friendProfilesById, setFriendProfilesById] = useState<Record<string, FriendProfile>>({});
+  const [presenceGhostById, setPresenceGhostById] = useState<Record<string, boolean>>({});
   const presenceInterval = useRef<NodeJS.Timeout | null>(null);
 const [selectedVenueId, setSelectedVenueId] = useState<string | null>(null);
 const [checkpointIndex, setCheckpointIndex] = useState(0);
@@ -387,17 +602,47 @@ const [pulseTick, setPulseTick] = useState(0);
 const [myProfile, setMyProfile] = useState<FriendProfile | null>(null);
 const handledQueryVenueIdRef = useRef<string | null>(null);
 /** Space above bottom nav + home indicator; lower = closer to nav, more map area. */
-const MAP_NAV_CLEARANCE_PX = 100;
-type CategoryKey = "all" | "nightlife" | "food" | "events" | "campus" | "chill" | "more";
+const MAP_NAV_CLEARANCE_PX = 84;
+type CategoryKey = "all" | "nightlife" | "food" | "events" | "campus";
 type MapPanelMode = "categories" | "friends";
 const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
 const [activityPlaceholderOpen, setActivityPlaceholderOpen] = useState(false);
 const [panelMode, setPanelMode] = useState<MapPanelMode>("categories");
 const [mapZoom, setMapZoom] = useState(14);
-/** Active category chip tints — match map pin colors (purple default / green dining / red campus). */
-const MAP_PIN_PURPLE = "#8b5cf6";
-const MAP_PIN_GREEN = "#22c55e";
-const MAP_PIN_RED = "#ef4444";
+/** Category accent palette (brand-aligned). */
+const MAP_PIN_ALL = "#8B5CF6";
+const MAP_PIN_NIGHTLIFE = "#D946EF";
+const MAP_PIN_CAMPUS = "#3B82F6";
+const MAP_PIN_FOOD = "#F59E0B";
+const MAP_PIN_EVENTS = "#06B6D4";
+
+const NightlifeDrinkIcon = ({
+  size = 11,
+  strokeWidth = 2,
+  className,
+}: {
+  size?: number;
+  strokeWidth?: number;
+  className?: string;
+}) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={strokeWidth}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <path d="M5 7.5H19L14.2 14H9.8L5 7.5Z" />
+    <path d="M12 14V19" />
+    <path d="M8.5 19H15.5" />
+    <path d="M15.5 6L20 2.5" />
+  </svg>
+);
 
 const categoryFilters: {
   key: CategoryKey;
@@ -406,19 +651,17 @@ const categoryFilters: {
   accent: string;
   matchers: string[];
 }[] = [
-  { key: "all", label: "All", icon: Grid3X3, accent: MAP_PIN_PURPLE, matchers: [] },
-  { key: "nightlife", label: "Nightlife", icon: MoonStar, accent: MAP_PIN_PURPLE, matchers: ["nightlife", "bar", "club", "party"] },
-  { key: "food", label: "Food", icon: UtensilsCrossed, accent: MAP_PIN_GREEN, matchers: ["food", "restaurant", "eat", "cafe"] },
-  { key: "events", label: "Events", icon: Sparkles, accent: MAP_PIN_PURPLE, matchers: ["event", "music", "show", "concert"] },
+  { key: "all", label: "All", icon: Grid3X3, accent: MAP_PIN_ALL, matchers: [] },
+  { key: "nightlife", label: "Nightlife", icon: NightlifeDrinkIcon, accent: MAP_PIN_NIGHTLIFE, matchers: ["nightlife", "bar", "club", "party"] },
   {
     key: "campus",
     label: "Campus",
     icon: GraduationCap,
-    accent: MAP_PIN_RED,
+    accent: MAP_PIN_CAMPUS,
     matchers: ["campus", "school", "university"],
   },
-  { key: "chill", label: "Chill", icon: Trees, accent: MAP_PIN_PURPLE, matchers: ["chill", "park", "lounge"] },
-  { key: "more", label: "More", icon: Sparkles, accent: MAP_PIN_PURPLE, matchers: [] },
+  { key: "food", label: "Food", icon: UtensilsCrossed, accent: MAP_PIN_FOOD, matchers: ["food", "restaurant", "eat", "cafe"] },
+  { key: "events", label: "Events", icon: Sparkles, accent: MAP_PIN_EVENTS, matchers: ["event", "music", "show", "concert"] },
 ];
 
 const selectedVenue = selectedVenueId
@@ -427,7 +670,7 @@ const selectedVenue = selectedVenueId
 const queryVenueId = searchParams.get("venueId");
 
 const filteredVenues = useMemo(() => {
-  if (activeCategory === "all" || activeCategory === "more") return venues;
+  if (activeCategory === "all") return venues;
   const filter = categoryFilters.find((f) => f.key === activeCategory);
   if (!filter) return venues;
   return venues.filter((v) => {
@@ -450,8 +693,6 @@ const filteredVenues = useMemo(() => {
 function closeVenueCard() {
   setSelectedVenueId(null);
 }
-
-const STALE_MS = 10 * 60_000;
 
 function initialsFromName(name: string | null | undefined) {
   const clean = (name ?? "").trim();
@@ -482,9 +723,12 @@ function getVenuePeople(venueId: string) {
   for (const p of presence) {
     if (hiddenIds.has(p.user_id)) continue;
   if (p.user_id === meId) continue;
-  const lastSeenMs = new Date(p.updated_at).getTime();
-  const isOnlineNow = now - lastSeenMs <= ONLINE_WINDOW_MS;
-  const isRecentlySeen = now - lastSeenMs <= RECENT_VENUE_WINDOW_MS;
+  if (!isValidCoordinatePair(p.lat, p.lng)) continue;
+  if (presenceGhostById[p.user_id]) continue;
+  const freshness = getPresenceFreshness(p.updated_at, now);
+  if (freshness === "stale") continue;
+  const isOnlineNow = freshness === "live";
+  const isRecentlySeen = freshness === "recent";
 
   const d = distanceMeters(p.lat, p.lng, venue.lat, venue.lng);
   const isFriend = p.user_id in friendsById;
@@ -618,6 +862,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (!meId || !you) return;
+  if (!isValidCoordinatePair(you.lat, you.lng)) return;
 
   const pingPresence = async () => {
     await supabase.from("user_presence").upsert(
@@ -663,13 +908,7 @@ function formatLastSeen(ts: string) {
   const min = Math.floor(diff / 60000);
 
   if (min < 2) return "online";
-  if (min < 60) return `${min}m ago`;
-
-  const hrs = Math.floor(min / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return formatRelativeTime(ts, { includeAgo: false, nowLabel: "online" });
 }
 
   /* ---------------- GEO ---------------- */
@@ -681,11 +920,46 @@ function formatLastSeen(ts: string) {
           lng: pos.coords.longitude,
           lat: pos.coords.latitude,
         }),
-      () => setYou({ lng: -75.1636, lat: 39.9526 }),
+      () => {
+        // Never fall back to fake coordinates; keep last real GPS (or null).
+      },
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
 
     return () => navigator.geolocation.clearWatch(id);
+  }, []);
+
+  useEffect(() => {
+    const refreshLocation = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setYou({
+            lng: pos.coords.longitude,
+            lat: pos.coords.latitude,
+          });
+        },
+        () => {
+          /* permission denied or unavailable */
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      );
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshLocation();
+    };
+    const onFocus = () => refreshLocation();
+    const onPageShow = () => refreshLocation();
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+    };
   }, []);
 
  
@@ -709,9 +983,11 @@ useEffect(() => {
   });
 
   map.current = m;
+  m.doubleClickZoom.disable();
 
   m.on("load", () => {
     applyMapAtmosphereForMode(m, initialDay);
+    applyBrandedBasemapTheme(m, initialDay);
     setMapReady(true);
   });
   m.on("zoomend", () => setMapZoom(m.getZoom()));
@@ -752,6 +1028,7 @@ useEffect(() => {
       m.off("style.load", onStyleLoad);
       if (cancelled) return;
       applyMapAtmosphereForMode(m, targetDay);
+      applyBrandedBasemapTheme(m, targetDay);
       setMapStyleEpoch((e) => e + 1);
     };
 
@@ -772,6 +1049,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (!map.current || !you) return;
+  youRef.current = you;
   if (hasCenteredToUser.current) return;
   hasCenteredToUser.current = true;
 
@@ -781,6 +1059,20 @@ useEffect(() => {
   });
   setHasInitialMapCenter(true);
 }, [you]);
+
+useEffect(() => {
+  youRef.current = you;
+}, [you]);
+
+useEffect(() => {
+  if (!meId) {
+    selfPresenceCoordsRef.current = null;
+    return;
+  }
+  const mine = presence.find((p) => p.user_id === meId);
+  if (!mine || !isValidCoordinatePair(mine.lat, mine.lng)) return;
+  selfPresenceCoordsRef.current = { lng: mine.lng, lat: mine.lat };
+}, [presence, meId]);
 
 /* ---------------- VISIBILITY FIX ---------------- */
 
@@ -794,6 +1086,66 @@ useEffect(() => {
   document.addEventListener("visibilitychange", onVisible);
   return () =>
     document.removeEventListener("visibilitychange", onVisible);
+}, []);
+
+const runLocateCycle = useCallback(() => {
+  const m = map.current;
+  if (!m) return;
+
+  const centerTo = (coords: { lng: number; lat: number }) => {
+    const now = Date.now();
+    setLastPageInteractionAt(now);
+    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+
+    if (doubleTapCycleRef.current === 0) {
+      // 1) Return immediately to your live pin.
+      m.easeTo({
+        center: [coords.lng, coords.lat],
+        zoom: Math.max(15.5, m.getZoom()),
+        pitch: 0,
+        bearing: 0,
+        duration: 520,
+      });
+      doubleTapCycleRef.current = 1;
+      return;
+    }
+
+    // 2) Next press zooms to earth-level view, centered on you.
+    m.easeTo({
+      center: [coords.lng, coords.lat],
+      zoom: 1.65,
+      pitch: 0,
+      bearing: 0,
+      duration: 760,
+    });
+    doubleTapCycleRef.current = 0;
+  };
+
+  const coordsFromYou = youRef.current;
+  if (coordsFromYou && isValidCoordinatePair(coordsFromYou.lat, coordsFromYou.lng)) {
+    centerTo(coordsFromYou);
+    return;
+  }
+
+  const coordsFromPresence = selfPresenceCoordsRef.current;
+  if (coordsFromPresence && isValidCoordinatePair(coordsFromPresence.lat, coordsFromPresence.lng)) {
+    centerTo(coordsFromPresence);
+    return;
+  }
+
+  // If local presence has not hydrated yet, force a fresh GPS read.
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const coords = { lng: pos.coords.longitude, lat: pos.coords.latitude };
+      setYou(coords);
+      centerTo(coords);
+    },
+    () => {
+      /* no permission or unavailable */
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
 }, []);
 
 
@@ -845,6 +1197,8 @@ function getCountsForVenue(
   for (const p of presence) {
     if (hiddenIds.has(p.user_id)) continue;
   if (p.user_id === meId) continue;
+  if (!isValidCoordinatePair(p.lat, p.lng)) continue;
+  if (!isPresenceLive(p.updated_at, now)) continue;
 
   const isFriend =
   !!friendsById[p.user_id] &&
@@ -898,7 +1252,7 @@ const selectedVenuePeople = useMemo(() => {
     };
   }
   return getVenuePeople(selectedVenue.id);
-}, [selectedVenue, presence, hiddenIds, meId, friendsById, usernamesById, venues]);
+}, [selectedVenue, presence, hiddenIds, meId, friendsById, usernamesById, venues, presenceGhostById]);
 
 const activeCheckpoint = checkpoints.length
   ? checkpoints[((checkpointIndex % checkpoints.length) + checkpoints.length) % checkpoints.length]
@@ -1071,22 +1425,18 @@ useEffect(() => {
       data: emptyFc as any,
     });
 
-    if (!m.hasImage("venue-neon-pin")) {
-      const neonPinImage = createNeonPinImage("default");
-      if (neonPinImage) {
-        m.addImage("venue-neon-pin", neonPinImage, { pixelRatio: 2 });
-      }
-    }
-    if (!m.hasImage("venue-neon-pin-dining")) {
-      const diningPinImage = createNeonPinImage("dining");
-      if (diningPinImage) {
-        m.addImage("venue-neon-pin-dining", diningPinImage, { pixelRatio: 2 });
-      }
-    }
-    if (!m.hasImage("venue-neon-pin-campus")) {
-      const campusPinImage = createNeonPinImage("campus");
-      if (campusPinImage) {
-        m.addImage("venue-neon-pin-campus", campusPinImage, { pixelRatio: 2 });
+    const markerImageEntries: Array<[string, VenueCategoryIconKey]> = [
+      ["venue-category-all", "all"],
+      ["venue-category-nightlife", "nightlife"],
+      ["venue-category-campus", "campus"],
+      ["venue-category-food", "food"],
+      ["venue-category-events", "events"],
+    ];
+    for (const [imageId, categoryKey] of markerImageEntries) {
+      if (m.hasImage(imageId)) continue;
+      const markerImage = createCategoryMarkerImage(categoryKey);
+      if (markerImage) {
+        m.addImage(imageId, markerImage, { pixelRatio: 2 });
       }
     }
 
@@ -1142,12 +1492,11 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["heatmap-density"],
-          0, "rgba(0,0,0,0)",
-          0.1, "#1D4ED8",
-          0.3, "#22D3EE",
-          0.5, "#A855F7",
-          0.7, "#F97316",
-          1, "#EF4444",
+          0, "rgba(148,163,184,0.06)",      // no people: transparent gray haze
+          0.18, "#7dd3fc",                  // some: ice blue
+          0.42, "#14b8a6",                  // growing: teal
+          0.72, "#ff2ea6",                  // busy: hot pink
+          1, "#7a3cff",                     // packed: electric purple
         ],
       },
     });
@@ -1161,11 +1510,11 @@ useEffect(() => {
         "circle-color": [
           "step",
           ["coalesce", ["get", "combined_count"], 0],
-          "#1D4ED8",
-          3, "#22D3EE",
-          7, "#A855F7",
-          12, "#F97316",
-          18, "#EF4444",
+          "rgba(148,163,184,0.34)",
+          1, "#7dd3fc",
+          4, "#14b8a6",
+          9, "#ff2ea6",
+          16, "#7a3cff",
         ],
         "circle-radius": [
           "interpolate",
@@ -1218,10 +1567,14 @@ useEffect(() => {
         ],
         "circle-blur": 0.9,
         "circle-opacity": [
-          "case",
-          ["==", ["coalesce", ["get", "checkpoint_active"], 0], 1],
-          0.7,
-          0.3,
+          "interpolate",
+          ["linear"],
+          ["coalesce", ["get", "combined_count"], 0],
+          0, 0.12,
+          1, 0.28,
+          6, 0.38,
+          12, 0.5,
+          18, 0.62,
         ],
         "circle-pitch-alignment": "map",
         "circle-stroke-width": 0,
@@ -1236,11 +1589,11 @@ useEffect(() => {
         "circle-color": [
           "step",
           ["coalesce", ["get", "combined_count"], 0],
-          "#1D4ED8",
-          3, "#22D3EE",
-          7, "#A855F7",
-          12, "#F97316",
-          18, "#EF4444",
+          "rgba(148,163,184,0.32)",
+          1, "#7dd3fc",
+          4, "#14b8a6",
+          9, "#ff2ea6",
+          16, "#7a3cff",
         ],
         "circle-radius": [
           "interpolate",
@@ -1308,12 +1661,16 @@ useEffect(() => {
       layout: {
         "icon-image": [
           "match",
-          ["get", "pin_variant"],
+          ["get", "category_icon"],
+          "nightlife",
+          "venue-category-nightlife",
           "campus",
-          "venue-neon-pin-campus",
-          "dining",
-          "venue-neon-pin-dining",
-          "venue-neon-pin",
+          "venue-category-campus",
+          "food",
+          "venue-category-food",
+          "events",
+          "venue-category-events",
+          "venue-category-all",
         ],
         "icon-size": [
           "interpolate",
@@ -1335,13 +1692,16 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
-          0, 0,
-          2.8, 0,
-          4.5, 0.14,
-          6, 0.4,
-          9, 0.68,
-          10.8, 0.92,
-          14, 0.95,
+          0,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 12], 0.88, 0],
+          6,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 8], 0.9, 0],
+          9,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 4], 0.92, 0],
+          11.5,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 1], 0.93, 0.08],
+          14,
+          0.95,
         ],
       },
     });
@@ -1474,13 +1834,20 @@ useEffect(() => {
         arrivalPulseVenueId === v.id && Date.now() < arrivalPulseUntil
           ? Math.max(0, (arrivalPulseUntil - Date.now()) / 1600)
           : 0;
-      const ambientPulse = (Math.sin((Date.now() / 380) + (combined * 0.7)) + 1) / 2;
+      const tierPulseStrength =
+        combined <= 0 ? 0 :
+        combined < 4 ? 0.35 :
+        combined < 9 ? 0.62 :
+        combined < 16 ? 0.88 :
+        1.15;
+      const ambientPulse =
+        ((Math.sin((Date.now() / 380) + (combined * 0.7)) + 1) / 2) * tierPulseStrength;
       return {
         type: "Feature" as const,
         properties: {
           venueId: v.id,
           name: v.name,
-          pin_variant: resolveVenuePinVariant(v),
+          category_icon: resolveVenueCategoryIconKey(v),
           inside_count: inside,
           nearby_count: nearby,
           combined_count: combined,
@@ -1572,6 +1939,7 @@ useEffect(() => {
 
   useEffect(() => {
   if (!you || !meId || venues.length === 0) return;
+  if (!isValidCoordinatePair(you.lat, you.lng)) return;
  // if (hasRunInitialPresence.current) return;
 
 
@@ -1693,16 +2061,27 @@ if (bestInner.id) {
 
         const canSendNearby = !venueId;
         if (canSendNearby) {
-          const { data: friendPresenceRows } = await supabase
-            .from("user_presence")
-            .select("user_id, lat, lng, venue_id, updated_at")
-            .in("user_id", friendIds);
+          const [{ data: friendPresenceRows }, { data: ghostRows }] = await Promise.all([
+            supabase
+              .from("user_presence")
+              .select("user_id, lat, lng, venue_id, updated_at")
+              .in("user_id", friendIds),
+            supabase
+              .from("profiles")
+              .select("id, ghost_mode")
+              .in("id", friendIds),
+          ]);
+          const friendGhostMap: Record<string, boolean> = {};
+          for (const row of (ghostRows ?? []) as Array<{ id: string; ghost_mode: boolean | null }>) {
+            friendGhostMap[row.id] = !!row.ghost_mode;
+          }
           const nearbyThresholdM = 300;
           for (const fp of (friendPresenceRows ?? []) as Array<{ user_id: string; lat: number; lng: number; venue_id: string | null; updated_at: string }>) {
             const p = prefs.get(fp.user_id);
             if (p?.online === false) continue;
-            const isFriendActive = Date.now() - new Date(fp.updated_at).getTime() < 5 * 60_000;
-            if (!isFriendActive) continue;
+            if (friendGhostMap[fp.user_id]) continue;
+            if (!isValidCoordinatePair(fp.lat, fp.lng)) continue;
+            if (!isPresenceLive(fp.updated_at)) continue;
             if (fp.venue_id) continue;
             const d = distanceMeters(you.lat, you.lng, fp.lat, fp.lng);
             if (d > nearbyThresholdM) continue;
@@ -1742,7 +2121,23 @@ useEffect(() => {
 
 
     if (mounted) {
-      setPresence((data ?? []) as PresenceRow[]);
+      const rows = (data ?? []) as PresenceRow[];
+      setPresence(rows);
+      const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+      if (!userIds.length) {
+        setPresenceGhostById({});
+        return;
+      }
+      const { data: ghostRows } = await supabase
+        .from("profiles")
+        .select("id, ghost_mode")
+        .in("id", userIds);
+      if (!mounted) return;
+      const ghostMap: Record<string, boolean> = {};
+      for (const row of (ghostRows ?? []) as Array<{ id: string; ghost_mode: boolean | null }>) {
+        ghostMap[row.id] = !!row.ghost_mode;
+      }
+      setPresenceGhostById(ghostMap);
     }
   };
 
@@ -1793,12 +2188,21 @@ useEffect(() => {
     if (!m || !mapReady) return;
 
     const now = Date.now();
-    const activeThresholdMs = STALE_MS;
+    const activeThresholdMs = LIVE_WINDOW_MS;
+    const latestKnownPresenceByUser = new Map<string, PresenceRow>();
     const latestPresenceByUser = new Map<string, PresenceRow>();
     const activePresenceByUser = new Map<string, PresenceRow>();
 
     for (const p of presence) {
+      if (!isValidCoordinatePair(p.lat, p.lng)) continue;
       const lastMs = new Date(p.updated_at).getTime();
+
+      const prevKnown = latestKnownPresenceByUser.get(p.user_id);
+      if (!prevKnown || new Date(prevKnown.updated_at).getTime() < lastMs) {
+        latestKnownPresenceByUser.set(p.user_id, p);
+      }
+
+      if (getPresenceFreshness(p.updated_at, now) === "stale") continue;
       const prevLatest = latestPresenceByUser.get(p.user_id);
       if (!prevLatest || new Date(prevLatest.updated_at).getTime() < lastMs) {
         latestPresenceByUser.set(p.user_id, p);
@@ -1829,12 +2233,11 @@ useEffect(() => {
       { venue: Venue; allCount: number; visibleUserIds: string[] }
     >();
     const markerSizeForZoom = (zoom: number) => {
-      if (zoom <= 3) return 18;
-      if (zoom <= 5) return 22;
-      if (zoom <= 7) return 28;
-      if (zoom <= 9) return 34;
-      if (zoom <= 11) return 38;
-      return 42;
+      // Keep avatars compact; shrink progressively as user zooms out.
+      const minSize = 13;
+      const maxSize = 30;
+      const t = Math.max(0, Math.min(1, (zoom - 4) / 10));
+      return Math.round(minSize + (maxSize - minSize) * t);
     };
     const buildAvatarElement = (
       avatarUrl: string | null | undefined,
@@ -1889,16 +2292,18 @@ useEffect(() => {
 
     if (!isGlobeView) {
       for (const id of candidateIds) {
-        const latestP = latestPresenceByUser.get(id);
+        const latestP = latestKnownPresenceByUser.get(id);
         if (!latestP) continue;
         if (hiddenIds.has(id)) continue;
         const isMe = id === meId;
         const isFriend = !!friendsById[id];
         if (!isMe && !isFriend) continue;
-        const ghost = isMe ? myGhostMode : !!friendProfilesById[id]?.ghost_mode;
-        if (ghost) continue;
+        const ghost = isMe ? myGhostMode : (presenceGhostById[id] ?? !!friendProfilesById[id]?.ghost_mode);
+        if (!isMe && ghost) continue;
         if (findContainingVenue(latestP)) continue;
-        const p = activePresenceByUser.get(id);
+        const p = isMe
+          ? activePresenceByUser.get(id)
+          : (activePresenceByUser.get(id) ?? latestKnownPresenceByUser.get(id));
         if (!p) continue;
         const key = coordinateKeyForPresence(p);
         const bucket = nonVenueOverlapGroups.get(key) ?? [];
@@ -1925,7 +2330,7 @@ useEffect(() => {
     };
 
     for (const id of candidateIds) {
-      const latestP = latestPresenceByUser.get(id);
+      const latestP = latestKnownPresenceByUser.get(id);
       if (!latestP) continue;
       if (hiddenIds.has(id)) continue;
 
@@ -1936,23 +2341,27 @@ useEffect(() => {
       const inVenue = findContainingVenue(latestP);
       const ghost = isMe
         ? myGhostMode
-        : !!friendProfilesById[id]?.ghost_mode;
+        : (presenceGhostById[id] ?? !!friendProfilesById[id]?.ghost_mode);
 
       if (inVenue) {
+        const latestFreshP = latestPresenceByUser.get(id);
+        if (!latestFreshP) continue;
         const bucket = venueBuckets.get(inVenue.id) ?? {
           venue: inVenue,
           allCount: 0,
           visibleUserIds: [],
         };
         bucket.allCount += 1;
-        if (!ghost) bucket.visibleUserIds.push(id);
+        if (isMe || !ghost) bucket.visibleUserIds.push(id);
         venueBuckets.set(inVenue.id, bucket);
         continue;
       }
 
-      const p = activePresenceByUser.get(id);
+      const p = isMe
+        ? activePresenceByUser.get(id)
+        : (activePresenceByUser.get(id) ?? latestKnownPresenceByUser.get(id));
       if (!p) continue;
-      if (ghost) continue;
+      if (!isMe && ghost) continue;
       if (isGlobeView) continue;
 
       const profile = isMe ? myProfile : friendProfilesById[id];
@@ -1966,6 +2375,7 @@ useEffect(() => {
 
       const markerEl = document.createElement("button");
       const markerSize = markerSizeForZoom(mapZoom);
+      const isLiveNow = isPresenceLive(p.updated_at, now);
       markerEl.type = "button";
       markerEl.style.width = `${markerSize}px`;
       markerEl.style.height = `${markerSize}px`;
@@ -1973,12 +2383,17 @@ useEffect(() => {
       markerEl.style.border = "0";
       markerEl.style.padding = "0";
       markerEl.style.background = "transparent";
-      markerEl.style.overflow = "hidden";
-      markerEl.style.boxShadow = isFriend || isMe
-        ? `0 0 0 ${Math.max(2, Math.round(markerSize * 0.14))}px rgba(56,189,248,0.18), 0 0 ${Math.max(8, Math.round(markerSize * 0.42))}px rgba(56,189,248,0.35)`
-        : "none";
+      markerEl.style.overflow = "visible";
+      markerEl.style.boxShadow = isMe
+        ? `0 0 0 ${Math.max(2, Math.round(markerSize * 0.14))}px rgba(122,60,255,0.2), 0 0 ${Math.max(8, Math.round(markerSize * 0.42))}px rgba(122,60,255,0.46)`
+        : isFriend
+          ? isLiveNow
+            ? `0 0 0 ${Math.max(2, Math.round(markerSize * 0.14))}px rgba(34,197,94,0.3), 0 0 ${Math.max(8, Math.round(markerSize * 0.42))}px rgba(34,197,94,0.42)`
+            : `0 0 0 ${Math.max(2, Math.round(markerSize * 0.14))}px rgba(148,163,184,0.52), 0 0 ${Math.max(6, Math.round(markerSize * 0.3))}px rgba(148,163,184,0.2)`
+          : "none";
       markerEl.style.cursor = "pointer";
       markerEl.setAttribute("aria-label", `Open ${label} profile`);
+      markerEl.style.position = "relative";
 
       markerEl.appendChild(
         buildAvatarElement(
@@ -1988,6 +2403,57 @@ useEffect(() => {
           Math.max(9, Math.round(markerSize * 0.26))
         )
       );
+
+      if (!isMe && isFriend && isLiveNow) {
+        const pulseRing = document.createElement("span");
+        pulseRing.style.position = "absolute";
+        pulseRing.style.inset = "0";
+        pulseRing.style.borderRadius = "999px";
+        pulseRing.style.border = `2px solid rgba(34,197,94,0.65)`;
+        pulseRing.style.pointerEvents = "none";
+        pulseRing.style.transformOrigin = "center";
+        pulseRing.animate(
+          [
+            { transform: "scale(1)", opacity: 0.8 },
+            { transform: "scale(1.22)", opacity: 0 },
+          ],
+          {
+            duration: 1300,
+            iterations: Number.POSITIVE_INFINITY,
+            easing: "ease-out",
+          }
+        );
+        markerEl.appendChild(pulseRing);
+      }
+
+      const markerVenueContext = findContainingVenue(p);
+      if (!isMe && !isLiveNow && !markerVenueContext) {
+        const lastSeenTag = document.createElement("div");
+        lastSeenTag.textContent = formatLastSeen(p.updated_at);
+        const dayText = "rgba(37, 24, 71, 0.95)";
+        const nightText = "rgba(236, 229, 255, 0.96)";
+        const dayShadow = "0 1px 1px rgba(255,255,255,0.75), 0 0 4px rgba(139,92,246,0.18)";
+        const nightShadow = "0 1px 2px rgba(0,0,0,0.95), 0 0 5px rgba(155,126,255,0.35)";
+        lastSeenTag.style.position = "absolute";
+        lastSeenTag.style.left = "50%";
+        lastSeenTag.style.bottom = `${-Math.max(11, Math.round(markerSize * 0.42))}px`;
+        lastSeenTag.style.transform = "translateX(-50%)";
+        lastSeenTag.style.whiteSpace = "nowrap";
+        lastSeenTag.style.padding = "0";
+        lastSeenTag.style.borderRadius = "0";
+        lastSeenTag.style.fontFamily =
+          "'SF Pro Display','Inter','Avenir Next','Segoe UI',system-ui,-apple-system,sans-serif";
+        lastSeenTag.style.fontSize = "9px";
+        lastSeenTag.style.fontWeight = "800";
+        lastSeenTag.style.letterSpacing = "0.012em";
+        lastSeenTag.style.color = mapDayMode ? dayText : nightText;
+        lastSeenTag.style.background = "transparent";
+        lastSeenTag.style.border = "0";
+        lastSeenTag.style.lineHeight = "1.05";
+        lastSeenTag.style.textShadow = mapDayMode ? dayShadow : nightShadow;
+        lastSeenTag.style.pointerEvents = "none";
+        markerEl.appendChild(lastSeenTag);
+      }
 
       markerEl.onclick = (ev) => {
         ev.stopPropagation();
@@ -2055,6 +2521,7 @@ useEffect(() => {
     presence,
     JSON.stringify(friendsById),
     friendProfilesById,
+    presenceGhostById,
     usernamesById,
     meId,
     myGhostMode,
@@ -2064,6 +2531,7 @@ useEffect(() => {
     mapReady,
     venues,
     mapZoom,
+    mapDayMode,
   ]);
 
   const rightSidebarFriends = useMemo(() => {
@@ -2073,10 +2541,12 @@ useEffect(() => {
       .map((id) => {
         const profile = friendProfilesById[id];
         const pres = presence.find((p) => p.user_id === id);
+        const hiddenByGhost = !!profile?.ghost_mode;
         const lastSeen = pres?.updated_at ?? null;
-        const online = !!lastSeen && now - new Date(lastSeen).getTime() < 5 * 60_000;
-        return { id, profile, online, lastSeen };
+        const online = !!lastSeen && isPresenceLive(lastSeen, now);
+        return { id, profile, online, lastSeen, hiddenByGhost };
       })
+      .filter((f) => !f.hiddenByGhost)
       .sort((a, b) => {
         if (a.online !== b.online) return a.online ? -1 : 1;
         const ta = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
@@ -2156,7 +2626,7 @@ useEffect(() => {
         }}
         className={`self-end rounded-full border px-3 py-1.5 text-[11px] font-semibold backdrop-blur transition ${
           myGhostMode
-            ? "border-violet-300/45 bg-violet-500/25 text-violet-100"
+            ? "border-accent-violet/55 bg-accent-violet/30 text-white"
             : "border-white/15 bg-black/55 text-white/85"
         }`}
       >
@@ -2166,11 +2636,11 @@ useEffect(() => {
 
     return (
     <div
-      className="w-screen h-screen relative"
+      className="relative min-h-[100svh] h-[100dvh] w-screen"
       onPointerDown={() => setLastPageInteractionAt(Date.now())}
     >
       <div ref={mapRef} className="w-full h-full" />
-      <div className="absolute right-3 z-20 flex w-[min(90vw,360px)] flex-col items-stretch gap-2 top-[calc(env(safe-area-inset-top,0px)+52px)]">
+      <div className="absolute left-1/2 z-20 flex w-[min(94vw,420px)] -translate-x-1/2 flex-col items-stretch gap-2 top-[calc(env(safe-area-inset-top,0px)+30px)]">
         <aside className="rounded-2xl border border-white/[0.12] bg-[#090d16ee] p-2 backdrop-blur-xl">
           <div className="scrollbar-none flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
             {categoryFilters.map((filter) => {
@@ -2199,30 +2669,40 @@ useEffect(() => {
           </div>
         </aside>
 
-        <button
-          type="button"
-          onClick={() => setPanelMode((prev) => (prev === "friends" ? "categories" : "friends"))}
-          className={`self-end inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold backdrop-blur transition ${
-            panelMode === "friends"
-              ? "border-sky-300/45 bg-sky-500/20 text-sky-100 shadow-[0_0_18px_rgba(56,189,248,0.35)]"
-              : "border-white/15 bg-black/55 text-white/85"
-          }`}
-          aria-expanded={panelMode === "friends"}
-          aria-label={panelMode === "friends" ? "Hide friends list" : "Show friends list"}
-        >
-          Friends
-          <ChevronDown
-            size={14}
-            strokeWidth={2}
-            className={`shrink-0 opacity-80 transition-transform duration-200 ${panelMode === "friends" ? "rotate-180" : ""}`}
-            aria-hidden
-          />
-        </button>
+        <div className="flex w-full items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={runLocateCycle}
+            className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-white/85 backdrop-blur transition"
+            aria-label="Center on me, then zoom out on next tap"
+          >
+            <LocateFixed size={13} strokeWidth={2.2} className="shrink-0 opacity-85" />
+            Locate
+          </button>
 
-        {panelMode === "friends" ? ghostToggle : null}
+          <button
+            type="button"
+            onClick={() => setPanelMode((prev) => (prev === "friends" ? "categories" : "friends"))}
+            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold backdrop-blur transition ${
+              panelMode === "friends"
+                ? "border-accent-violet/55 bg-accent-violet/30 text-white shadow-[0_0_18px_rgba(122,60,255,0.44)]"
+                : "border-white/15 bg-black/55 text-white/85"
+            }`}
+            aria-expanded={panelMode === "friends"}
+            aria-label={panelMode === "friends" ? "Hide friends list" : "Show friends list"}
+          >
+            Friends
+            <ChevronDown
+              size={14}
+              strokeWidth={2}
+              className={`shrink-0 opacity-80 transition-transform duration-200 ${panelMode === "friends" ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
+        </div>
 
         {panelMode === "friends" ? (
-          <aside className="w-[112px] min-h-[160px] max-h-[min(42vh,280px)] self-end overflow-y-auto rounded-xl border border-sky-300/20 bg-[#070c16ee] p-1.5 backdrop-blur-xl">
+          <aside className="w-[112px] min-h-[160px] max-h-[min(42vh,280px)] self-end overflow-y-auto rounded-xl border border-accent-violet/25 bg-[#070c16ee] p-1.5 backdrop-blur-xl">
           <div className="space-y-1.5">
             {rightSidebarFriends.map((f) => {
               const label =
@@ -2247,8 +2727,20 @@ useEffect(() => {
                         className="h-9 w-9 rounded-full border border-white/20 object-cover"
                       />
                     ) : (
-                      <div className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-[10px] font-semibold text-white">
-                        {initialsFromName(label)}
+                      <div className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-gradient-to-br from-[#9c6bff] via-[#7a3cff] to-[#5a26d9]">
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-[62%] w-[62%] text-white/95"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                          aria-hidden
+                        >
+                          <circle cx="12" cy="8.25" r="3.5" fill="currentColor" />
+                          <path
+                            d="M5 19.25C5 15.9363 7.68629 13.25 11 13.25H13C16.3137 13.25 19 15.9363 19 19.25V20.25H5V19.25Z"
+                            fill="currentColor"
+                          />
+                        </svg>
                       </div>
                     )}
                     {f.online ? (
@@ -2272,7 +2764,7 @@ useEffect(() => {
           </div>
         </aside>
         ) : null}
-        {panelMode !== "friends" ? ghostToggle : null}
+        {ghostToggle}
       </div>
       {!selectedVenue ? (
       <div
@@ -2358,7 +2850,7 @@ useEffect(() => {
                     className="h-[140px] w-full rounded-[12px] border border-white/10 object-cover"
                   />
                 ) : (
-                  <div className="grid h-[140px] place-items-center rounded-[12px] border border-white/10 bg-gradient-to-br from-violet-500/12 via-sky-500/8 to-teal-400/10 text-center">
+                  <div className="grid h-[140px] place-items-center rounded-[12px] border border-white/10 bg-gradient-to-br from-accent-violet/16 via-accent-violet/10 to-teal-400/10 text-center">
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-white/85">{selectedVenue.name}</p>
                       <p className="text-xs text-white/50">Venue photo coming soon</p>
@@ -2466,7 +2958,7 @@ useEffect(() => {
                     router.push(`/venue-activity?venueId=${encodeURIComponent(selectedVenue.id)}`);
                     setActivityPlaceholderOpen(true);
                   }}
-                  className="mt-3 w-full rounded-xl border border-violet-300/30 bg-violet-500/20 px-3 py-2 text-left text-sm font-semibold text-violet-100"
+                  className="mt-3 w-full rounded-xl border border-accent-violet/35 bg-accent-violet/25 px-3 py-2 text-left text-sm font-semibold text-white"
                 >
                   View Activity →
                 </button>
@@ -2476,7 +2968,7 @@ useEffect(() => {
         </section>
       ) : null}
       {activityPlaceholderOpen ? (
-        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+18px)] z-40 rounded-2xl border border-violet-300/30 bg-[#120a1ccc] p-3 text-xs text-violet-100 backdrop-blur">
+        <div className="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+18px)] z-40 rounded-2xl border border-accent-violet/35 bg-[#120a1ccc] p-3 text-xs text-white backdrop-blur">
           Activity viewer handoff sent. TODO: wire this state to a venue-filtered stories modal when map-local viewer lands.
           <button
             type="button"

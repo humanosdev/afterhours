@@ -4,17 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import { formatRelativeTime } from "@/lib/time";
 import type { NotificationWithMeta } from "../../../types/notifications";
 
 function relativeTime(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  return `${d}d`;
+  return formatRelativeTime(iso, { nowLabel: "now" });
 }
 
 export default function NotificationsPage() {
@@ -159,11 +153,19 @@ export default function NotificationsPage() {
   }, [router]);
 
   const content = useMemo(() => {
-    if (loading) return <div className="text-white/60 text-sm">Loading activity…</div>;
-    if (!items.length) return <div className="text-white/40 text-sm">No activity yet</div>;
+    if (loading) return <div className="py-8 text-center text-[14px] text-white/45">Loading activity…</div>;
+    if (!items.length)
+      return (
+        <div className="py-14 text-center">
+          <p className="text-[15px] font-semibold text-white/88">Nothing new yet</p>
+          <p className="mt-2 px-4 text-[13px] leading-snug text-white/45">
+            When friends move, post, or reach out, it lands here.
+          </p>
+        </div>
+      );
 
     return (
-      <div className="space-y-2">
+      <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
         {items.map((n) => {
           const actorName = n.actor_display_name || n.actor_username || "Someone";
           const message =
@@ -209,50 +211,36 @@ export default function NotificationsPage() {
                   return;
                 }
               }}
-              className={`w-full text-left rounded-2xl border p-4 ${
-                n.read ? "border-white/10 bg-white/5" : "border-accent-violet/30 bg-accent-violet/10"
-              }`}
+              className={`flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3 text-left last:border-b-0 ${
+                n.read ? "bg-transparent" : "bg-accent-violet/[0.06]"
+              } transition hover:bg-white/[0.03]`}
             >
-              <div className="flex items-start gap-3">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (n.actor_username) router.push(`/u/${n.actor_username}`);
-                  }}
+              <div
+                role="presentation"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (n.actor_username) router.push(`/u/${n.actor_username}`);
+                }}
+                className="shrink-0 cursor-pointer"
+              >
+                <Avatar
+                  src={n.actor_avatar_url}
+                  fallbackText={actorName}
+                  size="sm"
                   className="shrink-0"
-                  aria-label={`Open ${actorName} profile`}
-                >
-                  <Avatar
-                    src={n.actor_avatar_url}
-                    fallbackText={actorName}
-                    size="sm"
-                    className="shrink-0"
-                  />
-                </button>
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (n.actor_username) router.push(`/u/${n.actor_username}`);
-                    }}
-                    className="text-sm text-white hover:underline"
-                  >
-                    {actorName}
-                  </button>
-                  <div className="text-sm text-white/85">
-                    {message}
-                  </div>
-                  <div className="text-xs text-white/50 mt-1">{relativeTime(n.created_at)}</div>
-                </div>
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-white/92">{actorName}</p>
+                <p className="mt-0.5 text-[13px] leading-snug text-white/70">{message}</p>
+                <p className="mt-1 text-[11px] text-white/42">{relativeTime(n.created_at)}</p>
               </div>
             </button>
           );
         })}
       </div>
     );
-  }, [items, loading]);
+  }, [items, loading, router]);
 
   async function acceptRequest(requestId: string) {
     if (!meId) return;
@@ -275,44 +263,50 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button onClick={goBackSafe} className="text-sm text-white/60">
+    <div className="min-h-[100dvh] bg-black text-white px-4 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] sm:px-5">
+      <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={goBackSafe}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/80"
+            aria-label="Back"
+          >
             ←
           </button>
-          <h1 className="text-2xl font-semibold">Notifications</h1>
+          <h1 className="text-[1.25rem] font-bold tracking-tight">Notifications</h1>
         </div>
         {meId ? (
           <button
+            type="button"
             onClick={() => router.push("/settings/notifications")}
-            className="rounded-xl border border-white/20 px-3 py-2 text-sm text-white/80"
+            className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/80"
           >
             Settings
           </button>
         ) : null}
       </div>
-      <div className="mb-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+      <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-2.5">
         <button
           type="button"
           onClick={() => setRequestOpen((v) => !v)}
-          className="flex w-full items-center justify-between text-left"
+          className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left"
         >
           <div>
-            <p className="text-sm font-semibold">Friend Requests</p>
-            <p className="text-xs text-white/50">{friendRequests.length} pending</p>
+            <p className="text-[13px] font-semibold text-white/90">Friend requests</p>
+            <p className="text-[11px] text-white/45">{friendRequests.length} pending</p>
           </div>
-          <span className="text-xs text-white/60">{requestOpen ? "Hide" : "Show"}</span>
+          <span className="text-[11px] font-medium text-white/50">{requestOpen ? "Hide" : "Show"}</span>
         </button>
         {requestOpen ? (
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 space-y-1.5 border-t border-white/[0.06] pt-2">
             {friendRequests.length === 0 ? (
-              <p className="text-xs text-white/45">No pending friend requests.</p>
+              <p className="px-1 py-1 text-[12px] text-white/42">No pending requests.</p>
             ) : (
               friendRequests.map((r) => {
                 const label = r.display_name || r.username || "User";
                 return (
-                  <div key={r.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+                  <div key={r.id} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-black/30 px-2.5 py-2">
                     <Avatar src={r.avatar_url} fallbackText={label} size="sm" />
                     <button
                       type="button"
@@ -343,7 +337,7 @@ export default function NotificationsPage() {
           </div>
         ) : null}
       </div>
-      {content}
+      <div className="mt-4">{content}</div>
     </div>
   );
 }

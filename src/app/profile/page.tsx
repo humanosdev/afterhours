@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { getPresenceFreshness } from "@/lib/presence";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -16,21 +17,23 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [bio, setBio] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [myGhostMode, setMyGhostMode] = useState(false);
   const [venueText, setVenueText] = useState<string>("Not at a venue");
+  const [presenceUpdatedAt, setPresenceUpdatedAt] = useState<string | null>(null);
   const [momentsCount, setMomentsCount] = useState(0);
   const [activeMomentsCount, setActiveMomentsCount] = useState(0);
   const [latestActiveMomentId, setLatestActiveMomentId] = useState<string | null>(null);
   const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
-  const [activeTab, setActiveTab] = useState<"moments" | "places" | "saved">("moments");
+  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places" | "saved">("shares");
 
   const [userId, setUserId] = useState<string | null>(null);
-  const ONLINE_WINDOW_MS = 5 * 60_000;
-  const RECENT_VENUE_WINDOW_MS = 120 * 60_000;
-
-  const isActive = (ts: string) =>
-    Date.now() - new Date(ts).getTime() < ONLINE_WINDOW_MS;
 
   async function signOut() {
+    const accountLabel = username?.trim() ? username.trim() : "your account";
+    const confirmed = window.confirm(
+      `Are you sure you want to sign out of "${accountLabel}"?`
+    );
+    if (!confirmed) return;
     await supabase.auth.signOut();
     router.push("/login");
   }
@@ -48,7 +51,7 @@ export default function ProfilePage() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("username, display_name, bio, avatar_url")
+        .select("username, display_name, bio, avatar_url, ghost_mode")
         .eq("id", auth.user.id)
         .single();
 
@@ -62,6 +65,7 @@ export default function ProfilePage() {
       setDisplayName(data.display_name);
       setBio(data.bio);
       setAvatarUrl(data.avatar_url);
+      setMyGhostMode(!!data.ghost_mode);
       setLoading(false);
     })();
   }, [router]);
@@ -105,6 +109,7 @@ export default function ProfilePage() {
       });
       setActiveMomentsCount(activeMoments.length);
       setLatestActiveMomentId((activeMoments[0] as any)?.id ?? null);
+      setPresenceUpdatedAt(presenceRes.data?.updated_at ?? null);
 
       const venueIds = new Set<string>();
       (momentsRowsRes.data ?? []).forEach((m: any) => {
@@ -142,6 +147,12 @@ export default function ProfilePage() {
         .select("venue_id, updated_at")
         .eq("user_id", userId)
         .maybeSingle();
+      setPresenceUpdatedAt(pres?.updated_at ?? null);
+
+      if (myGhostMode) {
+        setVenueText("Ghost mode on");
+        return;
+      }
 
       if (!pres?.venue_id || !pres.updated_at) {
         setVenueText("Not at a venue");
@@ -159,22 +170,16 @@ export default function ProfilePage() {
         return;
       }
 
-      const lastSeenMs = new Date(pres.updated_at).getTime();
-      const now = Date.now();
-      if (Number.isNaN(lastSeenMs)) {
-        setVenueText("Not at a venue");
-        return;
-      }
-
-      if (isActive(pres.updated_at)) {
+      const freshness = getPresenceFreshness(pres.updated_at);
+      if (freshness === "live") {
         setVenueText(`At ${v.name}`);
-      } else if (now - lastSeenMs <= RECENT_VENUE_WINDOW_MS) {
+      } else if (freshness === "recent") {
         setVenueText(`Recently at ${v.name}`);
       } else {
         setVenueText("Not at a venue");
       }
     })();
-  }, [userId]);
+  }, [userId, myGhostMode]);
 
   if (loading) {
     return (
@@ -199,15 +204,14 @@ export default function ProfilePage() {
       router.push(`/moments/${encodeURIComponent(latestActiveMomentId)}`);
       return;
     }
-    setActiveTab("moments");
+    setActiveTab("archive");
   };
   const profileTabs = [
-    { key: "moments" as const, label: "Moments" },
+    { key: "shares" as const, label: "Shares" },
+    { key: "archive" as const, label: "Archive" },
     { key: "places" as const, label: "Places" },
     { key: "saved" as const, label: "Saved" },
   ];
-
-  const statusValue = hasLiveMoment ? "Active" : "Away";
 
   return (
     <ProtectedRoute>
@@ -246,6 +250,13 @@ export default function ProfilePage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => router.push("/archive/hidden")}
+                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
+                  >
+                    Hidden shares
+                  </button>
+                  <button
+                    type="button"
                     onClick={signOut}
                     className="w-full px-4 py-2.5 text-left text-[14px] text-red-400 hover:bg-red-500/15"
                   >
@@ -278,7 +289,7 @@ export default function ProfilePage() {
                 </p>
               </div>
               <div className="flex min-h-[5.5rem] min-w-0 flex-1 flex-col justify-center gap-3 sm:min-h-[6rem]">
-                <div className="grid w-full grid-cols-4 gap-x-1 text-center sm:gap-x-2">
+                <div className="grid w-full grid-cols-3 gap-x-1 text-center sm:gap-x-2">
                   <button
                     type="button"
                     onClick={() => router.push("/profile/friends")}
@@ -293,11 +304,7 @@ export default function ProfilePage() {
                   </div>
                   <div className="min-w-0 px-0.5">
                     <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{momentsCount}</p>
-                    <p className="mt-1 text-[11px] text-white/48">Moments</p>
-                  </div>
-                  <div className="min-w-0 px-0.5">
-                    <p className="truncate text-lg font-semibold text-white sm:text-xl">{statusValue}</p>
-                    <p className="mt-1 text-[11px] text-white/48">Status</p>
+                    <p className="mt-1 text-[11px] text-white/48">Shares</p>
                   </div>
                 </div>
                 <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium leading-snug text-white/65 ring-1 ring-white/[0.08] sm:text-[12px]">
@@ -325,7 +332,7 @@ export default function ProfilePage() {
                 onClick={async () => {
                   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
                   if (navigator.share) {
-                    await navigator.share({ title: `${nameToShow} on AfterHours`, url: shareUrl });
+                    await navigator.share({ title: `${nameToShow} on Intencity`, url: shareUrl });
                     return;
                   }
                   if (shareUrl) await navigator.clipboard.writeText(shareUrl);
@@ -350,7 +357,7 @@ export default function ProfilePage() {
                 >
                   {tab.label}
                   {activeTab === tab.key ? (
-                    <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-accent-violet shadow-[0_0_12px_rgba(168,85,247,0.35)]" />
+                    <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-accent-violet shadow-[0_0_12px_rgba(122,60,255,0.42)]" />
                   ) : null}
                 </button>
               ))}
@@ -358,11 +365,40 @@ export default function ProfilePage() {
           </div>
 
           <div className="pt-3">
-            {activeTab === "moments" ? (
+            {activeTab === "shares" ? (
+              <div>
+                <div className="mb-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      window.dispatchEvent(
+                        new CustomEvent("open-create-composer", {
+                          detail: { mode: "both", tab: "shares" },
+                        })
+                      )
+                    }
+                    className="rounded-[10px] bg-white px-3 py-2 text-xs font-semibold text-black"
+                  >
+                    New share
+                  </button>
+                </div>
+                <ProfileStoriesGrid
+                  userId={userId}
+                  viewerId={userId}
+                  mode="shares"
+                  emptyLabel="No shares yet"
+                  emptySubtitle="Hidden shares are moved to Hidden shares in your menu."
+                />
+              </div>
+            ) : null}
+
+            {activeTab === "archive" ? (
               <ProfileStoriesGrid
                 userId={userId}
-                emptyLabel="Your grid is waiting"
-                emptySubtitle="Drop a moment from tonight — it shows up here first."
+                viewerId={userId}
+                mode="archive"
+                emptyLabel="No archived moments yet"
+                emptySubtitle="Your expired moments and hidden shares show up here with timestamps."
               />
             ) : null}
 

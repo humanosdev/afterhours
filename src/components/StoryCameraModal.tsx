@@ -7,9 +7,11 @@ type FacingMode = "user" | "environment";
 
 export default function StoryCameraModal({
   open,
+  mode = "moments",
   onClose,
 }: {
   open: boolean;
+  mode?: "moments" | "shares";
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -182,12 +184,22 @@ export default function StoryCameraModal({
       user_id: user.id,
       image_url: imageUrl,
       created_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
+      expires_at: mode === "shares" ? null : expiresAt.toISOString(),
     };
     let insertError: any = null;
     const firstAttempt = await supabase
       .from("stories")
-      .insert({ ...basePayload, media_url: imageUrl });
+      .insert(
+        mode === "shares"
+          ? {
+              ...basePayload,
+              media_url: imageUrl,
+              is_share: true,
+              share_visible: true,
+              share_hidden: false,
+            }
+          : { ...basePayload, media_url: imageUrl }
+      );
     insertError = firstAttempt.error;
 
     if (insertError && String(insertError.message ?? "").includes("media_url")) {
@@ -213,7 +225,7 @@ export default function StoryCameraModal({
   return (
     <div className="fixed inset-0 z-[100] bg-black">
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pb-4 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
         <button
           onClick={close}
           className="rounded-xl bg-white/10 px-3 py-2 text-sm text-white"
@@ -221,7 +233,9 @@ export default function StoryCameraModal({
           Close
         </button>
 
-        <div className="text-sm font-semibold text-white">New Moment</div>
+        <div className="text-sm font-semibold text-white">
+          {mode === "shares" ? "New Share" : "New Moment"}
+        </div>
 
         <button
           onClick={() =>
@@ -281,7 +295,7 @@ export default function StoryCameraModal({
               disabled={uploading}
               className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-60"
             >
-              {uploading ? "Posting…" : "Post Moment"}
+              {uploading ? "Posting…" : mode === "shares" ? "Post Share" : "Post Moment"}
             </button>
           </div>
         ) : (

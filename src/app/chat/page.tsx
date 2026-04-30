@@ -476,9 +476,9 @@ export default function ChatPage() {
 
   return (
     <ProtectedRoute>
-    <div className="min-h-screen bg-black text-white">
-      <div className="sticky top-0 z-20 border-b border-white/10 bg-black/90 px-4 pt-4 pb-3 backdrop-blur">
-        <div className="flex items-center justify-between">
+    <div className="min-h-[100dvh] bg-black text-white">
+      <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-black/92 px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+10px)] backdrop-blur-xl">
+        <div className="flex min-h-[44px] items-center justify-between">
           {selectionMode ? (
             <>
               <button
@@ -500,10 +500,10 @@ export default function ChatPage() {
             </>
           ) : (
             <>
-              <h1 className="text-xl font-semibold">Messages</h1>
+              <h1 className="text-[1.25rem] font-bold tracking-tight">Messages</h1>
               <button
                 onClick={() => setFriendPickerOpen((v) => !v)}
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-sm text-white/80"
+                className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[13px] font-semibold text-white/85"
               >
                 New
               </button>
@@ -553,15 +553,17 @@ export default function ChatPage() {
         {msg && <div className="mt-2 text-xs text-red-400">{msg}</div>}
       </div>
 
-      <div className="px-2 pb-24 pt-2">
+      <div className="px-3 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-1 sm:px-4">
         {loading ? (
           <div className="px-3 py-8 text-center text-sm text-white/55">
             Loading messages...
           </div>
         ) : filteredPreviews.length === 0 ? (
-          <div className="px-3 py-12 text-center">
-            <div className="text-base font-medium text-white/85">No messages yet</div>
-            <div className="mt-1 text-sm text-white/50">Start a conversation</div>
+          <div className="px-3 py-16 text-center">
+            <div className="text-[17px] font-semibold text-white/90">Your night starts in the DMs</div>
+            <div className="mt-2 max-w-xs mx-auto text-[14px] leading-snug text-white/48">
+              When you and friends link up, threads show up here.
+            </div>
           </div>
         ) : (
           filteredPreviews.map((c) => (
@@ -584,7 +586,7 @@ export default function ChatPage() {
                 }
                 router.push(`/chat/${c.chatId}`);
               }}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/5"
+              className="flex w-full items-center gap-3 rounded-[12px] px-2 py-3.5 text-left transition active:bg-white/[0.06] hover:bg-white/[0.04]"
             >
               {selectionMode ? (
                 <span
@@ -598,7 +600,7 @@ export default function ChatPage() {
               <Avatar
                 src={c.otherId ? profilesById[c.otherId]?.avatar_url ?? null : null}
                 fallbackText={c.title}
-                size="md"
+                size="lg"
                 className="shrink-0"
               />
               <div className="min-w-0 flex-1">

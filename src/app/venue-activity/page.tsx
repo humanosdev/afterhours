@@ -36,7 +36,7 @@ function VenueActivityContent() {
         </button>
 
         <div className="rounded-2xl border border-white/10 bg-[#0b0f18cc] p-4 backdrop-blur">
-          <p className="text-xs font-semibold tracking-[0.18em] text-violet-300/70">VENUE ACTIVITY</p>
+          <p className="text-xs font-semibold tracking-[0.18em] text-accent-violet-active/80">VENUE ACTIVITY</p>
           <h1 className="mt-1 text-2xl font-semibold">{venueName}</h1>
           <p className="mt-1 text-sm text-white/60">Live Moments and check-ins tied to this place.</p>
 
@@ -46,7 +46,7 @@ function VenueActivityContent() {
               onClick={() => setActiveTab("activity")}
               className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                 activeTab === "activity"
-                  ? "border-violet-300/40 bg-violet-500/20 text-violet-100"
+                  ? "border-accent-violet/45 bg-accent-violet/28 text-white"
                   : "border-white/15 bg-white/5 text-white/70"
               }`}
             >

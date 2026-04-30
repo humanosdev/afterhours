@@ -334,24 +334,30 @@ export default function ChatConversationPage() {
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
-      <div className="sticky top-0 z-20 border-b border-white/10 bg-black/90 px-3 py-2.5 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <button onClick={goBackSafe} className="text-white/60">
+      <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-black/92 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+8px)] backdrop-blur-xl sm:px-4">
+        <div className="flex min-h-[44px] items-center gap-2">
+          <button
+            type="button"
+            onClick={goBackSafe}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/80"
+            aria-label="Back"
+          >
             ←
           </button>
 
           <button
+            type="button"
             onClick={openPartnerProfile}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-1.5 py-1 text-left hover:bg-white/5"
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-1 py-1 text-left hover:bg-white/[0.04]"
           >
             <Avatar
               src={partner?.avatar_url ?? null}
               fallbackText={partner?.display_name || partner?.username || "Chat"}
-              size="sm"
+              size="md"
               className="shrink-0"
             />
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">
+              <div className="truncate text-[15px] font-semibold tracking-tight">
                 {partner?.display_name || partner?.username || "Chat"}
               </div>
               {partner?.username && (
