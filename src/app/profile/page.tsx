@@ -24,7 +24,7 @@ export default function ProfilePage() {
   const [activeMomentsCount, setActiveMomentsCount] = useState(0);
   const [latestActiveMomentId, setLatestActiveMomentId] = useState<string | null>(null);
   const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
-  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places" | "saved">("shares");
+  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
 
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -83,10 +83,11 @@ export default function ProfilePage() {
         supabase
           .from("stories")
           .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
+          .eq("user_id", userId)
+          .eq("is_share", true),
         supabase
           .from("stories")
-          .select("id, image_url, created_at, expires_at, venue_id")
+          .select("id, image_url, created_at, expires_at, venue_id, is_share")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(300),
@@ -101,6 +102,7 @@ export default function ProfilePage() {
       setMomentsCount(momentsCountRes.count ?? 0);
       const now = Date.now();
       const activeMoments = (momentsRowsRes.data ?? []).filter((m: any) => {
+        if (m?.is_share) return false;
         const createdMs = new Date(m.created_at).getTime();
         if (!Number.isFinite(createdMs)) return false;
         const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
@@ -111,20 +113,28 @@ export default function ProfilePage() {
       setLatestActiveMomentId((activeMoments[0] as any)?.id ?? null);
       setPresenceUpdatedAt(presenceRes.data?.updated_at ?? null);
 
-      const venueIds = new Set<string>();
-      (momentsRowsRes.data ?? []).forEach((m: any) => {
-        if (m?.venue_id) venueIds.add(m.venue_id);
-      });
-      if (presenceRes.data?.venue_id) venueIds.add(presenceRes.data.venue_id);
+      // Stable visited-venues list: dedupe from all story venue_ids only (no live presence).
+      const historyByVenue = new Map<string, number>();
+      for (const row of momentsRowsRes.data ?? []) {
+        const venueId = (row as any)?.venue_id as string | null | undefined;
+        if (!venueId) continue;
+        const ts = new Date((row as any)?.created_at).getTime();
+        const prev = historyByVenue.get(venueId) ?? 0;
+        if (Number.isFinite(ts) && ts > prev) historyByVenue.set(venueId, ts);
+      }
 
-      if (venueIds.size) {
+      if (!historyByVenue.size) {
+        setPlaces([]);
+      } else {
+        const ids = Array.from(historyByVenue.keys());
         const { data: venueRows } = await supabase
           .from("venues")
           .select("id, name, category")
-          .in("id", Array.from(venueIds));
-        setPlaces((venueRows ?? []) as any);
-      } else {
-        setPlaces([]);
+          .in("id", ids);
+        const sorted = (venueRows ?? [])
+          .slice()
+          .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
+        setPlaces(sorted as any);
       }
     };
 
@@ -210,7 +220,6 @@ export default function ProfilePage() {
     { key: "shares" as const, label: "Shares" },
     { key: "archive" as const, label: "Archive" },
     { key: "places" as const, label: "Places" },
-    { key: "saved" as const, label: "Saved" },
   ];
 
   return (
@@ -426,18 +435,13 @@ export default function ProfilePage() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="py-8 text-center text-[13px] text-white/42">
-                    Places you post from will appear here.
-                  </p>
+                    <p className="py-8 text-center text-[13px] text-white/42">
+                      Places you have visited will appear here.
+                    </p>
                 )}
               </div>
             ) : null}
 
-            {activeTab === "saved" ? (
-              <p className="py-8 text-center text-[13px] leading-relaxed text-white/42">
-                Saved places and moments will appear here.
-              </p>
-            ) : null}
           </div>
 
           <div className="min-h-6 flex-1 shrink-0" aria-hidden />

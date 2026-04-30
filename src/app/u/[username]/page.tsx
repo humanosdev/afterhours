@@ -154,7 +154,7 @@ export default function UserProfile() {
   const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
   const [requesting, setRequesting] = useState(false);
   const [latestMomentOwnerId, setLatestMomentOwnerId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places" | "saved">("shares");
+  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
   const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
 
   useEffect(() => {
@@ -215,13 +215,14 @@ export default function UserProfile() {
     const loadActiveMoments = async () => {
       const { data: rows } = await supabase
         .from("stories")
-        .select("id, image_url, created_at, expires_at")
+        .select("id, image_url, created_at, expires_at, is_share")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
         .limit(150);
 
       const now = Date.now();
       const activeMoments = (rows ?? []).filter((m: any) => {
+        if (m?.is_share) return false;
         const createdMs = new Date(m.created_at).getTime();
         if (!Number.isFinite(createdMs)) return false;
         const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
@@ -230,7 +231,7 @@ export default function UserProfile() {
       });
 
       setActiveMomentsCount(activeMoments.length);
-      setMomentsCount((rows ?? []).length);
+      setMomentsCount((rows ?? []).filter((m: any) => !!m?.is_share).length);
       setLatestActiveMomentId((activeMoments[0] as any)?.id ?? null);
       setLatestMomentOwnerId(profile.id);
     };
@@ -348,24 +349,36 @@ export default function UserProfile() {
       return;
     }
     (async () => {
-      const [{ data: storyRows }, { data: pres }] = await Promise.all([
-        supabase.from("stories").select("venue_id").eq("user_id", profile.id).limit(400),
-        supabase.from("user_presence").select("venue_id").eq("user_id", profile.id).maybeSingle(),
-      ]);
-      const venueIds = new Set<string>();
-      (storyRows ?? []).forEach((r: any) => {
-        if (r?.venue_id) venueIds.add(r.venue_id);
-      });
-      if (pres?.venue_id) venueIds.add(pres.venue_id);
-      if (!venueIds.size) {
+      const { data: storyRows } = await supabase
+        .from("stories")
+        .select("venue_id, created_at")
+        .eq("user_id", profile.id)
+        .limit(1000);
+
+      const historyByVenue = new Map<string, number>();
+      for (const row of storyRows ?? []) {
+        const venueId = (row as any)?.venue_id as string | null | undefined;
+        if (!venueId) continue;
+        const ts = new Date((row as any)?.created_at).getTime();
+        const prev = historyByVenue.get(venueId) ?? 0;
+        if (Number.isFinite(ts) && ts > prev) historyByVenue.set(venueId, ts);
+      }
+
+      if (!historyByVenue.size) {
         setPlaces([]);
         return;
       }
+
+      const ids = Array.from(historyByVenue.keys());
       const { data: venueRows } = await supabase
         .from("venues")
         .select("id, name, category")
-        .in("id", Array.from(venueIds));
-      setPlaces((venueRows ?? []) as any);
+        .in("id", ids);
+
+      const sorted = (venueRows ?? [])
+        .slice()
+        .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
+      setPlaces(sorted as any);
     })();
   }, [profile?.id, profile?.is_private, me, isFriend]);
 
@@ -406,7 +419,6 @@ export default function UserProfile() {
     { key: "shares" as const, label: "Shares" },
     ...(isOwnProfile ? [{ key: "archive" as const, label: "Archive" }] : []),
     { key: "places" as const, label: "Places" },
-    { key: "saved" as const, label: "Saved" },
   ];
   const openMomentsTab = () => {
     if (latestActiveMomentId) {
@@ -742,16 +754,11 @@ export default function UserProfile() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="py-8 text-center text-[13px] text-white/42">Places they post from will appear here.</p>
+                    <p className="py-8 text-center text-[13px] text-white/42">Places they have visited will appear here.</p>
                   )}
                 </div>
               ) : null}
 
-              {activeTab === "saved" ? (
-                <p className="py-8 text-center text-[13px] leading-relaxed text-white/42">
-                  Saved places and moments will appear here.
-                </p>
-              ) : null}
             </div>
           </>
         ) : null}

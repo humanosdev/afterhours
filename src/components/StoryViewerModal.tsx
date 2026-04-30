@@ -11,6 +11,7 @@ export type StoryViewerStory = {
   media_url: string;
   created_at: string;
   expires_at: string | null;
+  is_share?: boolean;
 };
 
 export type StoryViewerGroup = {
@@ -62,6 +63,7 @@ export default function StoryViewerModal({
 
   const stories = group?.stories ?? [];
   const activeStory = stories[storyIndex] ?? null;
+  const activeIsShare = !!activeStory?.is_share;
   const isStoryOwner = !!currentUserId && !!activeStory && currentUserId === activeStory.user_id;
 
   useEffect(() => {
@@ -149,11 +151,13 @@ export default function StoryViewerModal({
               .eq("user_id", currentUserId)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null } as any),
-        supabase
-          .from("story_comments")
-          .select("id, story_id, user_id, content, created_at")
-          .eq("story_id", activeStory.id)
-          .order("created_at", { ascending: true }),
+        activeIsShare
+          ? supabase
+              .from("story_comments")
+              .select("id, story_id, user_id, content, created_at")
+              .eq("story_id", activeStory.id)
+              .order("created_at", { ascending: true })
+          : Promise.resolve({ data: [] as any[], error: null } as any),
       ]);
 
       if (likesCountError) console.error(likesCountError);
@@ -198,7 +202,7 @@ export default function StoryViewerModal({
     return () => {
       mounted = false;
     };
-  }, [open, activeStory?.id, currentUserId]);
+  }, [open, activeStory?.id, currentUserId, activeIsShare]);
 
   const toggleLike = async () => {
     if (!activeStory || !currentUserId) return;
@@ -231,7 +235,7 @@ export default function StoryViewerModal({
   };
 
   const submitComment = async () => {
-    if (!activeStory || !currentUserId) return;
+    if (!activeStory || !currentUserId || !activeIsShare) return;
     const text = commentText.trim();
     if (!text) return;
     const { error } = await supabase
@@ -263,7 +267,7 @@ export default function StoryViewerModal({
   };
 
   const deleteComment = async (comment: ViewerComment) => {
-    if (!activeStory || !currentUserId) return;
+    if (!activeStory || !currentUserId || !activeIsShare) return;
     const canDelete =
       comment.user_id === currentUserId || activeStory.user_id === currentUserId;
     if (!canDelete) return;
@@ -377,7 +381,10 @@ export default function StoryViewerModal({
         <button type="button" className="absolute right-0 top-0 h-full w-1/2" onClick={nextStory} aria-label="Next Moment" />
       </div>
 
-      <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-white/10 bg-black/70 px-3 py-3">
+      <div
+        className="absolute bottom-0 left-0 right-0 z-10 border-t border-white/10 bg-black/70 px-3 py-3"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-2 flex items-center gap-3">
           <button
             type="button"
@@ -388,48 +395,52 @@ export default function StoryViewerModal({
           </button>
         </div>
 
-        <div className="max-h-28 space-y-2 overflow-auto">
-          {comments.map((c) => {
-            const canDelete = !!currentUserId && (c.user_id === currentUserId || activeStory.user_id === currentUserId);
-            return (
-              <div key={c.id} className="flex items-start gap-2 text-xs text-white/90">
-                <Avatar src={c.avatar_url} fallbackText={c.username ?? "u"} size="xs" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold">{c.username ?? "user"}</div>
-                  <div className="break-words text-white/80">{c.content}</div>
-                </div>
-                {canDelete ? (
-                  <button
-                    type="button"
-                    onClick={() => deleteComment(c)}
-                    className="text-[10px] text-white/50"
-                  >
-                    Delete
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-          {!loadingMeta && comments.length === 0 ? (
-            <div className="text-xs text-white/50">No comments yet</div>
-          ) : null}
-        </div>
+        {activeIsShare ? (
+          <>
+            <div className="max-h-28 space-y-2 overflow-auto">
+              {comments.map((c) => {
+                const canDelete = !!currentUserId && (c.user_id === currentUserId || activeStory.user_id === currentUserId);
+                return (
+                  <div key={c.id} className="flex items-start gap-2 text-xs text-white/90">
+                    <Avatar src={c.avatar_url} fallbackText={c.username ?? "u"} size="xs" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold">{c.username ?? "user"}</div>
+                      <div className="break-words text-white/80">{c.content}</div>
+                    </div>
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => deleteComment(c)}
+                        className="text-[10px] text-white/50"
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {!loadingMeta && comments.length === 0 ? (
+                <div className="text-xs text-white/50">No comments yet</div>
+              ) : null}
+            </div>
 
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            placeholder="Add a comment..."
-            className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs text-white outline-none"
-          />
-          <button
-            type="button"
-            onClick={submitComment}
-            className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
-          >
-            Send
-          </button>
-        </div>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="Add a comment..."
+                className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs text-white outline-none"
+              />
+              <button
+                type="button"
+                onClick={submitComment}
+                className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
+              >
+                Send
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );

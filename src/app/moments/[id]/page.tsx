@@ -84,7 +84,7 @@ export default function MomentDetailPage() {
         user?.id
           ? supabase.from("story_likes").select("id").eq("story_id", m.id).eq("user_id", user.id).maybeSingle()
           : Promise.resolve({ data: null } as any),
-        archiveView
+        archiveView || !m.is_share
           ? Promise.resolve({ data: [] } as any)
           : supabase.from("story_comments").select("id, user_id, content").eq("story_id", m.id).order("created_at", { ascending: true }),
       ]);
@@ -142,7 +142,7 @@ export default function MomentDetailPage() {
   };
 
   const sendComment = async () => {
-    if (!moment || !meId) return;
+    if (!moment || !meId || !moment.is_share) return;
     const text = commentText.trim();
     if (!text) return;
     const { error } = await supabase.from("story_comments").insert({
@@ -212,26 +212,6 @@ export default function MomentDetailPage() {
     setMenuOpen(false);
   };
 
-  const addMomentToShares = async () => {
-    if (!moment || !meId || moment.user_id !== meId || moment.is_share) return;
-    const { error } = await supabase
-      .from("stories")
-      .update({ is_share: true, share_visible: true, share_hidden: false })
-      .eq("id", moment.id)
-      .eq("user_id", meId);
-    if (error) {
-      alert("Could not add this moment to Shares.");
-      return;
-    }
-    setMoment((prev) =>
-      prev
-        ? { ...prev, is_share: true, share_visible: true, share_hidden: false }
-        : prev
-    );
-    window.dispatchEvent(new Event("story-posted"));
-    setMenuOpen(false);
-  };
-
   return (
     <ProtectedRoute>
       <div className="min-h-[100dvh] bg-black text-white">
@@ -276,15 +256,7 @@ export default function MomentDetailPage() {
                         {moment.share_hidden ? "Unhide share" : "Hide share"}
                       </button>
                     </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={addMomentToShares}
-                      className="block w-full whitespace-nowrap px-2.5 py-1.5 text-left text-xs text-white/90 hover:bg-white/10"
-                    >
-                      Add to Shares
-                    </button>
-                  )}
+                  ) : null}
                   <button
                     type="button"
                     onClick={deleteMoment}
@@ -319,7 +291,7 @@ export default function MomentDetailPage() {
               >
                 {liked ? "♥" : "♡"} {likesCount}
               </button>
-              {!archiveView ? (
+              {!archiveView && moment.is_share ? (
                 <>
                   <div className="max-h-48 space-y-2 overflow-auto rounded-xl border border-white/10 bg-white/[0.03] p-3">
                     {comments.length ? (

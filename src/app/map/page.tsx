@@ -210,6 +210,50 @@ function distanceMeters(
 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+function formatMilesFromMeters(meters: number): string {
+  if (!Number.isFinite(meters) || meters < 0) return "";
+  const miles = meters / 1609.344;
+  if (miles < 0.1) return "<0.1 mi";
+  if (miles < 10) return `${miles.toFixed(1)} mi`;
+  return `${Math.round(miles)} mi`;
+}
+
+function drawCampusCapGlyph(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.beginPath();
+  ctx.moveTo(cx - 11, cy - 1.5);
+  ctx.lineTo(cx, cy - 7.5);
+  ctx.lineTo(cx + 11, cy - 1.5);
+  ctx.lineTo(cx, cy + 4.5);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - 6.5, cy + 3);
+  ctx.lineTo(cx - 6.5, cy + 7.5);
+  ctx.lineTo(cx + 6.5, cy + 7.5);
+  ctx.lineTo(cx + 6.5, cy + 3);
+  ctx.stroke();
+}
+
+function drawFoodCrossGlyph(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  // crossed utensils (closer to category icon language)
+  ctx.beginPath();
+  ctx.moveTo(cx - 8, cy + 8);
+  ctx.lineTo(cx + 8, cy - 8);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + 8, cy + 8);
+  ctx.lineTo(cx - 8, cy - 8);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - 9.5, cy - 5.5);
+  ctx.lineTo(cx - 6.5, cy - 8.5);
+  ctx.moveTo(cx - 7.5, cy - 3.5);
+  ctx.lineTo(cx - 4.5, cy - 6.5);
+  ctx.moveTo(cx - 5.5, cy - 1.5);
+  ctx.lineTo(cx - 2.5, cy - 4.5);
+  ctx.stroke();
+}
 function countUsersInVenue(
   venue: Venue,
   presence: PresenceRow[],
@@ -314,11 +358,17 @@ function markerColorForCategory(key: VenueCategoryIconKey): string {
   }
 }
 
-function drawCategoryGlyph(ctx: CanvasRenderingContext2D, key: VenueCategoryIconKey, cx: number, cy: number) {
+function drawCategoryGlyph(
+  ctx: CanvasRenderingContext2D,
+  key: VenueCategoryIconKey,
+  cx: number,
+  cy: number,
+  color: string
+) {
   ctx.save();
-  ctx.strokeStyle = "#ffffff";
-  ctx.fillStyle = "#ffffff";
-  ctx.lineWidth = 2.7;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 3.6;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
@@ -344,43 +394,9 @@ function drawCategoryGlyph(ctx: CanvasRenderingContext2D, key: VenueCategoryIcon
     ctx.lineTo(cx + 11, cy - 21);
     ctx.stroke();
   } else if (key === "campus") {
-    ctx.beginPath();
-    ctx.moveTo(cx - 10, cy - 2);
-    ctx.lineTo(cx, cy - 9);
-    ctx.lineTo(cx + 10, cy - 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx - 8, cy - 1);
-    ctx.lineTo(cx - 8, cy + 9);
-    ctx.moveTo(cx - 3, cy - 1);
-    ctx.lineTo(cx - 3, cy + 9);
-    ctx.moveTo(cx + 3, cy - 1);
-    ctx.lineTo(cx + 3, cy + 9);
-    ctx.moveTo(cx + 8, cy - 1);
-    ctx.lineTo(cx + 8, cy + 9);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx - 11, cy + 9);
-    ctx.lineTo(cx + 11, cy + 9);
-    ctx.stroke();
+    drawCampusCapGlyph(ctx, cx, cy);
   } else if (key === "food") {
-    // Fork + knife
-    ctx.beginPath();
-    ctx.moveTo(cx - 7, cy - 9);
-    ctx.lineTo(cx - 7, cy + 9);
-    ctx.moveTo(cx - 10, cy - 9);
-    ctx.lineTo(cx - 10, cy - 4);
-    ctx.moveTo(cx - 7, cy - 9);
-    ctx.lineTo(cx - 7, cy - 4);
-    ctx.moveTo(cx - 4, cy - 9);
-    ctx.lineTo(cx - 4, cy - 4);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx + 6, cy - 9);
-    ctx.lineTo(cx + 2, cy + 9);
-    ctx.moveTo(cx + 6, cy - 9);
-    ctx.lineTo(cx + 10, cy + 9);
-    ctx.stroke();
+    drawFoodCrossGlyph(ctx, cx, cy);
   } else if (key === "events") {
     ctx.beginPath();
     ctx.moveTo(cx, cy - 10);
@@ -412,7 +428,7 @@ function drawCategoryGlyph(ctx: CanvasRenderingContext2D, key: VenueCategoryIcon
 }
 
 function createCategoryMarkerImage(key: VenueCategoryIconKey = "all") {
-  const size = 96;
+  const size = 152;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -420,9 +436,7 @@ function createCategoryMarkerImage(key: VenueCategoryIconKey = "all") {
   if (!ctx) return null;
 
   const cx = size / 2;
-  const circleCy = 34;
-  const circleR = 18;
-  const tipY = 74;
+  const glyphCy = size / 2;
 
   const fill = markerColorForCategory(key);
   const rgb = fill
@@ -430,46 +444,13 @@ function createCategoryMarkerImage(key: VenueCategoryIconKey = "all") {
     .match(/.{1,2}/g)
     ?.map((v) => parseInt(v, 16)) ?? [139, 92, 246];
   const [r, g, b] = rgb;
-  const glow0 = `rgba(${r}, ${g}, ${b}, 0.95)`;
-  const glowMid = `rgba(${r}, ${g}, ${b}, 0.65)`;
-  const glowEdge = `rgba(${r}, ${g}, ${b}, 0)`;
-  const shadowRgb = `${r},${g},${b}`;
-
-  const glow = ctx.createRadialGradient(cx, circleCy, 6, cx, circleCy, 36);
-  glow.addColorStop(0, glow0);
-  glow.addColorStop(0.4, glowMid);
-  glow.addColorStop(1, glowEdge);
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(cx, circleCy, 36, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(cx, tipY);
-  ctx.bezierCurveTo(cx - 20, 54, cx - 18, 26, cx, 20);
-  ctx.bezierCurveTo(cx + 18, 26, cx + 20, 54, cx, tipY);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(255,255,255,0.8)";
-  ctx.lineWidth = 2.2;
-  ctx.shadowColor = `rgba(${shadowRgb},0.85)`;
+  // Draw icon-only marker (no oval/pin body/circle), with a subtle glow for legibility.
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.45)`;
   ctx.shadowBlur = 10;
-  ctx.stroke();
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  drawCategoryGlyph(ctx, key, cx, glyphCy, fill);
   ctx.shadowBlur = 0;
-
-  ctx.beginPath();
-  ctx.arc(cx, circleCy, circleR * 0.48, 0, Math.PI * 2);
-  ctx.fillStyle = fill;
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(cx, circleCy, circleR * 0.78, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,0.15)";
-  ctx.fill();
-
-  drawCategoryGlyph(ctx, key, cx, circleCy);
 
   return ctx.getImageData(0, 0, size, size);
 }
@@ -1254,6 +1235,21 @@ const selectedVenuePeople = useMemo(() => {
   return getVenuePeople(selectedVenue.id);
 }, [selectedVenue, presence, hiddenIds, meId, friendsById, usernamesById, venues, presenceGhostById]);
 
+const currentUserCoords = useMemo(() => {
+  if (you && isValidCoordinatePair(you.lat, you.lng)) {
+    return { lat: you.lat, lng: you.lng };
+  }
+  if (meId) {
+    const mine = presence.find((p) => p.user_id === meId && isValidCoordinatePair(p.lat, p.lng));
+    if (mine) return { lat: mine.lat, lng: mine.lng };
+  }
+  const fallback = selfPresenceCoordsRef.current;
+  if (fallback && isValidCoordinatePair(fallback.lat, fallback.lng)) {
+    return { lat: fallback.lat, lng: fallback.lng };
+  }
+  return null;
+}, [you, meId, presence]);
+
 const activeCheckpoint = checkpoints.length
   ? checkpoints[((checkpointIndex % checkpoints.length) + checkpoints.length) % checkpoints.length]
   : null;
@@ -1676,12 +1672,12 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
-          0, 0.08,
-          4, 0.14,
-          8, 0.24,
-          10, 0.5,
-          14, 0.62,
-          18, 0.72,
+          0, 0.28,
+          4, 0.4,
+          8, 0.66,
+          10, 1.16,
+          14, 1.42,
+          18, 1.58,
         ],
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
@@ -1739,6 +1735,21 @@ useEffect(() => {
         ],
         "text-halo-color": "rgba(0,0,0,0.82)",
         "text-halo-width": 1.3,
+        "text-opacity": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          0,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 12], 0.88, 0],
+          6,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 8], 0.9, 0],
+          9,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 4], 0.92, 0],
+          11.5,
+          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 1], 0.93, 0.08],
+          14,
+          0.95,
+        ],
       },
     });
 
@@ -2641,7 +2652,7 @@ useEffect(() => {
     >
       <div ref={mapRef} className="w-full h-full" />
       <div className="absolute left-1/2 z-20 flex w-[min(94vw,420px)] -translate-x-1/2 flex-col items-stretch gap-2 top-[calc(env(safe-area-inset-top,0px)+30px)]">
-        <aside className="rounded-2xl border border-white/[0.12] bg-[#090d16ee] p-2 backdrop-blur-xl">
+        <aside className="rounded-2xl border border-white/15 bg-black/60 p-2 backdrop-blur-xl">
           <div className="scrollbar-none flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
             {categoryFilters.map((filter) => {
               const Icon = filter.icon;
@@ -2793,9 +2804,11 @@ useEffect(() => {
           className="flex-1 truncate px-2 text-center text-sm font-medium text-white/90"
           aria-label="Open active checkpoint"
         >
-          {activeCheckpoint
-            ? `${activeCheckpoint.name} • ${activeCheckpoint.activity}`
-            : "No crowd yet"}
+          {activeCheckpoint ? (
+            you
+              ? `${activeCheckpoint.name} • ${formatMilesFromMeters(activeCheckpoint.distanceFromYou)}`
+              : `${activeCheckpoint.name} • locating...`
+          ) : "No crowd yet"}
         </button>
         <button
           type="button"
@@ -2821,21 +2834,52 @@ useEffect(() => {
                       {selectedVenue.category}
                     </span>
                   ) : null}
-                  {you ? (
+                  {currentUserCoords ? (
                     <span className="rounded-full border border-sky-300/25 bg-sky-500/10 px-2 py-1 text-sky-100/90">
-                      {Math.round(distanceMeters(you.lat, you.lng, selectedVenue.lat, selectedVenue.lng))}m away
+                      {formatMilesFromMeters(
+                        distanceMeters(
+                          currentUserCoords.lat,
+                          currentUserCoords.lng,
+                          selectedVenue.lat,
+                          selectedVenue.lng
+                        )
+                      )}{" "}
+                      away
                     </span>
-                  ) : null}
+                  ) : (
+                    <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-white/75">
+                      locating...
+                    </span>
+                  )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={closeVenueCard}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-white/20 bg-white/5 text-white/85"
-                aria-label="Close venue panel"
-              >
-                <X size={14} />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lat = selectedVenue.lat;
+                    const lng = selectedVenue.lng;
+                    const destination = `${lat},${lng}`;
+                    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+                    const isIOS = /iPad|iPhone|iPod/.test(ua);
+                    const href = isIOS
+                      ? `http://maps.apple.com/?daddr=${encodeURIComponent(destination)}&dirflg=d`
+                      : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+                    window.open(href, "_blank");
+                  }}
+                  className="h-8 rounded-full border border-white/20 bg-white/5 px-3 text-[11px] font-semibold text-white/90"
+                >
+                  Open directions
+                </button>
+                <button
+                  type="button"
+                  onClick={closeVenueCard}
+                  className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/5 text-white/85"
+                  aria-label="Close venue panel"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
             <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-2.5">

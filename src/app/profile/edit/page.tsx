@@ -8,6 +8,37 @@ import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
 
+const AVATAR_EXTENSION_FALLBACKS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".heic",
+  ".heif",
+  ".gif",
+  ".bmp",
+  ".tiff",
+  ".tif",
+  ".avif",
+];
+
+function fileLooksLikeImage(file: File): boolean {
+  const type = (file.type || "").toLowerCase();
+  if (type.startsWith("image/")) return true;
+  const name = (file.name || "").toLowerCase();
+  return AVATAR_EXTENSION_FALLBACKS.some((ext) => name.endsWith(ext));
+}
+
+async function canDecodeImage(src: string): Promise<boolean> {
+  const image = new Image();
+  image.decoding = "async";
+  image.src = src;
+  return await new Promise<boolean>((resolve) => {
+    image.onload = () => resolve(true);
+    image.onerror = () => resolve(false);
+  });
+}
+
 async function cropImageToSquare(
   imageSrc: string,
   cropArea: Area,
@@ -197,9 +228,8 @@ const uploadAvatar = async (file: File) => {
 
 const validateAvatarFile = (file: File) => {
   const maxBytes = 25 * 1024 * 1024;
-  const type = (file.type || "").toLowerCase();
-  if (!type.startsWith("image/")) {
-    setError("Please choose an image from your camera roll.");
+  if (!fileLooksLikeImage(file)) {
+    setError("Please choose a photo file (JPG, PNG, HEIC, WEBP, AVIF, etc.) from your camera roll.");
     return false;
   }
   if (file.size > maxBytes) {
@@ -222,10 +252,18 @@ const onCropComplete = useCallback((_croppedArea: Area, croppedPixels: Area) => 
   setCroppedAreaPixels(croppedPixels);
 }, []);
 
-const startAvatarCrop = (file: File) => {
+const startAvatarCrop = async (file: File) => {
   if (!validateAvatarFile(file)) return;
   setError(null);
   const objectUrl = URL.createObjectURL(file);
+  const decodes = await canDecodeImage(objectUrl);
+  if (!decodes) {
+    URL.revokeObjectURL(objectUrl);
+    setError(
+      "This photo format cannot be decoded on this device/browser yet. Try re-saving it from Photos and upload again."
+    );
+    return;
+  }
   setCropSrc(objectUrl);
   setPendingAvatarName(file.name || "avatar.jpg");
   setCrop({ x: 0, y: 0 });
@@ -343,7 +381,7 @@ useEffect(() => {
       className="hidden"
       onChange={(e) => {
         if (e.target.files?.[0]) {
-          startAvatarCrop(e.target.files[0]);
+          void startAvatarCrop(e.target.files[0]);
         }
         e.currentTarget.value = "";
       }}

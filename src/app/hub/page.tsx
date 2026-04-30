@@ -39,6 +39,7 @@ type Story = {
   media_url: string;
   created_at: string;
   expires_at: string | null;
+  is_share?: boolean;
   username: string | null;
   avatar_url: string | null;
 };
@@ -231,12 +232,20 @@ export default function HubPage() {
         return;
       }
 
-      // Keep this baseline query schema-safe first; add richer filters after it is stable.
-      const { data, error } = await supabase
+      const preferred = await supabase
         .from("stories")
-        .select("id, user_id, image_url, created_at, expires_at")
+        .select("id, user_id, image_url, created_at, expires_at, is_share")
         .in("user_id", allowedIds)
         .limit(200);
+      const fallback = preferred.error
+        ? await supabase
+            .from("stories")
+            .select("id, user_id, image_url, created_at, expires_at")
+            .in("user_id", allowedIds)
+            .limit(200)
+        : null;
+      const data = preferred.data ?? fallback?.data ?? [];
+      const error = preferred.error && fallback?.error ? fallback.error : null;
       if (error) {
         console.error("stories fetch error:", error);
         return;
@@ -272,10 +281,12 @@ export default function HubPage() {
             media_url: mediaUrl,
             created_at: s.created_at,
             expires_at: s.expires_at ?? null,
+            is_share: !!s.is_share,
             username: profileById[s.user_id]?.username ?? null,
             avatar_url: profileById[s.user_id]?.avatar_url ?? null,
           };
         })
+        .filter((s) => !s.is_share)
         .filter((s) => !!s.media_url)
         .filter((s) => {
           const createdMs = new Date(s.created_at).getTime();
@@ -297,16 +308,17 @@ export default function HubPage() {
   }, [friends, meId]);
 
   useEffect(() => {
-    if (!friends.length) {
+    if (!meId) {
       setFriendShares([]);
       return;
     }
     let mounted = true;
     const loadFriendShares = async () => {
+      const feedUserIds = Array.from(new Set([meId, ...friends]));
       const preferred = await supabase
         .from("stories")
         .select("id, user_id, image_url, created_at, is_share, share_visible, share_hidden")
-        .in("user_id", friends)
+        .in("user_id", feedUserIds)
         .eq("is_share", true)
         .eq("share_visible", true)
         .eq("share_hidden", false)
@@ -336,7 +348,7 @@ export default function HubPage() {
       mounted = false;
       window.removeEventListener("story-posted", onStoryPosted);
     };
-  }, [friends]);
+  }, [friends, meId]);
 
   useEffect(() => {
     let mounted = true;
