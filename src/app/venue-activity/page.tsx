@@ -92,11 +92,7 @@ export default function VenueActivityPage() {
   return (
     <ProtectedRoute>
       <Suspense
-        fallback={
-          <div className="grid min-h-screen place-items-center bg-primary px-4 text-sm text-white/60">
-            Loading venue activity...
-          </div>
-        }
+        fallback={<div className="min-h-screen w-screen bg-black" aria-hidden />}
       >
         <VenueActivityContent />
       </Suspense>

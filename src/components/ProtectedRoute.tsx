@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
+/** Plain screen while session is resolved — avoids stacking a second page skeleton on top. */
 export default function ProtectedRoute({
   children,
 }: {
@@ -49,7 +50,13 @@ export default function ProtectedRoute({
   }, [router]);
 
   if (status !== "authed") {
-    return <div className="h-screen w-screen bg-primary" />;
+    return (
+      <div
+        className="min-h-[100dvh] w-screen bg-black"
+        aria-busy="true"
+        aria-label={status === "redirecting" ? "Redirecting to sign in" : "Checking session"}
+      />
+    );
   }
 
   return <>{children}</>;

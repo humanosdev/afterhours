@@ -2,7 +2,9 @@
   "name": "intencity",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "WATCHPACK_POLLING=true next dev -H 0.0.0.0",
+    "dev:turbo": "WATCHPACK_POLLING=true next dev -H 0.0.0.0 --turbo",
+    "dev:clean": "rm -rf .next && sh -c 'for pid in $(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null); do kill -9 $pid 2>/dev/null || true; done' && WATCHPACK_POLLING=true next dev -H 0.0.0.0",
     "build": "next build",
     "start": "next start"
   },

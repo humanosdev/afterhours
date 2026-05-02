@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { SkeletonGrid } from "@/components/ui/Skeleton";
 
 type StoryRow = {
   id: string;
@@ -127,7 +128,11 @@ export default function ProfileStoriesGrid({
   }, [userId, viewerId, mode]);
 
   if (loading) {
-    return <div className="py-10 text-center text-[13px] text-white/45">Loading…</div>;
+    return (
+      <div className="ah-content-reveal py-1">
+        <SkeletonGrid columns={3} count={9} gapClass="gap-px" cellClass="aspect-square rounded-none" />
+      </div>
+    );
   }
 
   if (stories.length === 0) {
@@ -143,12 +148,12 @@ export default function ProfileStoriesGrid({
   }
 
   return (
-    <div className="grid grid-cols-3 gap-px bg-white/[0.08]">
+    <div className="grid grid-cols-3 gap-[2px]">
       {stories.map((story) => (
         <button
           key={story.id}
           type="button"
-          className="relative aspect-square w-full overflow-hidden bg-[#0a0a0c]"
+          className="relative aspect-square w-full overflow-hidden bg-[#0a0a0c] ring-1 ring-white/[0.06]"
           onClick={() =>
             router.push(
               `/moments/${encodeURIComponent(story.id)}${mode === "archive" ? "?view=archive" : ""}`

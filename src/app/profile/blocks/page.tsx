@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import NotificationListSkeleton from "@/components/skeletons/NotificationListSkeleton";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
 
@@ -95,7 +96,11 @@ export default function BlocksPage() {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-black text-white p-6">Loading…</div>;
+    return (
+      <div className="min-h-screen bg-black p-6 text-white">
+        <NotificationListSkeleton rows={8} />
+      </div>
+    );
   }
 
   return (

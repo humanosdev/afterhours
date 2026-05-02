@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import LivePlacesListSkeleton from "@/components/skeletons/LivePlacesListSkeleton";
 import { Avatar } from "@/components/ui";
 import { isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
 
@@ -51,6 +52,7 @@ export default function LivePlacesPage() {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
   const [storyVenueIds, setStoryVenueIds] = useState<Set<string>>(new Set());
+  const [venuesHydrated, setVenuesHydrated] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -100,6 +102,7 @@ export default function LivePlacesPage() {
       const { data: v } = await supabase.from("venues").select("*");
       if (!mounted) return;
       setVenues((v ?? []) as Venue[]);
+      setVenuesHydrated(true);
     };
     const loadPresence = async () => {
       const { data: p } = await supabase.from("user_presence").select("*");
@@ -223,7 +226,9 @@ export default function LivePlacesPage() {
           <h1 className="text-[1.1rem] font-semibold tracking-tight">Live Places</h1>
         </div>
 
-        {venueCards.length === 0 ? (
+        {!venuesHydrated ? (
+          <LivePlacesListSkeleton rows={7} />
+        ) : venueCards.length === 0 ? (
           <div className="py-10 text-center">
             <p className="text-[14px] text-white/65">Quiet right now</p>
             <p className="mt-1 text-[12px] text-white/38">Venues show up as people get nearby.</p>

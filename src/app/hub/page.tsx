@@ -3,11 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Avatar, StoryRing } from "@/components/ui";
+import HubFeedSkeleton from "@/components/skeletons/HubFeedSkeleton";
 import StoryViewerModal, { type StoryViewerGroup } from "@/components/StoryViewerModal";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
 import { formatRelativeTime } from "@/lib/time";
+import { preloadImage } from "@/lib/preloadImage";
+import { Expand } from "lucide-react";
 
 /* ---------------- TYPES ---------------- */
 
@@ -56,6 +60,8 @@ type ShareItem = {
   user_id: string;
   image_url: string;
   created_at: string;
+  username?: string | null;
+  avatar_url?: string | null;
 };
 
 /* ---------------- UTILS ---------------- */
@@ -91,6 +97,10 @@ export default function HubPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [storyVenueIds, setStoryVenueIds] = useState<Set<string>>(new Set());
   const [friendShares, setFriendShares] = useState<ShareItem[]>([]);
+  const [venuesReady, setVenuesReady] = useState(false);
+  const [storiesReady, setStoriesReady] = useState(false);
+  const [sharesReady, setSharesReady] = useState(false);
+  const [avatarPaintReady, setAvatarPaintReady] = useState(false);
 
   const [activeViewerGroup, setActiveViewerGroup] = useState<StoryViewerGroup | null>(null);
 
@@ -129,25 +139,42 @@ export default function HubPage() {
     };
   }, []);
   useEffect(() => {
-  if (!meId) return;
+    setAvatarPaintReady(false);
+  }, [meId]);
 
-  const loadAvatar = async () => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("avatar_url, display_name, username")
-      .eq("id", meId)
-      .single();
+  useEffect(() => {
+    if (!meId) return;
 
-    setAvatarUrl(data?.avatar_url ?? null);
-    setMyStoryFallback(
-      data?.display_name?.trim() ||
-        data?.username?.trim() ||
-        "AH"
-    );
-  };
+    let cancelled = false;
 
-  loadAvatar();
-}, [meId]);
+    const loadAvatar = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("avatar_url, display_name, username")
+        .eq("id", meId)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error("hub profile fetch:", error);
+      }
+      const nextUrl = data?.avatar_url ?? null;
+      setAvatarUrl(nextUrl);
+      setMyStoryFallback(
+        data?.display_name?.trim() ||
+          data?.username?.trim() ||
+          "AH"
+      );
+      await preloadImage(nextUrl);
+      if (!cancelled) setAvatarPaintReady(true);
+    };
+
+    loadAvatar();
+    return () => {
+      cancelled = true;
+    };
+  }, [meId]);
 
   /* ---------------- FRIENDS ---------------- */
 
@@ -203,6 +230,7 @@ export default function HubPage() {
       const { data: v } = await supabase.from("venues").select("*");
       if (!mounted) return;
       setVenues(v || []);
+      setVenuesReady(true);
     };
 
     const loadPresence = async () => {
@@ -225,10 +253,15 @@ export default function HubPage() {
 
   useEffect(() => {
     const loadStories = async () => {
-      if (!meId) return;
+      if (!meId) {
+        setStories([]);
+        setStoriesReady(false);
+        return;
+      }
       const allowedIds = Array.from(new Set([meId, ...friends]));
       if (!allowedIds.length) {
         setStories([]);
+        setStoriesReady(true);
         return;
       }
 
@@ -248,6 +281,7 @@ export default function HubPage() {
       const error = preferred.error && fallback?.error ? fallback.error : null;
       if (error) {
         console.error("stories fetch error:", error);
+        setStoriesReady(true);
         return;
       }
 
@@ -287,7 +321,6 @@ export default function HubPage() {
           };
         })
         .filter((s) => !s.is_share)
-        .filter((s) => !!s.expires_at)
         .filter((s) => !!s.media_url)
         .filter((s) => {
           const createdMs = new Date(s.created_at).getTime();
@@ -300,6 +333,7 @@ export default function HubPage() {
         });
 
       setStories(cleaned);
+      setStoriesReady(true);
     };
 
     loadStories();
@@ -311,6 +345,7 @@ export default function HubPage() {
   useEffect(() => {
     if (!meId) {
       setFriendShares([]);
+      setSharesReady(true);
       return;
     }
     let mounted = true;
@@ -327,20 +362,42 @@ export default function HubPage() {
         .limit(120);
 
       if (preferred.error) {
-        if (mounted) setFriendShares([]);
+        if (mounted) {
+          setFriendShares([]);
+          setSharesReady(true);
+        }
         return;
       }
       if (!mounted) return;
+      const shareRows = (preferred.data ?? []) as any[];
+      const ownerIds = Array.from(new Set(shareRows.map((row) => row.user_id).filter(Boolean))) as string[];
+      let ownerById: Record<string, { username: string | null; avatar_url: string | null }> = {};
+      if (ownerIds.length) {
+        const { data: profileRows } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_url")
+          .in("id", ownerIds);
+        (profileRows ?? []).forEach((p: any) => {
+          ownerById[p.id] = {
+            username: p.username ?? null,
+            avatar_url: p.avatar_url ?? null,
+          };
+        });
+      }
+      if (!mounted) return;
       setFriendShares(
-        ((preferred.data ?? []) as any[])
+        shareRows
           .map((row) => ({
             id: row.id as string,
             user_id: row.user_id as string,
             image_url: (row.image_url ?? "") as string,
             created_at: row.created_at as string,
+            username: ownerById[row.user_id]?.username ?? null,
+            avatar_url: ownerById[row.user_id]?.avatar_url ?? null,
           }))
           .filter((row) => !!row.image_url)
       );
+      setSharesReady(true);
     };
     loadFriendShares();
     const onStoryPosted = () => loadFriendShares();
@@ -442,7 +499,7 @@ export default function HubPage() {
         resolve(false);
         return;
       }
-      const img = new Image();
+      const img = document.createElement("img");
       let settled = false;
       const finish = (ok: boolean) => {
         if (settled) return;
@@ -517,12 +574,19 @@ const getVenueStats = (venue: Venue) => {
   const friendShareCards = useMemo(
     () =>
       friendShares.map((share) => {
-        const username = profiles[share.user_id] || "friend";
-        const avatar = avatars[share.user_id] ?? null;
+        const username = share.username || profiles[share.user_id] || "friend";
+        const avatar = share.avatar_url ?? avatars[share.user_id] ?? null;
         return { ...share, username, avatar };
       }),
     [friendShares, profiles, avatars]
   );
+  const feedReady =
+    !!meId &&
+    venuesReady &&
+    storiesReady &&
+    sharesReady &&
+    avatarPaintReady;
+
   /* ---------------- UI ---------------- */
 
   return (
@@ -531,11 +595,15 @@ const getVenueStats = (venue: Venue) => {
       <div className="flex w-full flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+8px)] sm:px-5 sm:pt-3">
       {/* Top bar — IG-style thin chrome; story strip is the hero below */}
       <header className="flex items-center justify-between gap-3 pb-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/intencity-letter-logo-hub.png"
+        <Image
+          src="/hub-logo.png"
           alt="Intencity"
-          className="h-9 w-9 object-contain opacity-95"
+          width={144}
+          height={144}
+          priority
+          quality={95}
+          sizes="36px"
+          className="h-9 w-9 object-contain drop-shadow-[0_0_12px_rgba(139,92,246,0.5)]"
         />
         <button
           type="button"
@@ -552,6 +620,10 @@ const getVenueStats = (venue: Venue) => {
         </button>
       </header>
 
+      {!feedReady ? (
+        <HubFeedSkeleton />
+      ) : (
+        <div className="ah-content-reveal">
       {/* Moments — large story rings first (dominant like Instagram home) */}
       <section className="-mx-4 border-b border-white/[0.08] pb-3 pt-0 sm:-mx-5" aria-labelledby="hub-moments-heading">
         <h2 id="hub-moments-heading" className="sr-only">
@@ -709,30 +781,80 @@ const getVenueStats = (venue: Venue) => {
           <p className="py-4 text-center text-[13px] text-white/45">Be the first to share.</p>
         ) : (
           <div className="space-y-3">
-            {friendShareCards.map((share) => (
-              <button
-                key={share.id}
-                type="button"
-                onClick={() => router.push(`/moments/${encodeURIComponent(share.id)}`)}
-                className="w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] text-left"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={share.image_url} alt="Share" className="h-[240px] w-full object-cover" />
-                <div className="flex items-center gap-2 px-3 py-2.5">
-                  <Avatar src={share.avatar} fallbackText={share.username} size="xs" />
-                  <div className="min-w-0">
-                    <p className="truncate text-[12px] font-semibold text-white">{share.username}</p>
-                    <p className="truncate text-[11px] text-white/50">{formatRelativeTime(share.created_at)}</p>
+            {friendShareCards.map((share) => {
+              const openMoment = () => router.push(`/moments/${encodeURIComponent(share.id)}`);
+              return (
+                <div
+                  key={share.id}
+                  className="w-full overflow-hidden rounded-2xl border border-white/[0.06] bg-black text-left"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (share.user_id === meId) {
+                        router.push("/profile");
+                        return;
+                      }
+                      if (share.username) {
+                        router.push(`/u/${encodeURIComponent(share.username)}`);
+                        return;
+                      }
+                      router.push(`/profile/${share.user_id}`);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2.5"
+                  >
+                    <Avatar src={share.avatar} fallbackText={share.username} size="xs" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-semibold text-white">{share.username}</p>
+                      <p className="truncate text-[11px] text-white/50">{formatRelativeTime(share.created_at)}</p>
+                    </div>
+                  </button>
+                  <div className="relative w-full shrink-0">
+                    <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#0a0a0c]">
+                      <button
+                        type="button"
+                        onClick={openMoment}
+                        className="absolute inset-0 z-0 block w-full"
+                        aria-label="View share"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={share.image_url}
+                          alt="Share preview"
+                          className="absolute inset-0 h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openMoment();
+                        }}
+                        className="absolute bottom-2 right-2 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/60 text-white shadow-lg backdrop-blur-sm transition hover:bg-black/75"
+                        aria-label="Open full photo"
+                      >
+                        <Expand size={18} strokeWidth={2.2} className="text-white/95" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </button>
-            ))}
-            <p className="pt-1 text-center text-[12px] text-white/42">Be the first to share.</p>
+              );
+            })}
+            {friendShareCards.length > 0 && !friendShareCards.some((s) => s.user_id !== meId) ? (
+              <p className="pt-1 text-center text-[12px] text-white/38">
+                When friends post shares, they&apos;ll show up here too.
+              </p>
+            ) : null}
           </div>
         )}
       </section>
 
       <div className="min-h-6 flex-1 shrink-0" aria-hidden />
+        </div>
+      )}
+
       </div>
 
       <StoryViewerModal

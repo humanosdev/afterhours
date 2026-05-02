@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { SkeletonLine } from "@/components/ui/Skeleton";
 import { registerPushSubscription } from "@/lib/pushClient";
 
 export default function NotificationSettingsPage() {
@@ -170,7 +171,18 @@ export default function NotificationSettingsPage() {
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-black text-white p-6">Loading…</div>;
+    return (
+      <div className="min-h-screen bg-black p-6 text-white">
+        <SkeletonLine width={72} height={14} className="mb-6 rounded-md" />
+        <SkeletonLine width={220} height={26} className="mb-2 rounded-md" />
+        <SkeletonLine width="100%" height={44} className="mb-8 max-w-md rounded-md opacity-70" />
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <SkeletonLine key={i} width="100%" height={72} className="rounded-2xl" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -28,6 +28,7 @@ import {
 } from "@/lib/presence";
 import { formatRelativeTime } from "@/lib/time";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import MapPageSkeleton from "@/components/skeletons/MapPageSkeleton";
 // Dev venue radii — off by default for MVP (enable locally when debugging zones)
 const SHOW_DEV_RADII = false;
 
@@ -127,7 +128,7 @@ function applyBrandedBasemapTheme(m: mapboxgl.Map, dayMode: boolean) {
   // Subtle brand tint that keeps heat/activity layers visually dominant.
   if (m.getLayer(MAP_BRAND_TINT_LAYER)) {
     safeSetPaint(MAP_BRAND_TINT_LAYER, "background-color", "#7a3cff");
-    safeSetPaint(MAP_BRAND_TINT_LAYER, "background-opacity", dayMode ? 0.04 : 0.07);
+    safeSetPaint(MAP_BRAND_TINT_LAYER, "background-opacity", dayMode ? 0.04 : 0.045);
     return;
   }
 
@@ -137,7 +138,7 @@ function applyBrandedBasemapTheme(m: mapboxgl.Map, dayMode: boolean) {
       type: "background",
       paint: {
         "background-color": "#7a3cff",
-        "background-opacity": dayMode ? 0.04 : 0.07,
+        "background-opacity": dayMode ? 0.04 : 0.045,
       },
     });
   } catch {
@@ -529,8 +530,10 @@ type VenuePerson = {
 };
 
 const AUTO_TOUR_PAUSE_MS = 2200;
-/** Min time since last map/page interaction before auto venue cycling may run (still 2s between hops once eligible). */
-const AUTO_TOUR_IDLE_GRACE_MS = 12_000;
+/** Min time since last page interaction before auto checkpoint cycling may run. */
+const AUTO_TOUR_IDLE_GRACE_MS = 17_000;
+/** Min time between automatic checkpoint hops once idle grace has passed. */
+const AUTO_TOUR_REPEAT_MS = 4_000;
 const AUTO_TOUR_ARROW_GRACE_MS = 2200;
 
 
@@ -582,6 +585,29 @@ const [arrivalPulseUntil, setArrivalPulseUntil] = useState(0);
 const [pulseTick, setPulseTick] = useState(0);
 const [myProfile, setMyProfile] = useState<FriendProfile | null>(null);
 const handledQueryVenueIdRef = useRef<string | null>(null);
+/** Timestamp of last automatic checkpoint hop (not user arrows); used to enforce {@link AUTO_TOUR_REPEAT_MS}. */
+const lastAutoTourHopAtRef = useRef(0);
+/** Ignore map gesture pause handlers while a programmatic checkpoint easeTo runs (they reset idle and kill the tour). */
+const programmaticCameraUntilRef = useRef(0);
+/** Last real user / map-interaction time for auto-tour idle (updated synchronously — not derived from React state). */
+const tourIdleSinceRef = useRef(Date.now());
+const lastArrowPressAtRef = useRef(0);
+const autoTourPausedUntilRef = useRef(0);
+const autoVenueTourEnabledRef = useRef(true);
+const checkpointsLenRef = useRef(0);
+lastArrowPressAtRef.current = lastArrowPressAt;
+autoTourPausedUntilRef.current = autoTourPausedUntil;
+autoVenueTourEnabledRef.current = autoVenueTourEnabled;
+
+function armProgrammaticCamera(durationMs: number) {
+  const until = Date.now() + durationMs;
+  if (until > programmaticCameraUntilRef.current) {
+    programmaticCameraUntilRef.current = until;
+  }
+}
+
+const isPlaywrightHarness = process.env.NEXT_PUBLIC_PLAYWRIGHT === "1";
+
 /** Space above bottom nav + home indicator; lower = closer to nav, more map area. */
 const MAP_NAV_CLEARANCE_PX = 84;
 type CategoryKey = "all" | "nightlife" | "food" | "events" | "campus";
@@ -965,16 +991,51 @@ useEffect(() => {
 
   map.current = m;
   m.doubleClickZoom.disable();
+  m.dragRotate.disable();
+  m.touchZoomRotate.disableRotation();
+
+  let removeMapIdlePointerListener: (() => void) | null = null;
+
+  // Register before Mapbox finishes attaching handlers so capture runs first and Inspect / two‑finger click works.
+  let removeNativeContextMenuListener: (() => void) | null = null;
+  try {
+    const canvas = m.getCanvas();
+    const unblockInspectMenu = (domEv: Event) => {
+      domEv.stopImmediatePropagation();
+    };
+    canvas.addEventListener("contextmenu", unblockInspectMenu, { capture: true });
+    removeNativeContextMenuListener = () =>
+      canvas.removeEventListener("contextmenu", unblockInspectMenu, { capture: true });
+  } catch {
+    removeNativeContextMenuListener = null;
+  }
 
   m.on("load", () => {
     applyMapAtmosphereForMode(m, initialDay);
     applyBrandedBasemapTheme(m, initialDay);
     setMapReady(true);
+    // Do not setHasInitialMapCenter here: auto-tour must wait until the first GPS centering
+    // easeTo runs; otherwise checkpoint easeTo races it and feels like a teleport on desktop.
+
+    // Only touches that start on the map (not the top chrome / venue panel) restart the 17s
+    // idle clock — otherwise phones rarely reach idle and auto-tour never advances.
+    const container = m.getContainer();
+    const onMapPointerIdleReset = () => {
+      const t = Date.now();
+      tourIdleSinceRef.current = t;
+      lastAutoTourHopAtRef.current = 0;
+      setLastPageInteractionAt(t);
+    };
+    container.addEventListener("pointerdown", onMapPointerIdleReset);
+    removeMapIdlePointerListener = () =>
+      container.removeEventListener("pointerdown", onMapPointerIdleReset);
   });
   m.on("zoomend", () => setMapZoom(m.getZoom()));
 
   return () => {
     lastAppliedMapStyleRef.current = null;
+    removeMapIdlePointerListener?.();
+    removeNativeContextMenuListener?.();
     m.remove();
     map.current = null;
   };
@@ -1034,12 +1095,22 @@ useEffect(() => {
   if (hasCenteredToUser.current) return;
   hasCenteredToUser.current = true;
 
+  armProgrammaticCamera(1200);
   map.current.easeTo({
     center: [you.lng, you.lat],
     duration: 800,
   });
   setHasInitialMapCenter(true);
 }, [you]);
+
+/** If GPS is slow or denied, still allow the venue tour after the map is ready (same behavior every device). */
+useEffect(() => {
+  if (!mapReady) return;
+  const id = window.setTimeout(() => {
+    setHasInitialMapCenter((v) => v || true);
+  }, 5000);
+  return () => window.clearTimeout(id);
+}, [mapReady]);
 
 useEffect(() => {
   youRef.current = you;
@@ -1075,11 +1146,16 @@ const runLocateCycle = useCallback(() => {
 
   const centerTo = (coords: { lng: number; lat: number }) => {
     const now = Date.now();
+    tourIdleSinceRef.current = now;
+    lastAutoTourHopAtRef.current = 0;
+    const until = now + AUTO_TOUR_PAUSE_MS;
+    autoTourPausedUntilRef.current = until;
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+    setAutoTourPausedUntil(until);
 
     if (doubleTapCycleRef.current === 0) {
       // 1) Return immediately to your live pin.
+      armProgrammaticCamera(700);
       m.easeTo({
         center: [coords.lng, coords.lat],
         zoom: Math.max(15.5, m.getZoom()),
@@ -1092,6 +1168,7 @@ const runLocateCycle = useCallback(() => {
     }
 
     // 2) Next press zooms to earth-level view, centered on you.
+    armProgrammaticCamera(900);
     m.easeTo({
       center: [coords.lng, coords.lat],
       zoom: 1.65,
@@ -1207,7 +1284,19 @@ const checkpoints = useMemo<VenueCheckpoint[]>(() => {
     .map((v) => {
       const { redTotal, greenTotal } = getCountsForVenue(v.id, presence, friendsById, filteredVenues, meId);
       const activity = (redTotal ?? 0) + (greenTotal ?? 0);
-      const distanceFromYou = you ? distanceMeters(you.lat, you.lng, v.lat, v.lng) : Number.MAX_SAFE_INTEGER;
+      const fallbackMine = meId
+        ? presence.find((p) => p.user_id === meId && isValidCoordinatePair(p.lat, p.lng)) ?? null
+        : null;
+      const fallbackSelf = selfPresenceCoordsRef.current;
+      const sourceCoords =
+        (you && isValidCoordinatePair(you.lat, you.lng) ? { lat: you.lat, lng: you.lng } : null) ??
+        (fallbackMine ? { lat: fallbackMine.lat, lng: fallbackMine.lng } : null) ??
+        (fallbackSelf && isValidCoordinatePair(fallbackSelf.lat, fallbackSelf.lng)
+          ? { lat: fallbackSelf.lat, lng: fallbackSelf.lng }
+          : null);
+      const distanceFromYou = sourceCoords
+        ? distanceMeters(sourceCoords.lat, sourceCoords.lng, v.lat, v.lng)
+        : Number.MAX_SAFE_INTEGER;
       return {
         id: v.id,
         name: v.name,
@@ -1222,6 +1311,8 @@ const checkpoints = useMemo<VenueCheckpoint[]>(() => {
       return a.distanceFromYou - b.distanceFromYou;
     });
 }, [filteredVenues, presence, friendsById, meId, you]);
+
+checkpointsLenRef.current = checkpoints.length;
 
 const selectedVenuePeople = useMemo(() => {
   if (!selectedVenue) {
@@ -1269,63 +1360,98 @@ useEffect(() => {
   if (!checkpointMotionEnabled) return;
   if (!activeCheckpoint || !map.current) return;
   const m = map.current;
+  armProgrammaticCamera(2200);
   const currentZoom = m.getZoom();
   const dynamicZoom =
     16.2 +
     Math.min(0.6, Math.max(0, activeCheckpoint.activity / 24)) -
     Math.min(0.3, Math.max(0, activeCheckpoint.distanceFromYou / 2500) * 0.08);
 
-  m.easeTo({
-    center: [activeCheckpoint.lng, activeCheckpoint.lat],
-    zoom: Math.max(15.8, Math.min(16.9, (currentZoom * 0.45) + (dynamicZoom * 0.55))),
-    pitch: 52,
-    duration: 1000,
-    easing: (t) => t * (2 - t),
-  });
-
-  setArrivalPulseVenueId(activeCheckpoint.id);
-  setArrivalPulseUntil(Date.now() + 1600);
-  setCheckpointMotionEnabled(false);
+  try {
+    m.easeTo({
+      center: [activeCheckpoint.lng, activeCheckpoint.lat],
+      zoom: Math.max(15.8, Math.min(16.9, (currentZoom * 0.45) + (dynamicZoom * 0.55))),
+      pitch: 52,
+      duration: 1000,
+      easing: (t) => t * (2 - t),
+    });
+    setArrivalPulseVenueId(activeCheckpoint.id);
+    setArrivalPulseUntil(Date.now() + 1600);
+  } catch {
+    /* mapbox can throw if map is torn down mid-flight */
+  } finally {
+    setCheckpointMotionEnabled(false);
+  }
 }, [activeCheckpoint?.id, checkpointMotionEnabled]);
 
 useEffect(() => {
   if (!map.current) return;
-  const pause = () => {
+  /**
+   * Desktop (esp. Mac trackpad) emits wheel zoom → `zoomstart` constantly; that was resetting
+   * `tourIdleSinceRef` and killing the 17s auto-tour. Phones rarely hit that pattern.
+   * Only a real pan (`dragstart`) + pointerdown on the map container reset full idle; wheel/pinch zoom
+   * only applies a short hop pause without resetting the idle clock.
+   */
+  const onPanIntent = () => {
+    if (Date.now() < programmaticCameraUntilRef.current) return;
     const now = Date.now();
+    tourIdleSinceRef.current = now;
+    lastAutoTourHopAtRef.current = 0;
+    const until = now + AUTO_TOUR_PAUSE_MS;
+    autoTourPausedUntilRef.current = until;
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+    setAutoTourPausedUntil(until);
+  };
+  const onCameraGesture = () => {
+    if (Date.now() < programmaticCameraUntilRef.current) return;
+    const now = Date.now();
+    const until = now + AUTO_TOUR_PAUSE_MS;
+    autoTourPausedUntilRef.current = until;
+    setAutoTourPausedUntil(until);
   };
   const m = map.current;
-  m.on("dragstart", pause);
-  m.on("zoomstart", pause);
-  m.on("rotatestart", pause);
-  m.on("pitchstart", pause);
-  m.on("touchstart", pause);
-  m.on("mousedown", pause);
+  m.on("dragstart", onPanIntent);
+  m.on("zoomstart", onCameraGesture);
+  m.on("rotatestart", onCameraGesture);
+  m.on("pitchstart", onCameraGesture);
 
   return () => {
-    m.off("dragstart", pause);
-    m.off("zoomstart", pause);
-    m.off("rotatestart", pause);
-    m.off("pitchstart", pause);
-    m.off("touchstart", pause);
-    m.off("mousedown", pause);
+    m.off("dragstart", onPanIntent);
+    m.off("zoomstart", onCameraGesture);
+    m.off("rotatestart", onCameraGesture);
+    m.off("pitchstart", onCameraGesture);
   };
 }, [mapReady]);
 
 useEffect(() => {
-  if (!autoVenueTourEnabled) return;
   if (!hasInitialMapCenter) return;
   if (checkpoints.length < 2) return;
+  const tickMs = 1000;
   const timer = setInterval(() => {
-    if (Date.now() < autoTourPausedUntil) return;
-    if (Date.now() - lastPageInteractionAt < AUTO_TOUR_IDLE_GRACE_MS) return;
-    if (Date.now() - lastArrowPressAt < AUTO_TOUR_ARROW_GRACE_MS) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (typeof window !== "undefined" && window.localStorage.getItem("map_auto_venue_tour_enabled") === "false") {
+      return;
+    }
+    if (!autoVenueTourEnabledRef.current) return;
+    const now = Date.now();
+    if (now < autoTourPausedUntilRef.current) return;
+    if (now < programmaticCameraUntilRef.current) return;
+    if (now - tourIdleSinceRef.current < AUTO_TOUR_IDLE_GRACE_MS) return;
+    if (
+      lastArrowPressAtRef.current > 0 &&
+      now - lastArrowPressAtRef.current < AUTO_TOUR_ARROW_GRACE_MS
+    ) {
+      return;
+    }
+    if (lastAutoTourHopAtRef.current && now - lastAutoTourHopAtRef.current < AUTO_TOUR_REPEAT_MS) return;
+    const n = checkpointsLenRef.current;
+    if (n < 2) return;
     setCheckpointMotionEnabled(true);
-    setCheckpointIndex((prev) => (prev + 1) % checkpoints.length);
-  }, 2000);
+    setCheckpointIndex((prev) => (prev + 1) % n);
+    lastAutoTourHopAtRef.current = now;
+  }, tickMs);
   return () => clearInterval(timer);
-}, [autoVenueTourEnabled, hasInitialMapCenter, checkpoints.length, autoTourPausedUntil, lastPageInteractionAt, lastArrowPressAt]);
+}, [hasInitialMapCenter, checkpoints.length]);
 
 useEffect(() => {
   const timer = setInterval(() => setPulseTick((v) => v + 1), 140);
@@ -1338,10 +1464,13 @@ useEffect(() => {
     const stored = window.localStorage.getItem("map_auto_venue_tour_enabled");
     if (stored === null) {
       window.localStorage.setItem("map_auto_venue_tour_enabled", "true");
+      autoVenueTourEnabledRef.current = true;
       setAutoVenueTourEnabled(true);
       return;
     }
-    setAutoVenueTourEnabled(stored !== "false");
+    const on = stored !== "false";
+    autoVenueTourEnabledRef.current = on;
+    setAutoVenueTourEnabled(on);
   };
   readSetting();
   const onChange = () => readSetting();
@@ -1362,8 +1491,13 @@ useEffect(() => {
   handledQueryVenueIdRef.current = queryVenueId;
   setSelectedVenueId(target.id);
   const now = Date.now();
+  tourIdleSinceRef.current = now;
+  lastAutoTourHopAtRef.current = 0;
+  const until = now + AUTO_TOUR_PAUSE_MS;
+  autoTourPausedUntilRef.current = until;
   setLastPageInteractionAt(now);
-  setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+  setAutoTourPausedUntil(until);
+  armProgrammaticCamera(1100);
   m.easeTo({
     center: [target.lng, target.lat],
     zoom: Math.max(m.getZoom(), 15.8),
@@ -2569,8 +2703,12 @@ useEffect(() => {
   const focusFriendOnMap = useCallback(
     (friendId: string) => {
       const now = Date.now();
+      tourIdleSinceRef.current = now;
+      lastAutoTourHopAtRef.current = 0;
+      const until = now + AUTO_TOUR_PAUSE_MS;
+      autoTourPausedUntilRef.current = until;
       setLastPageInteractionAt(now);
-      setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+      setAutoTourPausedUntil(until);
       const m = map.current;
       if (!m || !mapReady) {
         router.push(`/profile/${friendId}`);
@@ -2581,6 +2719,7 @@ useEffect(() => {
         const v = venues.find((ven) => ven.id === pres.venue_id);
         if (v) {
           setSelectedVenueId(v.id);
+          armProgrammaticCamera(1100);
           m.easeTo({
             center: [v.lng, v.lat],
             zoom: Math.max(m.getZoom(), 15.8),
@@ -2591,6 +2730,7 @@ useEffect(() => {
       }
       if (pres && Number.isFinite(pres.lat) && Number.isFinite(pres.lng)) {
         setSelectedVenueId(null);
+        armProgrammaticCamera(1100);
         m.easeTo({
           center: [pres.lng, pres.lat],
           zoom: Math.max(m.getZoom(), 15.5),
@@ -2606,9 +2746,14 @@ useEffect(() => {
   const goToPrevCheckpoint = () => {
     if (!checkpoints.length) return;
     const now = Date.now();
+    lastArrowPressAtRef.current = now;
     setLastArrowPressAt(now);
+    tourIdleSinceRef.current = now;
+    lastAutoTourHopAtRef.current = 0;
+    const until = now + AUTO_TOUR_PAUSE_MS;
+    autoTourPausedUntilRef.current = until;
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+    setAutoTourPausedUntil(until);
     setCheckpointMotionEnabled(true);
     setCheckpointIndex((prev) => (prev - 1 + checkpoints.length) % checkpoints.length);
   };
@@ -2616,9 +2761,14 @@ useEffect(() => {
   const goToNextCheckpoint = () => {
     if (!checkpoints.length) return;
     const now = Date.now();
+    lastArrowPressAtRef.current = now;
     setLastArrowPressAt(now);
+    tourIdleSinceRef.current = now;
+    lastAutoTourHopAtRef.current = 0;
+    const until = now + AUTO_TOUR_PAUSE_MS;
+    autoTourPausedUntilRef.current = until;
     setLastPageInteractionAt(now);
-    setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+    setAutoTourPausedUntil(until);
     setCheckpointMotionEnabled(true);
     setCheckpointIndex((prev) => (prev + 1) % checkpoints.length);
   };
@@ -2629,8 +2779,12 @@ useEffect(() => {
         type="button"
         onClick={async () => {
           const now = Date.now();
+          tourIdleSinceRef.current = now;
+          lastAutoTourHopAtRef.current = 0;
+          const until = now + AUTO_TOUR_PAUSE_MS;
+          autoTourPausedUntilRef.current = until;
           setLastPageInteractionAt(now);
-          setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+          setAutoTourPausedUntil(until);
           const next = !myGhostMode;
           setMyGhostMode(next);
           await supabase.from("profiles").update({ ghost_mode: next }).eq("id", meId);
@@ -2646,11 +2800,13 @@ useEffect(() => {
     ) : null;
 
     return (
-    <div
-      className="relative min-h-[100svh] h-[100dvh] w-screen"
-      onPointerDown={() => setLastPageInteractionAt(Date.now())}
-    >
-      <div ref={mapRef} className="w-full h-full" />
+    <div className="relative min-h-[100svh] h-[100dvh] w-screen bg-black">
+      {!mapReady ? (
+        <div className="pointer-events-none absolute inset-0 z-[100]" aria-hidden>
+          <MapPageSkeleton />
+        </div>
+      ) : null}
+      <div ref={mapRef} className="h-full w-full" />
       <div className="absolute left-1/2 z-20 flex w-[min(94vw,420px)] -translate-x-1/2 flex-col items-stretch gap-2 top-[calc(env(safe-area-inset-top,0px)+30px)]">
         <aside className="rounded-2xl border border-white/15 bg-black/60 p-2 backdrop-blur-xl">
           <div className="scrollbar-none flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
@@ -2797,15 +2953,19 @@ useEffect(() => {
           onClick={() => {
             if (!activeCheckpoint) return;
             const now = Date.now();
+            tourIdleSinceRef.current = now;
+            lastAutoTourHopAtRef.current = 0;
+            const until = now + AUTO_TOUR_PAUSE_MS;
+            autoTourPausedUntilRef.current = until;
             setLastPageInteractionAt(now);
-            setAutoTourPausedUntil(now + AUTO_TOUR_PAUSE_MS);
+            setAutoTourPausedUntil(until);
             setSelectedVenueId(activeCheckpoint.id);
           }}
           className="flex-1 truncate px-2 text-center text-sm font-medium text-white/90"
           aria-label="Open active checkpoint"
         >
           {activeCheckpoint ? (
-            you
+            currentUserCoords
               ? `${activeCheckpoint.name} • ${formatMilesFromMeters(activeCheckpoint.distanceFromYou)}`
               : `${activeCheckpoint.name} • locating...`
           ) : "No crowd yet"}
@@ -3030,13 +3190,7 @@ useEffect(() => {
 export default function Home() {
   return (
     <ProtectedRoute>
-      <Suspense
-        fallback={
-          <div className="grid h-screen w-screen place-items-center bg-primary text-text-secondary">
-            Loading map...
-          </div>
-        }
-      >
+      <Suspense fallback={<div className="min-h-[100dvh] w-screen bg-black" aria-hidden />}>
         <MapPageContent />
       </Suspense>
     </ProtectedRoute>

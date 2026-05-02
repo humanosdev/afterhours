@@ -68,7 +68,7 @@ export default function BottomNav({
 
   return (
     <nav
-      className="fixed inset-x-0 z-[60] flex justify-center px-3"
+      className="fixed inset-x-0 z-[100] flex justify-center px-3"
       style={{
         // Keep web Safari and Home Screen visually aligned while preserving safe-area.
         bottom: isStandalone

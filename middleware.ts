@@ -11,88 +11,93 @@ function isProtectedPath(pathname: string) {
 }
 
 export async function middleware(req: NextRequest) {
-  let res = NextResponse.next({
-    request: {
-      headers: req.headers,
-    },
-  });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          req.cookies.set({ name, value, ...options });
-          res = NextResponse.next({
-            request: {
-              headers: req.headers,
-            },
-          });
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          req.cookies.set({ name, value: "", ...options });
-          res = NextResponse.next({
-            request: {
-              headers: req.headers,
-            },
-          });
-          res.cookies.set({ name, value: "", ...options });
-        },
+  try {
+    let res = NextResponse.next({
+      request: {
+        headers: req.headers,
       },
+    });
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return req.cookies.get(name)?.value;
+          },
+          set(name: string, value: string, options: any) {
+            req.cookies.set({ name, value, ...options });
+            res = NextResponse.next({
+              request: {
+                headers: req.headers,
+              },
+            });
+            res.cookies.set({ name, value, ...options });
+          },
+          remove(name: string, options: any) {
+            req.cookies.set({ name, value: "", ...options });
+            res = NextResponse.next({
+              request: {
+                headers: req.headers,
+              },
+            });
+            res.cookies.set({ name, value: "", ...options });
+          },
+        },
+      }
+    );
+
+    const pathname = req.nextUrl.pathname;
+    const requiresAuth = isProtectedPath(pathname);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session && requiresAuth) {
+      const loginUrl = req.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
     }
-  );
 
-  const pathname = req.nextUrl.pathname;
-  const requiresAuth = isProtectedPath(pathname);
+    if (session) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_complete")
+        .eq("id", session.user.id)
+        .maybeSingle();
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+      const onboardingComplete = !!profile?.onboarding_complete;
 
-  if (!session && requiresAuth) {
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+      if (AUTH_PAGES.includes(pathname)) {
+        const appUrl = req.nextUrl.clone();
+        appUrl.pathname = onboardingComplete ? "/hub" : ONBOARDING_PATH;
+        appUrl.search = "";
+        return NextResponse.redirect(appUrl);
+      }
+
+      if (!onboardingComplete && pathname !== ONBOARDING_PATH) {
+        const onboardingUrl = req.nextUrl.clone();
+        onboardingUrl.pathname = ONBOARDING_PATH;
+        onboardingUrl.search = "";
+        return NextResponse.redirect(onboardingUrl);
+      }
+
+      if (onboardingComplete && pathname === ONBOARDING_PATH) {
+        const appUrl = req.nextUrl.clone();
+        appUrl.pathname = "/hub";
+        appUrl.search = "";
+        return NextResponse.redirect(appUrl);
+      }
+    }
+
+    return res;
+  } catch (e) {
+    console.error("[middleware]", e);
+    return NextResponse.next();
   }
-
-  if (session) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("onboarding_complete")
-      .eq("id", session.user.id)
-      .maybeSingle();
-
-    const onboardingComplete = !!profile?.onboarding_complete;
-
-    if (AUTH_PAGES.includes(pathname)) {
-      const appUrl = req.nextUrl.clone();
-      appUrl.pathname = onboardingComplete ? "/hub" : ONBOARDING_PATH;
-      appUrl.search = "";
-      return NextResponse.redirect(appUrl);
-    }
-
-    if (!onboardingComplete && pathname !== ONBOARDING_PATH) {
-      const onboardingUrl = req.nextUrl.clone();
-      onboardingUrl.pathname = ONBOARDING_PATH;
-      onboardingUrl.search = "";
-      return NextResponse.redirect(onboardingUrl);
-    }
-
-    if (onboardingComplete && pathname === ONBOARDING_PATH) {
-      const appUrl = req.nextUrl.clone();
-      appUrl.pathname = "/hub";
-      appUrl.search = "";
-      return NextResponse.redirect(appUrl);
-    }
-  }
-
-  return res;
 }
 
 export const config = {

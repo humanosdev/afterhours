@@ -8,7 +8,8 @@ import { ImagePlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-async function cropImageToSquare(imageSrc: string, cropArea: Area) {
+/** Export full crop rectangle (e.g. 4:5 poster), max edge 1600px. */
+async function cropImageFromArea(imageSrc: string, cropArea: Area) {
   const image = new Image();
   image.src = imageSrc;
   await new Promise<void>((resolve, reject) => {
@@ -16,13 +17,16 @@ async function cropImageToSquare(imageSrc: string, cropArea: Area) {
     image.onerror = () => reject(new Error("Could not load selected image"));
   });
 
-  const maxOutputSize = 1600;
-  const sourceSize = Math.max(1, Math.round(Math.min(cropArea.width, cropArea.height)));
-  const targetSize = Math.min(maxOutputSize, sourceSize);
+  const maxDim = 1600;
+  let outW = cropArea.width;
+  let outH = cropArea.height;
+  const scale = Math.min(maxDim / outW, maxDim / outH, 1);
+  outW = Math.max(1, Math.round(outW * scale));
+  outH = Math.max(1, Math.round(outH * scale));
 
   const canvas = document.createElement("canvas");
-  canvas.width = targetSize;
-  canvas.height = targetSize;
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not initialize image crop");
 
@@ -30,12 +34,12 @@ async function cropImageToSquare(imageSrc: string, cropArea: Area) {
     image,
     cropArea.x,
     cropArea.y,
-    sourceSize,
-    sourceSize,
+    cropArea.width,
+    cropArea.height,
     0,
     0,
-    canvas.width,
-    canvas.height
+    outW,
+    outH
   );
 
   const blob = await new Promise<Blob | null>((resolve) =>
@@ -152,7 +156,7 @@ export default function NewSharePage() {
         return;
       }
 
-      const croppedBlob = await cropImageToSquare(cropSrc, croppedAreaPixels);
+      const croppedBlob = await cropImageFromArea(cropSrc, croppedAreaPixels);
       if (croppedBlob.size > 6 * 1024 * 1024) {
         setError("Processed share is too large. Try a tighter crop.");
         setPosting(false);
@@ -294,12 +298,16 @@ export default function NewSharePage() {
           </div>
         ) : (
           <>
+            <p className="mb-2 text-center text-[13px] text-white/55">
+              Crop your poster —{" "}
+              <span className="font-semibold text-white/85">4:5 portrait</span> (feed preview)
+            </p>
             <div className="relative h-[52vh] overflow-hidden rounded-2xl border border-white/10 bg-[#08090f]">
               <Cropper
                 image={cropSrc}
                 crop={crop}
                 zoom={zoom}
-                aspect={1}
+                aspect={4 / 5}
                 cropShape="rect"
                 showGrid={false}
                 onCropChange={setCrop}

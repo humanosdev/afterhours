@@ -48,6 +48,17 @@ const withPWA = require("next-pwa")({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  /**
+   * Dev-only: use in-memory webpack cache. Persistent `.next` webpack cache can desync
+   * after HMR / interrupted compiles → runtime tries to load missing `./948.js`-style
+   * chunks and every route returns 500 until `.next` is deleted.
+   */
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.cache = { type: "memory" };
+    }
+    return config;
+  },
 };
 
 module.exports = withPWA(nextConfig);

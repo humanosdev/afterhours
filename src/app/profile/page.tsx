@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ProfilePageSkeleton from "@/components/skeletons/ProfilePageSkeleton";
 import { getPresenceFreshness } from "@/lib/presence";
+import { preloadImage } from "@/lib/preloadImage";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -27,6 +29,7 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   async function signOut() {
     const accountLabel = username?.trim() ? username.trim() : "your account";
@@ -43,6 +46,7 @@ export default function ProfilePage() {
       const { data: auth } = await supabase.auth.getUser();
 
       if (!auth.user) {
+        setLoading(false);
         router.push("/login");
         return;
       }
@@ -53,19 +57,33 @@ export default function ProfilePage() {
         .from("profiles")
         .select("username, display_name, bio, avatar_url, ghost_mode")
         .eq("id", auth.user.id)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
         console.error("Profile fetch error:", error);
+        setProfileError("Could not load your profile. Check connection or try again.");
         setLoading(false);
         return;
       }
 
+      if (!data) {
+        setProfileError(null);
+        setUsername(null);
+        setDisplayName(null);
+        setBio(null);
+        setAvatarUrl(null);
+        setMyGhostMode(false);
+        setLoading(false);
+        return;
+      }
+
+      setProfileError(null);
       setUsername(data.username);
       setDisplayName(data.display_name);
       setBio(data.bio);
       setAvatarUrl(data.avatar_url);
       setMyGhostMode(!!data.ghost_mode);
+      await preloadImage(data.avatar_url);
       setLoading(false);
     })();
   }, [router]);
@@ -191,14 +209,6 @@ export default function ProfilePage() {
     })();
   }, [userId, myGhostMode]);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-black px-4 py-6 text-[14px] text-white/50">
-        Loading…
-      </div>
-    );
-  }
-
   const nameToShow = displayName || username || "You";
   const nameUnderAvatar = displayName?.trim() || username || "You";
   const hasLiveMoment = activeMomentsCount > 0;
@@ -224,6 +234,9 @@ export default function ProfilePage() {
 
   return (
     <ProtectedRoute>
+      {loading ? (
+        <ProfilePageSkeleton />
+      ) : (
       <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
         <div className="mx-auto flex w-full flex-1 flex-col">
           <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
@@ -232,6 +245,14 @@ export default function ProfilePage() {
               <p className="mt-0.5 truncate text-[14px] font-semibold text-white/45">
                 @{username ?? "user"}
               </p>
+              {profileError ? (
+                <p className="mt-2 text-[13px] leading-snug text-amber-200/90">{profileError}</p>
+              ) : null}
+              {!profileError && userId && !username && !displayName ? (
+                <p className="mt-2 text-[13px] leading-snug text-white/50">
+                  No profile row yet — open Edit profile to finish setup.
+                </p>
+              ) : null}
             </div>
             <div className="relative shrink-0">
               <button
@@ -447,6 +468,7 @@ export default function ProfilePage() {
           <div className="min-h-6 flex-1 shrink-0" aria-hidden />
         </div>
       </div>
+      )}
     </ProtectedRoute>
   );
 }

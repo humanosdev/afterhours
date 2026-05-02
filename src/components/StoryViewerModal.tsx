@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Avatar } from "@/components/ui";
 import { formatRelativeTime } from "@/lib/time";
+import { useRouter } from "next/navigation";
 
 export type StoryViewerStory = {
   id: string;
@@ -50,6 +51,7 @@ export default function StoryViewerModal({
   onClose: () => void;
   onStoryDeleted?: (storyId: string) => void;
 }) {
+  const router = useRouter();
   const [storyIndex, setStoryIndex] = useState(initialIndex);
   const [progress, setProgress] = useState(0);
   const [likesCount, setLikesCount] = useState(0);
@@ -338,12 +340,27 @@ export default function StoryViewerModal({
           ))}
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!group) return;
+              if (currentUserId && group.user_id === currentUserId) {
+                router.push("/profile");
+                return;
+              }
+              if (group.username) {
+                router.push(`/u/${encodeURIComponent(group.username)}`);
+                return;
+              }
+              router.push(`/profile/${group.user_id}`);
+            }}
+            className="flex items-center gap-2"
+          >
             <Avatar src={group?.avatar_url ?? null} fallbackText={group?.username ?? "user"} size="xs" />
             <div className="text-xs text-white/90">
               {(group?.username ?? "user") + " · " + relativeTime(activeStory.created_at)}
             </div>
-          </div>
+          </button>
           {isStoryOwner ? (
             <div className="relative">
               <button

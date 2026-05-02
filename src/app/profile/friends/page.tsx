@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import FriendListSkeleton from "@/components/skeletons/FriendListSkeleton";
 import { Avatar } from "@/components/ui";
 import { createNotification } from "@/lib/notifications";
 import { getPresenceFreshness, isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
@@ -348,8 +349,8 @@ function FriendsPageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-[100dvh] bg-black px-6 pb-6 pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white">
-        Loading…
+      <div className="min-h-[100dvh] bg-black pb-6 text-white">
+        <FriendListSkeleton rows={14} withHeader />
       </div>
     );
   }
@@ -530,11 +531,7 @@ function FriendsPageContent() {
 export default function FriendsPage() {
   return (
     <Suspense
-      fallback={
-        <div className="min-h-[100dvh] bg-black p-6 pt-[calc(env(safe-area-inset-top,0px)+12px)] text-sm text-white/60">
-          Loading friends...
-        </div>
-      }
+      fallback={<div className="min-h-[100dvh] w-screen bg-black" aria-hidden />}
     >
       <FriendsPageContent />
     </Suspense>

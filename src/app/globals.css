@@ -85,3 +85,39 @@ body {
 .mapboxgl-ctrl-attrib-button {
   opacity: 0.85;
 }
+
+/* ===== Premium skeleton loaders (grey-on-black, slow shimmer) ===== */
+@keyframes ah-skeleton-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes ah-content-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ah-skeleton-shimmer {
+  background: linear-gradient(
+    105deg,
+    #121212 0%,
+    #161616 38%,
+    #242424 50%,
+    #161616 62%,
+    #121212 100%
+  );
+  background-size: 240% 100%;
+  animation: ah-skeleton-shimmer 2.85s ease-in-out infinite;
+}
+
+.ah-content-reveal {
+  animation: ah-content-reveal 0.38s ease-out forwards;
+}

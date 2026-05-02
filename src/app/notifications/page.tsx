@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
 import { formatRelativeTime } from "@/lib/time";
 import type { NotificationWithMeta } from "../../../types/notifications";
+import NotificationListSkeleton from "@/components/skeletons/NotificationListSkeleton";
 
 function relativeTime(iso: string) {
   return formatRelativeTime(iso, { nowLabel: "now" });
@@ -153,7 +154,7 @@ export default function NotificationsPage() {
   }, [router]);
 
   const content = useMemo(() => {
-    if (loading) return <div className="py-8 text-center text-[14px] text-white/45">Loading activity…</div>;
+    if (loading) return <NotificationListSkeleton rows={10} />;
     if (!items.length)
       return (
         <div className="py-14 text-center">

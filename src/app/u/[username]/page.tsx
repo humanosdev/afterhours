@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
+import ProfilePageSkeleton from "@/components/skeletons/ProfilePageSkeleton";
 import { createNotification } from "@/lib/notifications";
 import { getPresenceFreshness } from "@/lib/presence";
 
@@ -383,11 +384,7 @@ export default function UserProfile() {
   }, [profile?.id, profile?.is_private, me, isFriend]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-[100dvh] w-full items-center justify-center bg-black px-4 text-[14px] text-white/50">
-        Loading…
-      </div>
-    );
+    return <ProfilePageSkeleton />;
   }
 
   if (!profile) return null;

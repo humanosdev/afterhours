@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { SkeletonGrid } from "@/components/ui/Skeleton";
 
 type HiddenShareRow = {
   id: string;
@@ -62,19 +63,24 @@ export default function HiddenArchivePage() {
         </div>
 
         {loading ? (
-          <div className="py-10 text-center text-sm text-white/50">Loading...</div>
+          <SkeletonGrid
+            columns={3}
+            count={9}
+            gapClass="gap-px bg-white/[0.08]"
+            cellClass="aspect-square rounded-none border-0"
+          />
         ) : rows.length === 0 ? (
           <div className="py-10 text-center text-sm text-white/50">
             No hidden shares yet.
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-px bg-white/[0.08]">
+          <div className="grid grid-cols-3 gap-[2px]">
             {rows.map((row) => (
               <button
                 key={row.id}
                 type="button"
                 onClick={() => router.push(`/moments/${encodeURIComponent(row.id)}?view=archive`)}
-                className="relative aspect-square w-full overflow-hidden bg-[#0a0a0c]"
+                className="relative aspect-square w-full overflow-hidden bg-[#0a0a0c] ring-1 ring-white/[0.06]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={row.image_url} alt="Hidden share" className="h-full w-full object-cover" />

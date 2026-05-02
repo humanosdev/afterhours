@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import EditProfileSkeleton from "@/components/skeletons/EditProfileSkeleton";
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
@@ -295,11 +296,7 @@ useEffect(() => {
 }, [cropSrc]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-black px-4 text-[14px] text-white/50">
-        Loading…
-      </div>
-    );
+    return <EditProfileSkeleton />;
   }
   return (
     <div className="min-h-[100dvh] bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">

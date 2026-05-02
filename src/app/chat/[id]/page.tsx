@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import ChatConversationSkeleton from "@/components/skeletons/ChatConversationSkeleton";
 
 type ChatRow = {
   id: string;
@@ -51,6 +52,11 @@ export default function ChatConversationPage() {
   const [deletedForMeIds, setDeletedForMeIds] = useState<Set<string>>(new Set());
   const [activeMessageMenuId, setActiveMessageMenuId] = useState<string | null>(null);
   const [composerBottomInset, setComposerBottomInset] = useState(8);
+  const [threadGateReady, setThreadGateReady] = useState(false);
+
+  useEffect(() => {
+    setThreadGateReady(false);
+  }, [conversationId]);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   function formatMessageTimestamp(iso: string) {
@@ -84,7 +90,16 @@ export default function ChatConversationPage() {
 
   /* ---------- Load Partner ---------- */
   useEffect(() => {
-    if (!conversationId || !meId) return;
+    if (!conversationId) {
+      setThreadGateReady(true);
+      return;
+    }
+    if (!meId) return;
+
+    let cancelled = false;
+    const finishGate = () => {
+      if (!cancelled) setThreadGateReady(true);
+    };
 
     (async () => {
       const { data: chat, error: chatErr } = await supabase
@@ -92,18 +107,25 @@ export default function ChatConversationPage() {
         .select("id, user1_id, user2_id")
         .eq("id", conversationId)
         .maybeSingle();
+      if (cancelled) return;
       if (chatErr || !chat) {
         console.error("chat load error:", chatErr);
+        router.replace("/chat");
+        finishGate();
         return;
       }
       const typedChat = chat as ChatRow;
       if (typedChat.user1_id !== meId && typedChat.user2_id !== meId) {
-        router.push("/chat");
+        router.replace("/chat");
+        finishGate();
         return;
       }
       const otherId =
         typedChat.user1_id === meId ? typedChat.user2_id : typedChat.user1_id;
-      if (!otherId) return;
+      if (!otherId) {
+        finishGate();
+        return;
+      }
 
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
@@ -111,12 +133,19 @@ export default function ChatConversationPage() {
         .eq("id", otherId)
         .maybeSingle();
 
+      if (cancelled) return;
       if (profErr) {
         console.error("partner profile load error:", profErr);
+        finishGate();
         return;
       }
       if (prof) setPartner(prof as Profile);
+      finishGate();
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [conversationId, meId, router]);
 
   /* ---------- Load + Subscribe Messages ---------- */
@@ -332,6 +361,12 @@ export default function ChatConversationPage() {
 
   const visibleMessages = messages.filter((m) => !deletedForMeIds.has(m.id));
 
+  const showConversationSkeleton = !meId || !threadGateReady;
+
+  if (showConversationSkeleton) {
+    return <ChatConversationSkeleton />;
+  }
+
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
       <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-black/92 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+8px)] backdrop-blur-xl sm:px-4">
@@ -368,7 +403,7 @@ export default function ChatConversationPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 pb-4">
+      <div className="flex-1 overflow-y-auto px-3 py-3 pb-4 ah-content-reveal">
         {visibleMessages.map((m) => (
           <div
             key={m.id}

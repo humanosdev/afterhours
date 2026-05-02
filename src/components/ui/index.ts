@@ -4,4 +4,5 @@ export { SectionHeader } from "./SectionHeader";
 export { SocialCard } from "./SocialCard";
 export { StatusBadge } from "./StatusBadge";
 export { StoryRing } from "./StoryRing";
+export { Skeleton, SkeletonCard, SkeletonCircle, SkeletonGrid, SkeletonLine } from "./Skeleton";
 

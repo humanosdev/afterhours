@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import ChatListSkeleton from "@/components/skeletons/ChatListSkeleton";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 type ChatRow = {
@@ -555,9 +556,7 @@ export default function ChatPage() {
 
       <div className="px-3 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-1 sm:px-4">
         {loading ? (
-          <div className="px-3 py-8 text-center text-sm text-white/55">
-            Loading messages...
-          </div>
+          <ChatListSkeleton rows={12} />
         ) : filteredPreviews.length === 0 ? (
           <div className="px-3 py-16 text-center">
             <div className="text-[17px] font-semibold text-white/90">Your night starts in the DMs</div>
