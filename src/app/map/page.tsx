@@ -917,26 +917,6 @@ useEffect(() => {
   return () => window.removeEventListener("friends-updated", handler);
 }, [meId]);
 
-useEffect(() => {
-  if (!meId || !you) return;
-  if (!isValidCoordinatePair(you.lat, you.lng)) return;
-
-  const pingPresence = async () => {
-    await supabase.from("user_presence").upsert(
-      {
-        user_id: meId,
-        lng: you.lng,
-        lat: you.lat,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" }
-    );
-  };
-
-  pingPresence();
-  const timer = setInterval(pingPresence, 30000);
-  return () => clearInterval(timer);
-}, [meId, you]);
   /* ---------------- BLOCKS ---------------- */
 useEffect(() => {
   if (!meId) return;
@@ -2222,7 +2202,8 @@ useEffect(() => {
     arrivalTick,
   ]);
 
-  /** Global heatmap “breathing” (~5Hz): one cheap paint update, not full GeoJSON per venue per tick. */
+  /** Global heatmap “breathing” (~5Hz): one cheap paint update, not full GeoJSON per venue per tick.
+   *  Mapbox forbids nesting `["zoom"]` inside `["*", …]` for `heatmap-intensity` — scale stops instead. */
   useEffect(() => {
     const m = map.current;
     if (!m || !mapReady) return;
@@ -2232,9 +2213,15 @@ useEffect(() => {
       try {
         if (m.getLayer(layerId)) {
           m.setPaintProperty(layerId, "heatmap-intensity", [
-            "*",
-            ["literal", wave],
-            HEATMAP_INTENSITY_BASE_EXPR,
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            0.6 * wave,
+            14,
+            1.2 * wave,
+            18,
+            2 * wave,
           ]);
         }
       } catch {

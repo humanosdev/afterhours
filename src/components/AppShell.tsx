@@ -10,6 +10,7 @@ import StoryCameraModal from "./StoryCameraModal";
 import { InnerAppVioletUnderglow } from "./InnerAppVioletUnderglow";
 import { ClientAuthProvider } from "@/contexts/ClientAuthContext";
 import { matchesAuthGatePath } from "@/lib/authGatePaths";
+import { isValidCoordinatePair } from "@/lib/presence";
 import { supabase } from "@/lib/supabaseClient";
 
 /** Routes that already ship their own bottom violet wash (`AuthScreenShell` or marketing pages — avoid stacking). */
@@ -202,6 +203,54 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  /**
+   * Write `user_presence` (lat/lng/updated_at) on every main app surface — not only `/map`.
+   * The map page still runs venue/zone assignment for `venue_id`; this keeps “last seen” fresh on Hub/Chat/Profile.
+   */
+  useEffect(() => {
+    if (!currentUserId) return;
+    const authMarketing = new Set([
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/reset-password",
+    ]);
+    if (authMarketing.has(pathname)) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    let cancelled = false;
+    const ping = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          if (!isValidCoordinatePair(lat, lng)) return;
+          void supabase.from("user_presence").upsert(
+            {
+              user_id: currentUserId,
+              lat,
+              lng,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          );
+        },
+        () => {
+          /* permission denied or unavailable */
+        },
+        { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+      );
+    };
+
+    ping();
+    const interval = window.setInterval(ping, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [currentUserId, pathname]);
 
   useEffect(() => {
     if (!currentUserId) {
