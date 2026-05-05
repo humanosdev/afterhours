@@ -6,12 +6,18 @@ import { appConfig } from "@/lib/appConfig";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ensureProfileExists } from "@/lib/ensureProfile";
+import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
+import { AuthScreenShell } from "@/components/AuthScreenShell";
+import { AuthIntencityWordmark } from "@/components/AuthIntencityWordmark";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { start } = useAuthRouteTransition();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -27,9 +33,10 @@ export default function SignupPage() {
         .select("onboarding_complete")
         .eq("id", session.user.id)
         .maybeSingle();
+      start();
       router.replace(profile?.onboarding_complete ? "/hub" : "/onboarding");
     })();
-  }, [router]);
+  }, [router, start]);
 
   function isTempleEmail(value: string) {
     return value.toLowerCase().trim().endsWith("@temple.edu");
@@ -82,6 +89,12 @@ export default function SignupPage() {
     return;
   }
 
+  if (password !== confirmPassword) {
+    setLoading(false);
+    setMsg("Passwords do not match.");
+    return;
+  }
+
   if (!passwordValidation(password)) {
     setLoading(false);
     setMsg("Password must be at least 8 characters and include letters and numbers.");
@@ -113,7 +126,13 @@ export default function SignupPage() {
     await ensureProfileExists(sessionData.session.user.id);
     await fetch("/api/legal/consent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionData.session.access_token
+          ? { Authorization: `Bearer ${sessionData.session.access_token}` }
+          : {}),
+      },
+      credentials: "same-origin",
       body: JSON.stringify({
         termsVersion: appConfig.termsVersion,
         privacyVersion: appConfig.privacyVersion,
@@ -121,16 +140,22 @@ export default function SignupPage() {
     });
   }
 
-  setSuccessMsg("Check your Temple email to verify your account.");
+  setSuccessMsg(
+    "Anyone can type characters before @temple.edu. If this email is valid, check your Temple email to verify your account. On busy Wi‑Fi, try cellular if the message is slow."
+  );
 }
 
 
   return (
-    <div className="min-h-screen bg-primary text-text-primary p-6">
-      <h1 className="text-2xl font-semibold">Sign up</h1>
-      <p className="mt-2 text-text-secondary">Create your account.</p>
+    <AuthScreenShell marketing>
+      <AuthIntencityWordmark className="mb-8 shrink-0" />
+      <h1 className="text-center text-2xl font-semibold tracking-tight">Sign up</h1>
+      <p className="mx-auto mt-3 max-w-md text-center text-xs leading-relaxed text-white/45">
+        Verification email may be delayed on crowded campus Wi‑Fi. If it doesn&apos;t arrive, wait a bit, try cellular, and avoid
+        tapping Create account over and over.
+      </p>
 
-      <form onSubmit={onSignup} className="mt-6 space-y-4 max-w-sm">
+      <form onSubmit={onSignup} className="mt-8 w-full space-y-4">
         <input
           className="w-full rounded-xl bg-white/5 border border-white/10 p-3 outline-none"
           placeholder="Email"
@@ -142,13 +167,33 @@ export default function SignupPage() {
 
         <input
           className="w-full rounded-xl bg-white/5 border border-white/10 p-3 outline-none"
-          placeholder="Password (min 6)"
-          type="password"
+          placeholder="Password (min 8, letters + numbers)"
+          type={showPassword ? "text" : "password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
           required
         />
+
+        <input
+          className="w-full rounded-xl bg-white/5 border border-white/10 p-3 outline-none"
+          placeholder="Confirm password"
+          type={showPassword ? "text" : "password"}
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          autoComplete="new-password"
+          required
+        />
+
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary select-none">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-white/20 bg-transparent accent-accent-violet"
+            checked={showPassword}
+            onChange={(e) => setShowPassword(e.target.checked)}
+          />
+          Show password
+        </label>
 
         <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-text-secondary">
           <input
@@ -185,15 +230,13 @@ export default function SignupPage() {
           {loading ? "Creating..." : "Create account"}
         </button>
 
-        <button
-          type="button"
-          onClick={() => router.push("/login")}
-          className="w-full rounded-xl bg-white/10 text-white p-3"
-        >
-          Back to login
-        </button>
-
+        <p className="text-center text-sm text-text-secondary">
+          Already have an account?{" "}
+          <Link href="/login" className="font-medium text-accent-violet hover:text-accent-violet-active">
+            Log in
+          </Link>
+        </p>
       </form>
-    </div>
+    </AuthScreenShell>
   );
 }

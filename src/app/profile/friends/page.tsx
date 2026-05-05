@@ -58,6 +58,8 @@ function FriendsPageContent() {
   const [viewerTarget, setViewerTarget] = useState<ProfileLite | null>(null);
   const [viewerCanSeeFriends, setViewerCanSeeFriends] = useState(true);
   const [viewerRelationship, setViewerRelationship] = useState<"none" | "incoming" | "outgoing" | "accepted">("none");
+  /** When viewing someone else's list: which user ids are also your friends (for Mutual vs Other). */
+  const [viewerMyFriendIds, setViewerMyFriendIds] = useState<Record<string, true>>({});
 
   useEffect(() => {
     (async () => {
@@ -87,6 +89,7 @@ function FriendsPageContent() {
       setMsg("Could not find that profile.");
       setViewerTarget(null);
       setFriends([]);
+      setViewerMyFriendIds({});
       return;
     }
 
@@ -108,16 +111,36 @@ function FriendsPageContent() {
     setViewerCanSeeFriends(canSee);
     if (!canSee) {
       setFriends([]);
+      setViewerMyFriendIds({});
       setPresenceById({});
       setVenueById({});
       return;
     }
 
-    const { data: reqs } = await supabase
+    const { data: myReqs } = await supabase
+      .from("friend_requests")
+      .select("requester_id, addressee_id")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${viewerId},addressee_id.eq.${viewerId}`);
+    const myFriendMap: Record<string, true> = {};
+    for (const r of (myReqs ?? []) as { requester_id: string; addressee_id: string }[]) {
+      const other = r.requester_id === viewerId ? r.addressee_id : r.requester_id;
+      if (other && other !== viewerId) myFriendMap[other] = true;
+    }
+    setViewerMyFriendIds(myFriendMap);
+
+    const { data: reqs, error: reqsErr } = await supabase
       .from("friend_requests")
       .select("requester_id, addressee_id, status")
       .eq("status", "accepted")
       .or(`requester_id.eq.${typedTarget.id},addressee_id.eq.${typedTarget.id}`);
+    if (reqsErr) {
+      setMsg("Could not load their friends list.");
+      setFriends([]);
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
     const acceptedRows = (reqs ?? []) as FriendRequestRow[];
     const friendIds = Array.from(
       new Set(acceptedRows.map((r) => (r.requester_id === typedTarget.id ? r.addressee_id : r.requester_id)))
@@ -128,15 +151,21 @@ function FriendsPageContent() {
       setVenueById({});
       return;
     }
-    const { data: friendRows } = await supabase
+    const { data: friendRows, error: profilesErr } = await supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url, is_private, ghost_mode")
       .in("id", friendIds);
+    if (profilesErr) {
+      setMsg("Could not load friend profiles.");
+      setFriends([]);
+      return;
+    }
     setFriends((friendRows ?? []) as ProfileLite[]);
   }
 
   async function refreshAll(uid: string) {
     setMsg(null);
+    setViewerMyFriendIds({});
     const { data: reqs, error } = await supabase
       .from("friend_requests")
       .select("id, requester_id, addressee_id, status, created_at")
@@ -268,6 +297,12 @@ function FriendsPageContent() {
       status: "pending",
     });
     if (error) {
+      if (error.code === "23505") {
+        setMsg("Request already sent.");
+        setDiscoverResult(null);
+        await refreshAll(meId);
+        return;
+      }
       setMsg("Could not send request.");
       return;
     }
@@ -288,6 +323,10 @@ function FriendsPageContent() {
       status: "pending",
     });
     if (error) {
+      if (error.code === "23505") {
+        setViewerRelationship("outgoing");
+        return;
+      }
       setMsg("Could not send request.");
       return;
     }
@@ -347,6 +386,20 @@ function FriendsPageContent() {
     [filteredFriends, presenceById]
   );
 
+  const mutualFriendsFiltered = useMemo(() => {
+    if (!viewerTarget || !meId) return [];
+    return filteredFriends.filter(
+      (f) => f.id !== meId && f.id !== viewerTarget.id && viewerMyFriendIds[f.id]
+    );
+  }, [viewerTarget, meId, filteredFriends, viewerMyFriendIds]);
+
+  const otherFriendsFiltered = useMemo(() => {
+    if (!viewerTarget || !meId) return [];
+    return filteredFriends.filter(
+      (f) => f.id !== meId && f.id !== viewerTarget.id && !viewerMyFriendIds[f.id]
+    );
+  }, [viewerTarget, meId, filteredFriends, viewerMyFriendIds]);
+
   if (loading) {
     return (
       <div className="min-h-[100dvh] bg-black pb-6 text-white">
@@ -373,12 +426,12 @@ function FriendsPageContent() {
             <div className="w-[72px]" />
           )}
         </div>
-        {!viewerTarget ? (
+        {(!viewerTarget || (viewerTarget && viewerCanSeeFriends)) ? (
         <div className="mt-3">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search username"
+            placeholder={viewerTarget ? "Search their friends" : "Search friends or username"}
             className="w-full rounded-xl border border-white/10 bg-[#101015] px-3 py-2.5 text-sm outline-none focus:border-white/20"
           />
         </div>
@@ -487,6 +540,60 @@ function FriendsPageContent() {
           </section>
         ) : null}
 
+        {viewerTarget && friends.length === 0 ? (
+          <section>
+            <div className="px-3 py-10 text-center text-sm text-white/50">No friends to show yet.</div>
+          </section>
+        ) : viewerTarget ? (
+          <>
+            <section>
+              <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-emerald-300/85">
+                Mutual friends
+              </div>
+              {mutualFriendsFiltered.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-white/45">No mutual friends</p>
+              ) : (
+                mutualFriendsFiltered.map((f) => {
+                  const subtitle = f.is_private ? `@${f.username} · Private` : `@${f.username}`;
+                  return (
+                    <div key={`m-${f.id}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                      <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                      <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
+                        <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
+                        <div className="truncate text-xs text-emerald-200/55">Friends with you · {subtitle}</div>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </section>
+            <section className="mt-5">
+              <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">
+                Not in your friends
+              </div>
+              {otherFriendsFiltered.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-white/45">
+                  {mutualFriendsFiltered.length > 0
+                    ? "You’re friends with everyone on this list."
+                    : "No one else on this list."}
+                </p>
+              ) : (
+                otherFriendsFiltered.map((f) => {
+                  const subtitle = f.is_private ? `@${f.username} · Private` : `@${f.username}`;
+                  return (
+                    <div key={`o-${f.id}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                      <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                      <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
+                        <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
+                        <div className="truncate text-xs text-white/45">{subtitle}</div>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </section>
+          </>
+        ) : (
         <section>
           <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Friends</div>
           {filteredFriends.length === 0 ? (
@@ -505,9 +612,7 @@ function FriendsPageContent() {
                   : freshness === "recent"
                     ? (p?.venue_id && venueById[p.venue_id] ? `Recently at ${venueById[p.venue_id]}` : "Recently active")
                     : "Offline";
-              const subtitle = viewerTarget
-                ? (f.is_private ? `@${f.username} · Private` : `@${f.username}`)
-                : `@${f.username} · ${status}`;
+              const subtitle = `@${f.username} · ${status}`;
               return (
                 <div key={f.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
                   <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
@@ -520,6 +625,7 @@ function FriendsPageContent() {
             })
           )}
         </section>
+        )}
 
         {msg ? <div className="px-3 text-sm text-red-400">{msg}</div> : null}
       </div>

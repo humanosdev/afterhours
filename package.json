@@ -2,9 +2,13 @@
   "name": "intencity",
   "private": true,
   "scripts": {
+    "strip-pwa-dev": "node scripts/strip-pwa-artifacts.mjs",
+    "predev": "npm run strip-pwa-dev",
     "dev": "WATCHPACK_POLLING=true next dev -H 0.0.0.0",
-    "dev:turbo": "WATCHPACK_POLLING=true next dev -H 0.0.0.0 --turbo",
-    "dev:clean": "rm -rf .next && sh -c 'for pid in $(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null); do kill -9 $pid 2>/dev/null || true; done' && WATCHPACK_POLLING=true next dev -H 0.0.0.0",
+    "dev:turbo": "npm run strip-pwa-dev && WATCHPACK_POLLING=true next dev -H 0.0.0.0 --turbo",
+    "dev:clean": "npm run strip-pwa-dev && rm -rf .next && sh -c 'for pid in $(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null); do kill -9 $pid 2>/dev/null || true; done' && WATCHPACK_POLLING=true next dev -H 0.0.0.0",
+    "dev:reset": "npm run strip-pwa-dev && rm -rf .next && WATCHPACK_POLLING=true next dev -H 0.0.0.0",
+    "icons:generate": "node scripts/generate-app-icons.mjs",
     "build": "next build",
     "start": "next start"
   },
@@ -26,7 +30,9 @@
   "devDependencies": {
     "@types/node": "25.0.10",
     "@types/react": "19.2.9",
+    "@types/react-dom": "^19.2.3",
     "@types/web-push": "^3.6.4",
+    "sharp": "^0.34.5",
     "typescript": "5.9.3"
   }
 }

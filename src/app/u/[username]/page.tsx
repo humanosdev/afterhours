@@ -2,32 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { StoryRing } from "@/components/ui";
+import { Avatar, StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import ProfilePageSkeleton from "@/components/skeletons/ProfilePageSkeleton";
 import { createNotification } from "@/lib/notifications";
 import { getPresenceFreshness } from "@/lib/presence";
 
 async function unfriendUser(me: string, them: string) {
-  console.log("ME:", me);
-  console.log("THEM:", them);
-
-  const { data: allRows } = await supabase
-    .from("friend_requests")
-    .select("*");
-
-  console.log("ALL ROWS:", allRows);
-
-  const { data: match } = await supabase
-    .from("friend_requests")
-    .select("*")
-    .or(
-      `and(requester_id.eq.${me},addressee_id.eq.${them}),and(requester_id.eq.${them},addressee_id.eq.${me})`
-    );
-
-  console.log("MATCHING ROW:", match);
-
   const { error, count } = await supabase
     .from("friend_requests")
     .delete({ count: "exact" })
@@ -35,15 +18,12 @@ async function unfriendUser(me: string, them: string) {
       `and(requester_id.eq.${me},addressee_id.eq.${them}),and(requester_id.eq.${them},addressee_id.eq.${me})`
     );
 
-  console.log("DELETE RESULT:", { error, count });
-
   if (error) {
     console.error("Unfriend failed:", error);
     return;
   }
 
   if (!count) {
-    console.log("❌ No rows deleted");
     return;
   }
 
@@ -52,7 +32,6 @@ async function unfriendUser(me: string, them: string) {
   );
   window.dispatchEvent(new Event("friends-updated"));
 
-  console.log("✅ Unfriended successfully");
 }
 
 async function blockUser(me: string, them: string) {
@@ -112,7 +91,6 @@ async function unblockUser(me: string, them: string) {
     return;
   }
   if (!count) {
-    console.log("Nothing to unblock");
     return;
   }
 
@@ -128,6 +106,27 @@ type Profile = {
   is_private: boolean | null;
   ghost_mode: boolean | null;
 };
+
+type ProfileLite = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+async function acceptedFriendIdsForUser(userId: string): Promise<string[]> {
+  const { data: reqs } = await supabase
+    .from("friend_requests")
+    .select("requester_id, addressee_id")
+    .eq("status", "accepted")
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+  const out = new Set<string>();
+  for (const r of (reqs ?? []) as { requester_id: string; addressee_id: string }[]) {
+    const other = r.requester_id === userId ? r.addressee_id : r.requester_id;
+    if (other && other !== userId) out.add(other);
+  }
+  return Array.from(out);
+}
 
 export default function UserProfile() {
   const { username } = useParams<{ username: string }>();
@@ -152,11 +151,16 @@ export default function UserProfile() {
   const [friendCount, setFriendCount] = useState(0);
   const [latestActiveMomentId, setLatestActiveMomentId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unfriendConfirmOpen, setUnfriendConfirmOpen] = useState(false);
+  const [unfriendWorking, setUnfriendWorking] = useState(false);
   const [requestStatus, setRequestStatus] = useState<"none" | "incoming" | "outgoing">("none");
   const [requesting, setRequesting] = useState(false);
   const [latestMomentOwnerId, setLatestMomentOwnerId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
   const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
+  const [mutualPreview, setMutualPreview] = useState<ProfileLite[]>([]);
+  const [mutualTotal, setMutualTotal] = useState(0);
+  const [mutualLoadDone, setMutualLoadDone] = useState(false);
 
   useEffect(() => {
     if (!username) return;
@@ -342,6 +346,51 @@ export default function UserProfile() {
   }, [me, profile]);
 
   useEffect(() => {
+    if (!me || !profile?.id || me === profile.id) {
+      setMutualPreview([]);
+      setMutualTotal(0);
+      setMutualLoadDone(false);
+      return;
+    }
+
+    let cancelled = false;
+    setMutualLoadDone(false);
+    (async () => {
+      const them = profile.id;
+      const [myIds, theirIds] = await Promise.all([
+        acceptedFriendIdsForUser(me),
+        acceptedFriendIdsForUser(them),
+      ]);
+      if (cancelled) return;
+      const theirSet = new Set(theirIds);
+      const mutualIds = myIds.filter((id) => theirSet.has(id) && id !== me && id !== them);
+      mutualIds.sort();
+      const total = mutualIds.length;
+      if (!total) {
+        setMutualPreview([]);
+        setMutualTotal(0);
+        setMutualLoadDone(true);
+        return;
+      }
+      const previewIds = mutualIds.slice(0, 2);
+      const { data: rows } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url")
+        .in("id", previewIds);
+      if (cancelled) return;
+      const byId = new Map((rows ?? []).map((r: any) => [r.id, r as ProfileLite]));
+      const ordered = previewIds.map((id) => byId.get(id)).filter(Boolean) as ProfileLite[];
+      setMutualPreview(ordered);
+      setMutualTotal(total);
+      setMutualLoadDone(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [me, profile?.id]);
+
+  useEffect(() => {
     if (!profile?.id) return;
     const isOwn = me === profile.id;
     const locked = !!profile.is_private && !isOwn && !isFriend;
@@ -397,6 +446,8 @@ export default function UserProfile() {
   const isPrivate = !!profile.is_private;
   const canViewPrivateProfile = isOwnProfile || isFriend;
   const shouldHidePrivateProfile = isPrivate && !canViewPrivateProfile;
+  /** Mutual strip when we can see their profile (not locked private stranger). */
+  const showMutualFriendsRow = !isOwnProfile && !!me && mutualLoadDone && !shouldHidePrivateProfile;
   const hasLiveMoment = activeMomentsCount > 0 && latestMomentOwnerId === profile.id;
   const openFriendsViewer = () => {
     if (!profile?.username) return;
@@ -435,6 +486,10 @@ export default function UserProfile() {
     });
     setRequesting(false);
     if (error) {
+      if (error.code === "23505") {
+        setRequestStatus("outgoing");
+        return;
+      }
       console.error("Could not send request:", error);
       alert("Could not send friend request");
       return;
@@ -500,13 +555,9 @@ export default function UserProfile() {
                     {isFriend ? (
                       <button
                         type="button"
-                        onClick={async () => {
-                          if (!me || !them) return;
-                          const ok = window.confirm("Are you sure you want to unfriend this user?");
-                          if (!ok) return;
-                          await unfriendUser(me, them);
-                          setIsFriend(false);
+                        onClick={() => {
                           setMenuOpen(false);
+                          setUnfriendConfirmOpen(true);
                         }}
                         className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
                       >
@@ -606,6 +657,55 @@ export default function UserProfile() {
               <p className="mt-4 text-[14px] leading-[1.45] text-white/72">{profile.bio.trim()}</p>
             ) : (
               <p className="mt-4 text-[14px] text-white/38">No bio yet.</p>
+            )
+          ) : null}
+
+          {showMutualFriendsRow ? (
+            mutualTotal > 0 ? (
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <div className="flex shrink-0 items-center -space-x-2.5">
+                  {mutualPreview.map((m) => {
+                    const inner = (
+                      <Avatar
+                        src={m.avatar_url?.trim() || null}
+                        fallbackText={m.display_name || m.username || "?"}
+                        size="sm"
+                        className="border border-white/[0.12]"
+                      />
+                    );
+                    return m.username ? (
+                      <Link
+                        key={m.id}
+                        href={`/u/${encodeURIComponent(m.username)}`}
+                        className="relative z-0 ring-2 ring-black transition hover:z-10 hover:opacity-95"
+                        aria-label={`${m.display_name || m.username || "Mutual"} profile`}
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <span key={m.id} className="relative z-0 ring-2 ring-black">
+                        {inner}
+                      </span>
+                    );
+                  })}
+                  {mutualTotal > 2 ? (
+                    <span
+                      className="relative z-[1] grid h-9 min-w-[2.25rem] place-items-center rounded-full border border-white/[0.14] bg-white/[0.08] px-2 text-[12px] font-semibold tabular-nums text-white/90 ring-2 ring-black"
+                      aria-label={`${mutualTotal - 2} more mutual friends`}
+                    >
+                      +{mutualTotal - 2}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="min-w-0 flex-1 text-[13px] leading-snug text-white/58">
+                  <span className="font-medium text-white/72">
+                    Friends with{" "}
+                    {mutualPreview.map((m) => m.display_name?.trim() || m.username || "someone").join(", ")}
+                  </span>
+                </p>
+              </div>
+            ) : (
+              <p className="mt-4 text-[13px] text-white/42">No mutual friends</p>
             )
           ) : null}
 
@@ -762,6 +862,60 @@ export default function UserProfile() {
 
         <div className="min-h-6 flex-1 shrink-0" aria-hidden />
       </div>
+
+      {unfriendConfirmOpen ? (
+        <div className="fixed inset-0 z-[12000] flex items-center justify-center p-4 pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)] pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:pb-4 sm:pt-4">
+          <button
+            type="button"
+            disabled={unfriendWorking}
+            className="absolute inset-0 bg-black/75 backdrop-blur-sm disabled:pointer-events-none"
+            aria-label="Close unfriend dialog"
+            onClick={() => setUnfriendConfirmOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unfriend-dialog-title"
+            className="relative z-[1] w-full max-w-sm rounded-2xl border border-white/15 bg-[#12121a] p-5 shadow-[0_8px_40px_rgba(0,0,0,0.55)]"
+          >
+            <h2 id="unfriend-dialog-title" className="text-lg font-semibold tracking-tight text-white">
+              Unfriend {profileName}?
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-white/65">
+              Are you sure you want to unfriend {profileName}? You can send them a new friend request later if you
+              change your mind.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                disabled={unfriendWorking}
+                onClick={() => setUnfriendConfirmOpen(false)}
+                className="flex-1 rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-semibold text-white/90 transition hover:bg-white/[0.1] disabled:opacity-45"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={unfriendWorking}
+                onClick={async () => {
+                  if (!me) return;
+                  setUnfriendWorking(true);
+                  try {
+                    await unfriendUser(me, them);
+                    setIsFriend(false);
+                    setUnfriendConfirmOpen(false);
+                  } finally {
+                    setUnfriendWorking(false);
+                  }
+                }}
+                className="flex-1 rounded-xl bg-red-500/90 py-3 text-sm font-semibold text-white shadow-[0_0_20px_rgba(239,68,68,0.25)] transition hover:bg-red-500 disabled:opacity-60"
+              >
+                {unfriendWorking ? "Removing…" : "Unfriend"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

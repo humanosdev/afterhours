@@ -250,6 +250,17 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!meId) return;
+    supabase
+      .from("notifications")
+      .update({ read: true })
+      .eq("recipient_user_id", meId)
+      .eq("type", "message")
+      .eq("read", false)
+      .then(() => {});
+  }, [meId]);
+
+  useEffect(() => {
+    if (!meId) return;
     const channel = supabase
       .channel(`chat-list:${meId}`)
       .on(
@@ -478,6 +489,7 @@ export default function ChatPage() {
   return (
     <ProtectedRoute>
     <div className="min-h-[100dvh] bg-black text-white">
+      <div className="mx-auto min-h-[100dvh] w-full max-w-[min(100%,28rem)] sm:max-w-[30rem] lg:max-w-[32rem]">
       <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-black/92 px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+10px)] backdrop-blur-xl">
         <div className="flex min-h-[44px] items-center justify-between">
           {selectionMode ? (
@@ -623,6 +635,7 @@ export default function ChatPage() {
             </button>
           ))
         )}
+      </div>
       </div>
     </div>
     </ProtectedRoute>

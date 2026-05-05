@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { registerPushSubscription } from "@/lib/pushClient";
 import { ensureProfileExists } from "@/lib/ensureProfile";
+import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
 
 function isIos() {
   if (typeof window === "undefined") return false;
@@ -13,6 +14,7 @@ function isIos() {
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { start, end } = useAuthRouteTransition();
   const [userId, setUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [platform, setPlatform] = useState<"ios" | "android" | "other">("other");
@@ -22,6 +24,7 @@ export default function OnboardingPage() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
+        end();
         router.replace("/login");
         return;
       }
@@ -34,8 +37,9 @@ export default function OnboardingPage() {
       ) {
         setPlatform("android");
       }
+      end();
     })();
-  }, [router]);
+  }, [router, end]);
 
   const completeOnboarding = async () => {
     if (!userId || saving) return;
@@ -47,6 +51,7 @@ export default function OnboardingPage() {
       .eq("id", userId);
     setSaving(false);
     if (error) return;
+    start();
     router.replace("/hub");
   };
 
@@ -61,8 +66,12 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-primary text-text-primary">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-[calc(env(safe-area-inset-bottom,0px)+22px)] pt-[calc(env(safe-area-inset-top,0px)+18px)]">
+    <div className="relative min-h-[100dvh] bg-primary text-text-primary">
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-0 h-[min(52vh,30rem)] bg-gradient-to-t from-accent-violet/35 via-accent-violet/10 to-transparent"
+        aria-hidden
+      />
+      <div className="relative z-[1] mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-5 pb-[calc(env(safe-area-inset-bottom,0px)+22px)] pt-[calc(env(safe-area-inset-top,0px)+24px)]">
         <div className="rounded-2xl border border-subtle bg-secondary p-5 shadow-[0_0_30px_rgba(122,60,255,0.2)]">
           <h1 className="text-3xl font-semibold tracking-tight">Intencity</h1>
           <p className="mt-2 text-sm text-text-secondary">

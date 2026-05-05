@@ -6,6 +6,7 @@ import { SkeletonCircle, SkeletonLine } from "@/components/ui/Skeleton";
 export default function ChatConversationSkeleton() {
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,28rem)] flex-col overflow-hidden sm:max-w-[30rem] lg:max-w-[32rem]">
       <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-black/92 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+8px)] backdrop-blur-xl sm:px-4">
         <div className="flex min-h-[44px] items-center gap-2">
           <SkeletonLine width={40} height={40} className="shrink-0 rounded-full" />
@@ -43,6 +44,7 @@ export default function ChatConversationSkeleton() {
           <SkeletonLine width="100%" height={44} className="min-w-0 flex-1 rounded-2xl" />
           <SkeletonLine width={72} height={44} className="shrink-0 rounded-2xl" />
         </div>
+      </div>
       </div>
     </div>
   );

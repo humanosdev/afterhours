@@ -42,8 +42,8 @@ export default function Error({
         style={{
           padding: "10px 18px",
           borderRadius: 999,
-          border: "1px solid rgba(139,92,246,0.6)",
-          background: "rgba(139,92,246,0.25)",
+          border: "1px solid rgba(122,60,255,0.6)",
+          background: "rgba(122,60,255,0.25)",
           color: "#fff",
           fontWeight: 600,
           cursor: "pointer",

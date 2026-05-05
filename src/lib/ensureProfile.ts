@@ -9,7 +9,6 @@ export async function ensureProfileExists(userId: string) {
     .upsert(
       {
         id: userId,
-        onboarding_complete: false,
       },
       { onConflict: "id" }
     );

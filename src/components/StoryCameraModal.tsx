@@ -307,7 +307,7 @@ export default function StoryCameraModal({
   const showLiveCamera = !capturedUrl && !cameraUnavailable;
 
   return (
-    <div className="fixed inset-0 z-[140] bg-black">
+    <div className="fixed inset-0 z-[10140] bg-black">
       {/* Top bar */}
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pb-4 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
         <button

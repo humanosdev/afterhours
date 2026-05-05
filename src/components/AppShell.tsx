@@ -1,18 +1,52 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BottomNav from "./BottomNav";
+import InitialAppSplash from "./InitialAppSplash";
 import StoryCameraModal from "./StoryCameraModal";
+import { InnerAppVioletUnderglow } from "./InnerAppVioletUnderglow";
+import { ClientAuthProvider } from "@/contexts/ClientAuthContext";
+import { matchesAuthGatePath } from "@/lib/authGatePaths";
 import { supabase } from "@/lib/supabaseClient";
+
+/** Routes that already ship their own bottom violet wash (`AuthScreenShell` or marketing pages — avoid stacking). */
+function shouldSkipAppShellBottomUnderglow(pathname: string) {
+  if (
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password"
+  ) {
+    return true;
+  }
+  if (pathname.startsWith("/onboarding")) return true;
+  if (pathname === "/profile/blocks" || pathname === "/settings/notifications") return true;
+  return false;
+}
 
 type LiveToast = {
   id: string;
   title: string;
   body: string;
   route: string;
+  actorAvatarUrl?: string | null;
+  actorUsername?: string | null;
 };
+
+function AvatarStub({ src, fallbackText }: { src: string | null; fallbackText: string }) {
+  if (src) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt={fallbackText} className="h-9 w-9 rounded-full object-cover" />;
+  }
+  return (
+    <div className="grid h-9 w-9 place-items-center rounded-full bg-white/12 text-xs font-semibold text-white/90">
+      {fallbackText.trim().slice(0, 1).toUpperCase()}
+    </div>
+  );
+}
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -22,11 +56,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<"both" | "shares_only">("both");
   const [createTab, setCreateTab] = useState<"moments" | "shares">("moments");
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  /** First `getSession()` finished — avoids showing tab nav on gated routes before we know if there is a session. */
+  const [authSessionResolved, setAuthSessionResolved] = useState(false);
   const [liveToasts, setLiveToasts] = useState<LiveToast[]>([]);
   const [mapVenueSheetOpen, setMapVenueSheetOpen] = useState(false);
   const [gestureRefreshing, setGestureRefreshing] = useState(false);
+  /** Bottom nav mounts here so it sits above Mapbox/WebKit compositor layers (Safari desktop). */
+  const [bottomNavHost, setBottomNavHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const id = "ah-bottom-nav-root";
+    let el = document.getElementById(id) as HTMLElement | null;
+    if (!el) {
+      el = document.createElement("div");
+      el.id = id;
+      document.body.appendChild(el);
+    }
+    setBottomNavHost(el);
+  }, []);
 
   const hideNavPaths = [
     "/login",
@@ -43,10 +92,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/auth") ||
     pathname.startsWith("/chat/");
 
+  /** Session gates — hide main tab bar until signed-in user confirmed (mirrors middleware intent). */
+  const suppressTabNavForAuthGate =
+    matchesAuthGatePath(pathname) && (!authSessionResolved || !currentUserId);
+  const showMainTabNav = !hideNav && !suppressTabNavForAuthGate;
+
   // Keep Map fully immersive (nav overlays map).
   const immersive =
     pathname === "/map";
-  const showFooter = !immersive && !pathname.startsWith("/chat");
+  const showFooter =
+    !immersive && !pathname.startsWith("/chat") && !suppressTabNavForAuthGate;
+  const showBottomUnderglow =
+    pathname !== "/map" && !shouldSkipAppShellBottomUnderglow(pathname);
 
   const pullRefreshEnabled =
     pathname === "/hub" ||
@@ -96,15 +153,49 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
+
+    const clearBrokenSession = async () => {
+      await supabase.auth.signOut({ scope: "local" });
       if (!mounted) return;
-      setCurrentUserId(data.session?.user.id ?? null);
-    });
+      setCurrentUserId(null);
+      setAuthSessionResolved(true);
+    };
+
+    supabase.auth
+      .getSession()
+      .then(async ({ data, error: sessionError }) => {
+        if (!mounted) return;
+        if (sessionError) {
+          console.warn("Auth: getSession failed:", sessionError.message);
+          await clearBrokenSession();
+          return;
+        }
+        if (!data.session) {
+          setCurrentUserId(null);
+          setAuthSessionResolved(true);
+          return;
+        }
+        const { error: userError } = await supabase.auth.getUser();
+        if (!mounted) return;
+        if (userError) {
+          console.warn("Auth: session invalid (sign in again):", userError.message);
+          await clearBrokenSession();
+          return;
+        }
+        setCurrentUserId(data.session.user.id);
+        setAuthSessionResolved(true);
+      })
+      .catch(async (e: unknown) => {
+        console.warn("Auth: session bootstrap failed:", e);
+        await clearBrokenSession();
+      });
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
       setCurrentUserId(session?.user.id ?? null);
+      setAuthSessionResolved(true);
     });
     return () => {
       mounted = false;
@@ -113,36 +204,68 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
+    if (!currentUserId) {
+      setChatUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
     const loadUnread = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        if (mounted) setUnreadCount(0);
-        return;
-      }
-
-      const { count } = await supabase
+      const { count: messageCount } = await supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })
-        .eq("recipient_user_id", user.id)
-        .eq("read", false);
-
-      if (mounted) setUnreadCount(count ?? 0);
+        .eq("recipient_user_id", currentUserId)
+        .eq("read", false)
+        .eq("type", "message");
+      if (cancelled) return;
+      setChatUnreadCount(messageCount ?? 0);
     };
+    void loadUnread();
 
-    loadUnread();
-    timer = setInterval(loadUnread, 15000);
+    const channel = supabase
+      .channel(`live-notifications:${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `recipient_user_id=eq.${currentUserId}`,
+        },
+        async (payload) => {
+          const row = (payload.new ?? payload.old ?? null) as
+            | { type?: string; read?: boolean; id?: string; actor_user_id?: string; message_preview?: string | null; chat_id?: string | null }
+            | null;
+          if (row && payload.eventType === "INSERT" && row.type === "message" && row.read === false) {
+            const { data: actor } = await supabase
+              .from("profiles")
+              .select("username, avatar_url, display_name")
+              .eq("id", row.actor_user_id)
+              .maybeSingle();
+            setLiveToasts((prev) => [
+              ...prev.slice(-2),
+              {
+                id: row.id ?? `${Date.now()}`,
+                title: actor?.display_name || actor?.username || "New message",
+                body: row.message_preview || "Sent you a message",
+                route: row.chat_id ? `/chat/${row.chat_id}` : "/chat",
+                actorAvatarUrl: actor?.avatar_url ?? null,
+                actorUsername: actor?.username ?? null,
+              },
+            ]);
+            window.setTimeout(() => {
+              setLiveToasts((prev) => prev.filter((t) => t.id !== (row.id ?? "")));
+            }, 6000);
+          }
+          void loadUnread();
+        }
+      )
+      .subscribe();
 
     return () => {
-      mounted = false;
-      if (timer) clearInterval(timer);
+      cancelled = true;
+      supabase.removeChannel(channel);
     };
-  }, [pathname]);
+  }, [currentUserId]);
 
   // Production only: let new service workers activate and reload once.
   useEffect(() => {
@@ -210,85 +333,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!currentUserId) return;
-    const channel = supabase
-      .channel(`live-notifications:${currentUserId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `recipient_user_id=eq.${currentUserId}`,
-        },
-        async (payload) => {
-          if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-          const row = payload.new as any;
-          const [{ data: actor }, { data: venue }] = await Promise.all([
-            supabase
-              .from("profiles")
-              .select("display_name, username")
-              .eq("id", row.actor_user_id)
-              .maybeSingle(),
-            row.venue_id
-              ? supabase.from("venues").select("name").eq("id", row.venue_id).maybeSingle()
-              : Promise.resolve({ data: null, error: null } as any),
-          ]);
-          const actorName = actor?.display_name || actor?.username || "Someone";
-          let title = "Intencity";
-          let body = "Something new is happening.";
-          let route = "/notifications";
-          if (row.type === "friend_joined_venue") {
-            title = `${actorName} is at ${venue?.name ?? "a venue"} 👀`;
-            body = "Tap to open map";
-            route = row.venue_id ? `/map?venueId=${encodeURIComponent(row.venue_id)}` : "/map";
-          } else if (row.type === "friend_nearby") {
-            title = `${actorName} is nearby`;
-            body = "Tap to open map";
-            route = "/map";
-          } else if (row.type === "friends_active_bundle") {
-            title = "Friends are active 🔥";
-            body = "Tap to open hub";
-            route = "/hub";
-          } else if (row.type === "friend_story") {
-            title = `${actorName} posted a new Moment`;
-            body = "Tap to open Moments";
-            route = "/stories";
-          } else if (row.type === "friend_request_received") {
-            title = `${actorName} sent a friend request`;
-            body = "Tap to respond";
-            route = "/notifications";
-          } else if (row.type === "friend_request_accepted") {
-            title = `You and ${actorName} are now connected`;
-            body = "Tap to view profile";
-            route = row.actor_user_id ? `/profile/${row.actor_user_id}` : "/notifications";
-          } else if (row.type === "venue_popping") {
-            title = `${venue?.name ?? "A venue"} is heating up 🔥`;
-            body = "Tap to open map";
-            route = row.venue_id ? `/map?venueId=${encodeURIComponent(row.venue_id)}` : "/map";
-          } else if (row.type === "friend_online") {
-            title = `${actorName} is out right now`;
-            body = "Tap to open hub";
-            route = "/hub";
-          }
-
-          const toast: LiveToast = {
-            id: row.id,
-            title,
-            body,
-            route,
-          };
-          setLiveToasts((prev) => [...prev, toast].slice(-3));
-          window.setTimeout(() => {
-            setLiveToasts((prev) => prev.filter((t) => t.id !== row.id));
-          }, 3800);
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentUserId]);
+    if (pathname.startsWith("/chat")) {
+      setLiveToasts([]);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     if (!pullRefreshEnabled) return;
@@ -359,8 +407,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pullRefreshEnabled]);
 
   return (
-    <div className={hideNav || immersive ? "" : "pb-24"}>
-      <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+10px)] z-[80] mx-auto flex w-full max-w-md flex-col gap-2 px-3">
+    <ClientAuthProvider
+      value={{ sessionResolved: authSessionResolved, userId: currentUserId }}
+    >
+    <div className={hideNav || immersive || !showMainTabNav ? "" : "pb-24"}>
+      <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+10px)] z-[10050] mx-auto flex w-full max-w-md flex-col items-start gap-2 px-3">
         {gestureRefreshing ? (
           <div className="pointer-events-none mx-auto rounded-full border border-white/20 bg-black/65 px-3 py-1.5 backdrop-blur">
             <span className="block h-4 w-4 animate-spin rounded-full border-2 border-white/85 border-t-transparent" />
@@ -376,25 +427,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             }}
             className="pointer-events-auto rounded-2xl border border-accent-violet/35 bg-[#12121acc] px-3 py-3 text-left shadow-[0_0_0_1px_rgba(122,60,255,0.22),0_8px_30px_rgba(122,60,255,0.2)] backdrop-blur animate-[toastIn_.26s_ease-out]"
           >
-            <div className="text-sm font-semibold text-white">{toast.title}</div>
-            <div className="mt-0.5 text-xs text-text-secondary">{toast.body}</div>
+            <div className="flex items-center gap-2.5">
+              <AvatarStub src={toast.actorAvatarUrl ?? null} fallbackText={toast.title} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-white">{toast.title}</div>
+                <div className="mt-0.5 truncate text-xs text-text-secondary">{toast.body}</div>
+              </div>
+            </div>
           </button>
         ))}
       </div>
-      {children}
+      {showBottomUnderglow ? <InnerAppVioletUnderglow /> : null}
+      <div className="relative z-[2] min-h-0">{children}</div>
       {showFooter ? (
-        <footer className="px-6 py-4 text-center text-xs text-white/40">
-          <Link href="/privacy" className="hover:text-white/70 transition-colors">
+        <footer className="relative z-[2] px-6 py-4 text-center text-xs text-white/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
+          <Link href="/privacy" className="transition-colors hover:text-white/90">
             Privacy
           </Link>
-          <span className="mx-2">·</span>
-          <Link href="/terms" className="hover:text-white/70 transition-colors">
+          <span className="mx-2 text-white/45">·</span>
+          <Link href="/terms" className="transition-colors hover:text-white/90">
             Terms
           </Link>
         </footer>
       ) : null}
       {createOpen ? (
-        <div className="fixed inset-0 z-[120] bg-black/65 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[10200] bg-black/65 backdrop-blur-sm">
           <button
             type="button"
             className="absolute inset-0 h-full w-full"
@@ -444,16 +501,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         mode={composerKind}
         onClose={() => setStoryOpen(false)}
       />
-      {!hideNav && !mapVenueSheetOpen && (
-        <BottomNav
-          onOpenStories={() => {
-            setCreateMode("both");
-            setCreateTab("moments");
-            setCreateOpen(true);
-          }}
-          unreadCount={unreadCount}
-        />
-      )}
+      {/* Portaled to #ah-bottom-nav-root (display:contents; nav z-[10000]). */}
+      {bottomNavHost && showMainTabNav && !(pathname === "/map" && mapVenueSheetOpen)
+        ? createPortal(
+            <BottomNav
+              onOpenStories={() => {
+                setCreateMode("both");
+                setCreateTab("moments");
+                setCreateOpen(true);
+              }}
+              chatUnreadCount={chatUnreadCount}
+            />,
+            bottomNavHost
+          )
+        : null}
+      <InitialAppSplash isAuthed={!!currentUserId} />
     </div>
+    </ClientAuthProvider>
   );
 }

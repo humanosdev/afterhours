@@ -2,6 +2,20 @@
 
 import { supabase } from "@/lib/supabaseClient";
 
+type PushRegisterResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | "no_window"
+        | "unsupported"
+        | "missing_vapid"
+        | "permission_denied"
+        | "invalid_subscription"
+        | "db_error"
+        | "subscribe_failed";
+    };
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -11,17 +25,17 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export async function registerPushSubscription(userId: string) {
+export async function registerPushSubscription(userId: string): Promise<PushRegisterResult> {
   try {
-    if (typeof window === "undefined") return { ok: false, reason: "no_window" as const };
+    if (typeof window === "undefined") return { ok: false, reason: "no_window" };
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      return { ok: false, reason: "unsupported" as const };
+      return { ok: false, reason: "unsupported" };
     }
     const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!vapidPublicKey) return { ok: false, reason: "missing_vapid" as const };
+    if (!vapidPublicKey) return { ok: false, reason: "missing_vapid" };
 
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") return { ok: false, reason: "permission_denied" as const };
+    if (permission !== "granted") return { ok: false, reason: "permission_denied" };
 
     const registration = await navigator.serviceWorker.ready;
     const existing = await registration.pushManager.getSubscription();
@@ -36,7 +50,7 @@ export async function registerPushSubscription(userId: string) {
     const endpoint = json.endpoint;
     const keys = json.keys ?? {};
     if (!endpoint || !keys.p256dh || !keys.auth) {
-      return { ok: false, reason: "invalid_subscription" as const };
+      return { ok: false, reason: "invalid_subscription" };
     }
 
     const { error } = await supabase.from("push_subscriptions").upsert(
@@ -48,9 +62,9 @@ export async function registerPushSubscription(userId: string) {
       },
       { onConflict: "user_id,endpoint" }
     );
-    if (error) return { ok: false, reason: "db_error" as const };
-    return { ok: true as const };
+    if (error) return { ok: false, reason: "db_error" };
+    return { ok: true };
   } catch {
-    return { ok: false, reason: "subscribe_failed" as const };
+    return { ok: false, reason: "subscribe_failed" };
   }
 }

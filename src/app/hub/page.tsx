@@ -8,6 +8,7 @@ import { Avatar, StoryRing } from "@/components/ui";
 import HubFeedSkeleton from "@/components/skeletons/HubFeedSkeleton";
 import StoryViewerModal, { type StoryViewerGroup } from "@/components/StoryViewerModal";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
 import { isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
 import { formatRelativeTime } from "@/lib/time";
 import { preloadImage } from "@/lib/preloadImage";
@@ -84,6 +85,7 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) 
 
 export default function HubPage() {
   const router = useRouter();
+  const { end: endAuthRouteTransition } = useAuthRouteTransition();
   const [stories, setStories] = useState<Story[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
@@ -112,32 +114,36 @@ export default function HubPage() {
     });
   }, []);
   useEffect(() => {
-    let mounted = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
+    if (!meId) {
+      setUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
     const loadUnread = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!mounted || !user) {
-        if (mounted) setUnreadCount(0);
-        return;
-      }
       const { count } = await supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })
-        .eq("recipient_user_id", user.id)
-        .eq("read", false);
-      if (mounted) setUnreadCount(count ?? 0);
+        .eq("recipient_user_id", meId)
+        .eq("read", false)
+        .neq("type", "message");
+      if (!cancelled) setUnreadCount(count ?? 0);
     };
-
-    loadUnread();
-    timer = setInterval(loadUnread, 15000);
+    void loadUnread();
+    const channel = supabase
+      .channel(`hub-notifications:${meId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: `recipient_user_id=eq.${meId}` },
+        () => {
+          void loadUnread();
+        }
+      )
+      .subscribe();
     return () => {
-      mounted = false;
-      if (timer) clearInterval(timer);
+      cancelled = true;
+      supabase.removeChannel(channel);
     };
-  }, []);
+  }, [meId]);
   useEffect(() => {
     setAvatarPaintReady(false);
   }, [meId]);
@@ -587,24 +593,38 @@ const getVenueStats = (venue: Venue) => {
     sharesReady &&
     avatarPaintReady;
 
+  useEffect(() => {
+    const w = window as Window & { __ahHubFeedReady?: boolean };
+    w.__ahHubFeedReady = feedReady;
+    if (feedReady) {
+      window.dispatchEvent(new CustomEvent("ah-hub-feed-ready"));
+      endAuthRouteTransition();
+    }
+    return () => {
+      w.__ahHubFeedReady = false;
+    };
+  }, [feedReady, endAuthRouteTransition]);
+
   /* ---------------- UI ---------------- */
 
   return (
     <ProtectedRoute>
     <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-primary text-text-primary">
-      <div className="flex w-full flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+8px)] sm:px-5 sm:pt-3">
+      <div className="mx-auto flex w-full max-w-[min(100%,28rem)] flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+8px)] sm:max-w-[30rem] sm:px-5 sm:pt-3 lg:max-w-[32rem]">
       {/* Top bar — IG-style thin chrome; story strip is the hero below */}
       <header className="flex items-center justify-between gap-3 pb-3">
-        <Image
-          src="/hub-logo.png"
-          alt="Intencity"
-          width={144}
-          height={144}
-          priority
-          quality={95}
-          sizes="36px"
-          className="h-9 w-9 object-contain drop-shadow-[0_0_12px_rgba(139,92,246,0.5)]"
-        />
+        <div className="h-9 w-9 shrink-0 overflow-hidden rounded-xl bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
+          <Image
+            src="/hub-logo.png"
+            alt="Intencity"
+            width={180}
+            height={180}
+            priority
+            quality={95}
+            sizes="36px"
+            className="h-full w-full object-contain drop-shadow-[0_0_12px_rgba(122,60,255,0.5)]"
+          />
+        </div>
         <button
           type="button"
           onClick={() => router.push("/notifications")}
@@ -810,7 +830,7 @@ const getVenueStats = (venue: Venue) => {
                     </div>
                   </button>
                   <div className="relative w-full shrink-0">
-                    <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#0a0a0c]">
+                    <div className="relative aspect-[4/5] w-full max-h-[min(62svh,480px)] overflow-hidden bg-[#0a0a0c] sm:max-h-[min(68svh,560px)] lg:mx-auto lg:max-h-[min(78vh,640px)] lg:max-w-[min(100%,28rem)]">
                       <button
                         type="button"
                         onClick={openMoment}

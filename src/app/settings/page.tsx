@@ -48,6 +48,7 @@ export default function SettingsPage() {
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
   const goBackSafe = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -96,6 +97,7 @@ export default function SettingsPage() {
 
   const togglePrivateAccount = async () => {
     if (privacyLoading) return;
+    setPrivacyError(null);
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -109,7 +111,7 @@ export default function SettingsPage() {
     if (error) {
       console.error("Failed updating privacy:", error);
       setPrivateAccount(!next);
-      alert("Could not update privacy setting");
+      setPrivacyError("Could not update privacy. Try again.");
     }
   };
 
@@ -188,6 +190,9 @@ export default function SettingsPage() {
         </section>
         <section>
           <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Privacy</div>
+          {privacyError ? (
+            <div className="mb-2 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{privacyError}</div>
+          ) : null}
           <button
             type="button"
             onClick={togglePrivateAccount}

@@ -23,8 +23,11 @@ import {
 import {
   LIVE_WINDOW_MS,
   getPresenceFreshness,
+  isLikelyMapFallbackPresence,
   isPresenceLive,
   isValidCoordinatePair,
+  MAP_FALLBACK_CENTER_LAT,
+  MAP_FALLBACK_CENTER_LNG,
 } from "@/lib/presence";
 import { formatRelativeTime } from "@/lib/time";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -32,9 +35,31 @@ import MapPageSkeleton from "@/components/skeletons/MapPageSkeleton";
 // Dev venue radii — off by default for MVP (enable locally when debugging zones)
 const SHOW_DEV_RADII = false;
 
+/** Locate overlay: hide after map has settled, but never shorter than this (avoids a flash). */
+const LOCATE_WORMHOLE_MIN_MS = 320;
+const LOCATE_WORMHOLE_MAX_MS = 4000;
+
+/** Friend/me avatar pins: ease toward each new polled position (no extra API traffic). */
+const PRESENCE_MARKER_SMOOTH_ALPHA = 0.18;
+/** Snap instead of sliding when the jump is huge (teleport, fresh session). ~1.3km at mid-lat. */
+const PRESENCE_MARKER_SNAP_DEG = 0.012;
+
 const MAP_STYLE_DAY = "mapbox://styles/mapbox/light-v11";
 const MAP_STYLE_NIGHT = "mapbox://styles/mapbox/dark-v11";
 const MAP_BRAND_TINT_LAYER = "map-brand-tone-overlay";
+
+/** Must match `venue-heat` layer `heatmap-intensity` (global pulse multiplies this expression). */
+const HEATMAP_INTENSITY_BASE_EXPR: mapboxgl.Expression = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  0.6,
+  14,
+  1.2,
+  18,
+  2,
+];
 
 /** Local device clock: light map 7:00–17:59, night from 18:00 until before 7:00. */
 function localHourIsMapDaytime(date = new Date()): boolean {
@@ -255,27 +280,6 @@ function drawFoodCrossGlyph(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
   ctx.lineTo(cx - 2.5, cy - 4.5);
   ctx.stroke();
 }
-function countUsersInVenue(
-  venue: Venue,
-  presence: PresenceRow[],
-  friendsById: Record<string, true>
-) {
-  let total = 0;
-  let friends = 0;
-
-  for (const p of presence) {
-    const last = new Date(p.updated_at).getTime();
-const stale = Date.now() - last > 5 * 60_000; // 5 min like you wanted
-    const d = distanceMeters(p.lat, p.lng, venue.lat, venue.lng);
-
-    if (d <= venue.outer_radius_m) {
-      total++;
-      if (friendsById[p.user_id]) friends++;
-    }
-  }
-
-  return { total, friends };
-}
 function safeSetMapCursor(m: mapboxgl.Map | null, cursor: string) {
   const canvas = m?.getCanvas?.();
   if (canvas) canvas.style.cursor = cursor;
@@ -355,7 +359,7 @@ function markerColorForCategory(key: VenueCategoryIconKey): string {
       return "#06B6D4";
     case "all":
     default:
-      return "#8B5CF6";
+      return "#7A3CFF";
   }
 }
 
@@ -531,7 +535,7 @@ type VenuePerson = {
 
 const AUTO_TOUR_PAUSE_MS = 2200;
 /** Min time since last page interaction before auto checkpoint cycling may run. */
-const AUTO_TOUR_IDLE_GRACE_MS = 17_000;
+const AUTO_TOUR_IDLE_GRACE_MS = 20_000;
 /** Min time between automatic checkpoint hops once idle grace has passed. */
 const AUTO_TOUR_REPEAT_MS = 4_000;
 const AUTO_TOUR_ARROW_GRACE_MS = 2200;
@@ -539,6 +543,8 @@ const AUTO_TOUR_ARROW_GRACE_MS = 2200;
 
   const youMarker = useRef<mapboxgl.Marker | null>(null);
   const presenceMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const presenceMarkerTargetRef = useRef<Map<string, [number, number]>>(new Map());
+  const presenceMarkerSmoothRef = useRef<Map<string, { lng: number; lat: number }>>(new Map());
   const venueClusterMarkers = useRef<Map<string, mapboxgl.Marker>>(new Map());
 
   const [you, setYou] = useState<{ lng: number; lat: number } | null>(null);
@@ -551,6 +557,18 @@ const AUTO_TOUR_ARROW_GRACE_MS = 2200;
   const [mapDayMode, setMapDayMode] = useState(false);
   const [mapStyleEpoch, setMapStyleEpoch] = useState(0);
   const lastAppliedMapStyleRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const w = window as Window & { __ahMapReady?: boolean };
+    w.__ahMapReady = mapReady;
+    if (mapReady) {
+      window.dispatchEvent(new CustomEvent("ah-map-ready"));
+    }
+    return () => {
+      w.__ahMapReady = false;
+    };
+  }, [mapReady]);
 
   const [friendsById, setFriendsById] = useState<Record<string, true>>({});
   useEffect(() => {
@@ -582,7 +600,8 @@ const [hasInitialMapCenter, setHasInitialMapCenter] = useState(false);
 const [checkpointMotionEnabled, setCheckpointMotionEnabled] = useState(false);
 const [arrivalPulseVenueId, setArrivalPulseVenueId] = useState<string | null>(null);
 const [arrivalPulseUntil, setArrivalPulseUntil] = useState(0);
-const [pulseTick, setPulseTick] = useState(0);
+/** Bumps only during checkpoint arrival animation so `checkpoint_pulse` can ease without 140ms full-map churn. */
+const [arrivalTick, setArrivalTick] = useState(0);
 const [myProfile, setMyProfile] = useState<FriendProfile | null>(null);
 const handledQueryVenueIdRef = useRef<string | null>(null);
 /** Timestamp of last automatic checkpoint hop (not user arrows); used to enforce {@link AUTO_TOUR_REPEAT_MS}. */
@@ -595,6 +614,7 @@ const lastArrowPressAtRef = useRef(0);
 const autoTourPausedUntilRef = useRef(0);
 const autoVenueTourEnabledRef = useRef(true);
 const checkpointsLenRef = useRef(0);
+const lastHeatCheckpointIdRef = useRef<string | null>(null);
 lastArrowPressAtRef.current = lastArrowPressAt;
 autoTourPausedUntilRef.current = autoTourPausedUntil;
 autoVenueTourEnabledRef.current = autoVenueTourEnabled;
@@ -604,6 +624,25 @@ function armProgrammaticCamera(durationMs: number) {
   if (until > programmaticCameraUntilRef.current) {
     programmaticCameraUntilRef.current = until;
   }
+}
+
+/** Mobile/WebKit: keep raster tiles and GL compositing healthy during long easeTo (main thread can stall on GeoJSON churn). */
+function runRepaintPumpDuringCamera(
+  m: mapboxgl.Map,
+  untilMs: number
+): () => void {
+  const id = window.setInterval(() => {
+    if (Date.now() >= untilMs) {
+      window.clearInterval(id);
+      return;
+    }
+    try {
+      m.triggerRepaint();
+    } catch {
+      window.clearInterval(id);
+    }
+  }, 120);
+  return () => window.clearInterval(id);
 }
 
 const isPlaywrightHarness = process.env.NEXT_PUBLIC_PLAYWRIGHT === "1";
@@ -616,8 +655,11 @@ const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
 const [activityPlaceholderOpen, setActivityPlaceholderOpen] = useState(false);
 const [panelMode, setPanelMode] = useState<MapPanelMode>("categories");
 const [mapZoom, setMapZoom] = useState(14);
+  const [locateWormhole, setLocateWormhole] = useState(false);
+  const locateWormholeGenRef = useRef(0);
+  const locateWormholeShownAtRef = useRef(0);
 /** Category accent palette (brand-aligned). */
-const MAP_PIN_ALL = "#8B5CF6";
+const MAP_PIN_ALL = "#7A3CFF";
 const MAP_PIN_NIGHTLIFE = "#D946EF";
 const MAP_PIN_CAMPUS = "#3B82F6";
 const MAP_PIN_FOOD = "#F59E0B";
@@ -804,12 +846,16 @@ function getVenuePeople(venueId: string) {
   /* ---------------- FRIENDS ---------------- */
 
   async function loadFriends(meId: string) {
-  const { data } = await supabase
+  const { data, error: frError } = await supabase
     .from("friend_requests")
     .select("requester_id, addressee_id")
     .eq("status", "accepted")
     .or(`requester_id.eq.${meId},addressee_id.eq.${meId}`);
 
+  if (frError) {
+    console.error("Map: friend_requests load error:", frError);
+    return;
+  }
   if (!data) return;
 
   const map: Record<string, true> = {};
@@ -829,11 +875,15 @@ function getVenuePeople(venueId: string) {
     return;
   }
 
-  const { data: profiles } = await supabase
+  const { data: profiles, error: profError } = await supabase
     .from("profiles")
     .select("id, username, display_name, avatar_url, ghost_mode")
     .in("id", ids);
 
+  if (profError) {
+    console.error("Map: friend profiles load error:", profError);
+    return;
+  }
   if (!profiles) return;
 
   const names: Record<string, string> = {};
@@ -985,7 +1035,7 @@ useEffect(() => {
   const m = new mapboxgl.Map({
     container: mapRef.current,
     style: styleUrl,
-    center: [-75.1636, 39.9526], // stable default
+    center: [MAP_FALLBACK_CENTER_LNG, MAP_FALLBACK_CENTER_LAT], // stable default until GPS / presence
     zoom: 14,
   });
 
@@ -1099,6 +1149,7 @@ useEffect(() => {
   map.current.easeTo({
     center: [you.lng, you.lat],
     duration: 800,
+    essential: true,
   });
   setHasInitialMapCenter(true);
 }, [you]);
@@ -1140,11 +1191,65 @@ useEffect(() => {
     document.removeEventListener("visibilitychange", onVisible);
 }, []);
 
+useEffect(() => {
+  const m = map.current;
+  if (!m || !mapReady) return;
+  const onResize = () => {
+    try {
+      m.resize();
+    } catch {
+      /* map destroyed */
+    }
+  };
+  window.addEventListener("resize", onResize);
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  vv?.addEventListener("resize", onResize);
+  vv?.addEventListener("scroll", onResize);
+  onResize();
+  return () => {
+    window.removeEventListener("resize", onResize);
+    vv?.removeEventListener("resize", onResize);
+    vv?.removeEventListener("scroll", onResize);
+  };
+}, [mapReady]);
+
+  const beginLocateWormhole = useCallback(() => {
+    locateWormholeGenRef.current += 1;
+    const gen = locateWormholeGenRef.current;
+    locateWormholeShownAtRef.current = Date.now();
+    setLocateWormhole(true);
+    return gen;
+  }, []);
+
+  const finishLocateWormholeAfterIdle = useCallback((m: mapboxgl.Map, gen: number) => {
+    const tryHide = () => {
+      if (gen !== locateWormholeGenRef.current) return;
+      const elapsed = Date.now() - locateWormholeShownAtRef.current;
+      if (elapsed < LOCATE_WORMHOLE_MIN_MS) {
+        window.setTimeout(tryHide, LOCATE_WORMHOLE_MIN_MS - elapsed);
+        return;
+      }
+      if (gen === locateWormholeGenRef.current) setLocateWormhole(false);
+    };
+
+    const onIdle = () => {
+      m.off("idle", onIdle);
+      if (gen !== locateWormholeGenRef.current) return;
+      tryHide();
+    };
+    m.once("idle", onIdle);
+    window.setTimeout(() => {
+      m.off("idle", onIdle);
+      tryHide();
+    }, LOCATE_WORMHOLE_MAX_MS);
+  }, []);
+
 const runLocateCycle = useCallback(() => {
   const m = map.current;
   if (!m) return;
 
   const centerTo = (coords: { lng: number; lat: number }) => {
+    const wormholeGen = beginLocateWormhole();
     const now = Date.now();
     tourIdleSinceRef.current = now;
     lastAutoTourHopAtRef.current = 0;
@@ -1154,7 +1259,7 @@ const runLocateCycle = useCallback(() => {
     setAutoTourPausedUntil(until);
 
     if (doubleTapCycleRef.current === 0) {
-      // 1) Return immediately to your live pin.
+      // 1) Zoom to the target (you, venue center when checked in / sheet open, etc.).
       armProgrammaticCamera(700);
       m.easeTo({
         center: [coords.lng, coords.lat],
@@ -1162,8 +1267,10 @@ const runLocateCycle = useCallback(() => {
         pitch: 0,
         bearing: 0,
         duration: 520,
+        essential: true,
       });
       doubleTapCycleRef.current = 1;
+      finishLocateWormholeAfterIdle(m, wormholeGen);
       return;
     }
 
@@ -1175,9 +1282,33 @@ const runLocateCycle = useCallback(() => {
       pitch: 0,
       bearing: 0,
       duration: 760,
+      essential: true,
     });
     doubleTapCycleRef.current = 0;
+    finishLocateWormholeAfterIdle(m, wormholeGen);
   };
+
+  // Venue you’re viewing on the sheet (or `?venueId=`) — prefer this over stale GPS.
+  if (
+    selectedVenue &&
+    isValidCoordinatePair(selectedVenue.lat, selectedVenue.lng)
+  ) {
+    centerTo({ lng: selectedVenue.lng, lat: selectedVenue.lat });
+    return;
+  }
+
+  // Checked into a venue per presence — center the place, not a lagging device fix.
+  if (meId && venues.length) {
+    const mine = presence.find((p) => p.user_id === meId);
+    const vid = mine?.venue_id;
+    if (vid) {
+      const v = venues.find((x) => x.id === vid);
+      if (v && isValidCoordinatePair(v.lat, v.lng)) {
+        centerTo({ lng: v.lng, lat: v.lat });
+        return;
+      }
+    }
+  }
 
   const coordsFromYou = youRef.current;
   if (coordsFromYou && isValidCoordinatePair(coordsFromYou.lat, coordsFromYou.lng)) {
@@ -1193,18 +1324,58 @@ const runLocateCycle = useCallback(() => {
 
   // If local presence has not hydrated yet, force a fresh GPS read.
   if (!navigator.geolocation) return;
+  const wormholeGen = beginLocateWormhole();
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const coords = { lng: pos.coords.longitude, lat: pos.coords.latitude };
       setYou(coords);
-      centerTo(coords);
+      const now = Date.now();
+      tourIdleSinceRef.current = now;
+      lastAutoTourHopAtRef.current = 0;
+      const until = now + AUTO_TOUR_PAUSE_MS;
+      autoTourPausedUntilRef.current = until;
+      setLastPageInteractionAt(now);
+      setAutoTourPausedUntil(until);
+
+      if (doubleTapCycleRef.current === 0) {
+        armProgrammaticCamera(700);
+        m.easeTo({
+          center: [coords.lng, coords.lat],
+          zoom: Math.max(15.5, m.getZoom()),
+          pitch: 0,
+          bearing: 0,
+          duration: 520,
+          essential: true,
+        });
+        doubleTapCycleRef.current = 1;
+      } else {
+        armProgrammaticCamera(900);
+        m.easeTo({
+          center: [coords.lng, coords.lat],
+          zoom: 1.65,
+          pitch: 0,
+          bearing: 0,
+          duration: 760,
+          essential: true,
+        });
+        doubleTapCycleRef.current = 0;
+      }
+      finishLocateWormholeAfterIdle(m, wormholeGen);
     },
     () => {
-      /* no permission or unavailable */
+      locateWormholeGenRef.current += 1;
+      setLocateWormhole(false);
     },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
   );
-}, []);
+}, [
+  beginLocateWormhole,
+  finishLocateWormholeAfterIdle,
+  selectedVenue,
+  meId,
+  venues,
+  presence,
+]);
 
 
   /* ---------------- LOAD VENUES ---------------- */
@@ -1360,35 +1531,58 @@ useEffect(() => {
   if (!checkpointMotionEnabled) return;
   if (!activeCheckpoint || !map.current) return;
   const m = map.current;
-  armProgrammaticCamera(2200);
   const currentZoom = m.getZoom();
   const dynamicZoom =
     16.2 +
     Math.min(0.6, Math.max(0, activeCheckpoint.activity / 24)) -
     Math.min(0.3, Math.max(0, activeCheckpoint.distanceFromYou / 2500) * 0.08);
+  const targetZoom = Math.max(15.75, Math.min(17.05, dynamicZoom));
+  const zoomSpan = Math.abs(targetZoom - currentZoom);
+  const duration = Math.min(2600, Math.max(1000, 820 + zoomSpan * 520));
+  armProgrammaticCamera(Math.ceil(2200 + duration + 120));
+  const cameraUntilMs = programmaticCameraUntilRef.current;
+  let cancelRepaintPump = runRepaintPumpDuringCamera(m, cameraUntilMs);
+
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    cancelRepaintPump();
+    window.clearTimeout(safetyTimer);
+    setCheckpointMotionEnabled(false);
+  };
+  // Safari: do not rely on `moveend` (can coalesce oddly with wheel zoom). Timer matches ease duration.
+  const safetyTimer = window.setTimeout(finish, duration + 180);
 
   try {
+    m.resize();
     m.easeTo({
       center: [activeCheckpoint.lng, activeCheckpoint.lat],
-      zoom: Math.max(15.8, Math.min(16.9, (currentZoom * 0.45) + (dynamicZoom * 0.55))),
+      zoom: targetZoom,
       pitch: 52,
-      duration: 1000,
+      duration,
       easing: (t) => t * (2 - t),
+      essential: true,
     });
     setArrivalPulseVenueId(activeCheckpoint.id);
     setArrivalPulseUntil(Date.now() + 1600);
   } catch {
-    /* mapbox can throw if map is torn down mid-flight */
-  } finally {
-    setCheckpointMotionEnabled(false);
+    finish();
   }
+
+  return () => {
+    settled = true;
+    cancelRepaintPump();
+    window.clearTimeout(safetyTimer);
+    setCheckpointMotionEnabled(false);
+  };
 }, [activeCheckpoint?.id, checkpointMotionEnabled]);
 
 useEffect(() => {
   if (!map.current) return;
   /**
    * Desktop (esp. Mac trackpad) emits wheel zoom → `zoomstart` constantly; that was resetting
-   * `tourIdleSinceRef` and killing the 17s auto-tour. Phones rarely hit that pattern.
+   * `tourIdleSinceRef` and killing the auto-tour idle grace. Phones rarely hit that pattern.
    * Only a real pan (`dragstart`) + pointerdown on the map container reset full idle; wheel/pinch zoom
    * only applies a short hop pause without resetting the idle clock.
    */
@@ -1454,9 +1648,18 @@ useEffect(() => {
 }, [hasInitialMapCenter, checkpoints.length]);
 
 useEffect(() => {
-  const timer = setInterval(() => setPulseTick((v) => v + 1), 140);
-  return () => clearInterval(timer);
-}, []);
+  if (!arrivalPulseVenueId) return;
+  const msLeft = arrivalPulseUntil - Date.now();
+  if (msLeft <= 0) return;
+  const id = window.setInterval(() => {
+    setArrivalTick((n) => n + 1);
+  }, 160);
+  const stop = window.setTimeout(() => window.clearInterval(id), msLeft + 120);
+  return () => {
+    window.clearInterval(id);
+    window.clearTimeout(stop);
+  };
+}, [arrivalPulseVenueId, arrivalPulseUntil]);
 
 useEffect(() => {
   if (typeof window === "undefined") return;
@@ -1502,6 +1705,7 @@ useEffect(() => {
     center: [target.lng, target.lat],
     zoom: Math.max(m.getZoom(), 15.8),
     duration: 950,
+    essential: true,
   });
 }, [queryVenueId, venues, mapReady]);
 
@@ -1586,14 +1790,7 @@ useEffect(() => {
           11, 0.8,
           18, 1.2,
         ],
-        "heatmap-intensity": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          10, 0.6,
-          14, 1.2,
-          18, 2,
-        ],
+        "heatmap-intensity": HEATMAP_INTENSITY_BASE_EXPR,
         "heatmap-radius": [
           "interpolate",
           ["linear"],
@@ -1910,6 +2107,9 @@ useEffect(() => {
       const venue = venuesTapRef.current.find((v) => v.id === venueId);
       if (!venue) return;
 
+      const now = Date.now();
+      tourIdleSinceRef.current = now;
+      setLastPageInteractionAt(now);
       setSelectedVenueId(venue.id);
     };
 
@@ -1963,6 +2163,10 @@ useEffect(() => {
     const src = m.getSource(VENUE_ACTIVITY_SOURCE) as mapboxgl.GeoJSONSource | undefined;
     if (!src) return;
 
+    const cpId = activeCheckpoint?.id ?? null;
+    const cpChanged = cpId !== lastHeatCheckpointIdRef.current;
+    lastHeatCheckpointIdRef.current = cpId;
+
     const features = filteredVenues.map((v) => {
       const { redTotal, greenTotal } = getCountsForVenue(
         v.id,
@@ -1979,14 +2183,6 @@ useEffect(() => {
         arrivalPulseVenueId === v.id && Date.now() < arrivalPulseUntil
           ? Math.max(0, (arrivalPulseUntil - Date.now()) / 1600)
           : 0;
-      const tierPulseStrength =
-        combined <= 0 ? 0 :
-        combined < 4 ? 0.35 :
-        combined < 9 ? 0.62 :
-        combined < 16 ? 0.88 :
-        1.15;
-      const ambientPulse =
-        ((Math.sin((Date.now() / 380) + (combined * 0.7)) + 1) / 2) * tierPulseStrength;
       return {
         type: "Feature" as const,
         properties: {
@@ -1998,7 +2194,8 @@ useEffect(() => {
           combined_count: combined,
           checkpoint_active: isActiveCheckpoint ? 1 : 0,
           checkpoint_pulse: pulseProgress,
-          ambient_pulse: ambientPulse,
+          /** Breathing motion comes from global `heatmap-intensity` pulse (see rAF) — avoids rewriting all venues every frame. */
+          ambient_pulse: 0,
         },
         geometry: {
           type: "Point" as const,
@@ -2022,8 +2219,39 @@ useEffect(() => {
     activeCheckpoint?.id,
     arrivalPulseVenueId,
     arrivalPulseUntil,
-    pulseTick,
+    arrivalTick,
   ]);
+
+  /** Global heatmap “breathing” (~5Hz): one cheap paint update, not full GeoJSON per venue per tick. */
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+    const layerId = VENUE_HEAT_LAYER;
+    const id = window.setInterval(() => {
+      const wave = 0.88 + 0.12 * ((Math.sin(Date.now() / 520) + 1) / 2);
+      try {
+        if (m.getLayer(layerId)) {
+          m.setPaintProperty(layerId, "heatmap-intensity", [
+            "*",
+            ["literal", wave],
+            HEATMAP_INTENSITY_BASE_EXPR,
+          ]);
+        }
+      } catch {
+        /* style swap / teardown */
+      }
+    }, 200);
+    return () => {
+      window.clearInterval(id);
+      try {
+        if (m.getLayer(layerId)) {
+          m.setPaintProperty(layerId, "heatmap-intensity", HEATMAP_INTENSITY_BASE_EXPR);
+        }
+      } catch {
+        /* noop */
+      }
+    };
+  }, [mapReady, mapStyleEpoch]);
 
 /* ---------------- DEV RADII ---------------- */
 
@@ -2172,8 +2400,18 @@ if (bestInner.id) {
       const friendIds = await getMyFriendIds(meId);
       if (friendIds.length > 0) {
         const prefs = await getNotificationPreferences(friendIds);
+        const hourBucket = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}-${new Date().getHours()}`;
+        const dayBucket = `${new Date().getFullYear()}-${new Date().getMonth() + 1}-${new Date().getDate()}`;
+        const actorLabel =
+          myProfile?.display_name?.trim() ||
+          myProfile?.username?.trim() ||
+          "A friend";
+        const venueLabel =
+          venueId && venues.length
+            ? venues.find((v) => v.id === venueId)?.name?.trim() || "a venue"
+            : "a venue";
 
-        // Notify friends when coming online (throttled in createNotification).
+        // Notify friends when coming online (dedupe: at most once per friend per actor per local hour).
         if (!wasRecentlyOnline && nowRecentlyOnline) {
           for (const fid of friendIds) {
             const p = prefs.get(fid);
@@ -2182,6 +2420,10 @@ if (bestInner.id) {
               recipientId: fid,
               actorId: meId,
               type: "friend_online",
+              dedupeKey: `friend_online:${fid}:${meId}:${hourBucket}`,
+              pushTitle: `${actorLabel} is active`,
+              pushBody: "Your friend is on the map.",
+              route: "/map",
             });
           }
         }
@@ -2200,6 +2442,10 @@ if (bestInner.id) {
               actorId: meId,
               type: "friend_joined_venue",
               venueId,
+              dedupeKey: `friend_joined_venue:${fid}:${meId}:${venueId}:${dayBucket}`,
+              pushTitle: `${actorLabel} is at ${venueLabel}`,
+              pushBody: "Open the map to see where they checked in.",
+              route: venueId ? `/map?venueId=${encodeURIComponent(venueId)}` : "/map",
             });
           }
         }
@@ -2239,6 +2485,10 @@ if (bestInner.id) {
               recipientId: fp.user_id,
               actorId: meId,
               type: "friend_nearby",
+              dedupeKey: `friend_nearby:${fp.user_id}:${meId}:${hourBucket}`,
+              pushTitle: `${actorLabel} is nearby`,
+              pushBody: "A friend is close on the map.",
+              route: "/map",
             });
           }
         }
@@ -2249,7 +2499,7 @@ if (bestInner.id) {
     };
 
     run();
-  }, [you, meId, venues]);
+  }, [you, meId, venues, myProfile]);
 
 
   
@@ -2260,10 +2510,13 @@ useEffect(() => {
   let mounted = true;
 
   const load = async () => {
-   const { data } = await supabase
+   const { data, error: presenceError } = await supabase
   .from("user_presence")
   .select("user_id, lng, lat, updated_at, venue_id, venue_state, zone_type");
 
+    if (presenceError) {
+      console.error("Map: user_presence load error:", presenceError);
+    }
 
     if (mounted) {
       const rows = (data ?? []) as PresenceRow[];
@@ -2323,6 +2576,17 @@ useEffect(() => {
 }, []);
 
 
+  const openFriendProfile = useCallback(
+    (userId: string) => {
+      const un =
+        friendProfilesById[userId]?.username?.trim() ||
+        usernamesById[userId]?.trim();
+      if (un) router.push(`/u/${encodeURIComponent(un)}`);
+      else router.push(`/profile/${userId}`);
+    },
+    [router, friendProfilesById, usernamesById]
+  );
+
   /* ---------------- FRIEND PFP + VENUE CLUSTERS ---------------- */
   useEffect(() => {
     const m = map.current;
@@ -2331,6 +2595,12 @@ useEffect(() => {
     venueClusterMarkers.current.forEach((marker) => marker.remove());
     venueClusterMarkers.current.clear();
     if (!m || !mapReady) return;
+    /** Avoid stacking friend/me pins at the default Philly center before venues exist (no radii → everyone looks “out of venue”). */
+    if (!venues.length) {
+      presenceMarkerTargetRef.current.clear();
+      presenceMarkerSmoothRef.current.clear();
+      return;
+    }
 
     const now = Date.now();
     const activeThresholdMs = LIVE_WINDOW_MS;
@@ -2431,6 +2701,7 @@ useEffect(() => {
     };
 
     const isGlobeView = mapZoom < 8;
+    const placedPresenceMarkerIds = new Set<string>();
     const coordinateKeyForPresence = (p: PresenceRow) =>
       `${p.lat.toFixed(5)}:${p.lng.toFixed(5)}`;
     const nonVenueOverlapGroups = new Map<string, string[]>();
@@ -2439,6 +2710,7 @@ useEffect(() => {
       for (const id of candidateIds) {
         const latestP = latestKnownPresenceByUser.get(id);
         if (!latestP) continue;
+        if (isLikelyMapFallbackPresence(latestP.lat, latestP.lng)) continue;
         if (hiddenIds.has(id)) continue;
         const isMe = id === meId;
         const isFriend = !!friendsById[id];
@@ -2508,6 +2780,7 @@ useEffect(() => {
       if (!p) continue;
       if (!isMe && ghost) continue;
       if (isGlobeView) continue;
+      if (isLikelyMapFallbackPresence(p.lat, p.lng)) continue;
 
       const profile = isMe ? myProfile : friendProfilesById[id];
       const label =
@@ -2577,7 +2850,7 @@ useEffect(() => {
         lastSeenTag.textContent = formatLastSeen(p.updated_at);
         const dayText = "rgba(37, 24, 71, 0.95)";
         const nightText = "rgba(236, 229, 255, 0.96)";
-        const dayShadow = "0 1px 1px rgba(255,255,255,0.75), 0 0 4px rgba(139,92,246,0.18)";
+        const dayShadow = "0 1px 1px rgba(255,255,255,0.75), 0 0 4px rgba(122,60,255,0.18)";
         const nightShadow = "0 1px 2px rgba(0,0,0,0.95), 0 0 5px rgba(155,126,255,0.35)";
         lastSeenTag.style.position = "absolute";
         lastSeenTag.style.left = "50%";
@@ -2606,14 +2879,33 @@ useEffect(() => {
           router.push("/profile");
           return;
         }
-        router.push(`/profile/${id}`);
+        openFriendProfile(id);
       };
 
       const [markerLng, markerLat] = markerOffsetPosition(p, id);
+      const target: [number, number] = [markerLng, markerLat];
+      presenceMarkerTargetRef.current.set(id, target);
+      const prevS = presenceMarkerSmoothRef.current.get(id);
+      const jump = prevS
+        ? Math.hypot(target[0] - prevS.lng, target[1] - prevS.lat)
+        : 0;
+      const snap = !prevS || jump > PRESENCE_MARKER_SNAP_DEG;
+      const startLng = snap ? target[0] : prevS!.lng;
+      const startLat = snap ? target[1] : prevS!.lat;
+      presenceMarkerSmoothRef.current.set(id, { lng: startLng, lat: startLat });
+
       const marker = new mapboxgl.Marker({ element: markerEl })
-        .setLngLat([markerLng, markerLat])
+        .setLngLat([startLng, startLat])
         .addTo(m);
       presenceMarkers.current.set(id, marker);
+      placedPresenceMarkerIds.add(id);
+    }
+
+    for (const uid of Array.from(presenceMarkerSmoothRef.current.keys())) {
+      if (!placedPresenceMarkerIds.has(uid)) {
+        presenceMarkerSmoothRef.current.delete(uid);
+        presenceMarkerTargetRef.current.delete(uid);
+      }
     }
 
     if (isGlobeView) return;
@@ -2654,6 +2946,9 @@ useEffect(() => {
 
       wrap.onclick = (ev) => {
         ev.stopPropagation();
+        const now = Date.now();
+        tourIdleSinceRef.current = now;
+        setLastPageInteractionAt(now);
         setSelectedVenueId(bucket.venue.id);
       };
 
@@ -2673,11 +2968,51 @@ useEffect(() => {
     myProfile,
     hiddenIds,
     router,
+    openFriendProfile,
     mapReady,
     venues,
     mapZoom,
     mapDayMode,
   ]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    let raf = 0;
+    const tick = () => {
+      for (const [id, marker] of presenceMarkers.current) {
+        const t = presenceMarkerTargetRef.current.get(id);
+        if (!t) continue;
+        let s = presenceMarkerSmoothRef.current.get(id);
+        if (!s) {
+          s = { lng: t[0], lat: t[1] };
+          presenceMarkerSmoothRef.current.set(id, s);
+        }
+        const dLng = t[0] - s.lng;
+        const dLat = t[1] - s.lat;
+        const dist = Math.hypot(dLng, dLat);
+        if (dist < 1e-7) {
+          if (s.lng !== t[0] || s.lat !== t[1]) {
+            s.lng = t[0];
+            s.lat = t[1];
+            marker.setLngLat([s.lng, s.lat]);
+          }
+          continue;
+        }
+        if (dist > PRESENCE_MARKER_SNAP_DEG) {
+          s.lng = t[0];
+          s.lat = t[1];
+        } else {
+          const a = PRESENCE_MARKER_SMOOTH_ALPHA;
+          s.lng += dLng * a;
+          s.lat += dLat * a;
+        }
+        marker.setLngLat([s.lng, s.lat]);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [mapReady]);
 
   const rightSidebarFriends = useMemo(() => {
     const now = Date.now();
@@ -2709,38 +3044,45 @@ useEffect(() => {
       autoTourPausedUntilRef.current = until;
       setLastPageInteractionAt(now);
       setAutoTourPausedUntil(until);
+
+      const pres = presence
+        .filter((p) => p.user_id === friendId)
+        .reduce<PresenceRow | null>((best, p) => {
+          if (!best) return p;
+          return new Date(p.updated_at).getTime() > new Date(best.updated_at).getTime() ? p : best;
+        }, null);
+
       const m = map.current;
-      if (!m || !mapReady) {
-        router.push(`/profile/${friendId}`);
-        return;
-      }
-      const pres = presence.find((p) => p.user_id === friendId);
+      if (!m || !mapReady) return;
+
       if (pres?.venue_id) {
         const v = venues.find((ven) => ven.id === pres.venue_id);
-        if (v) {
+        if (v && isValidCoordinatePair(v.lat, v.lng)) {
+          setPanelMode("categories");
           setSelectedVenueId(v.id);
           armProgrammaticCamera(1100);
           m.easeTo({
             center: [v.lng, v.lat],
             zoom: Math.max(m.getZoom(), 15.8),
             duration: 950,
+            essential: true,
           });
           return;
         }
       }
-      if (pres && Number.isFinite(pres.lat) && Number.isFinite(pres.lng)) {
+      if (pres && isValidCoordinatePair(pres.lat, pres.lng)) {
+        setPanelMode("categories");
         setSelectedVenueId(null);
         armProgrammaticCamera(1100);
         m.easeTo({
           center: [pres.lng, pres.lat],
           zoom: Math.max(m.getZoom(), 15.5),
           duration: 950,
+          essential: true,
         });
-        return;
       }
-      router.push(`/profile/${friendId}`);
     },
-    [mapReady, presence, venues, router]
+    [mapReady, presence, venues]
   );
 
   const goToPrevCheckpoint = () => {
@@ -2807,6 +3149,23 @@ useEffect(() => {
         </div>
       ) : null}
       <div ref={mapRef} className="h-full w-full" />
+      {locateWormhole ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[15] overflow-hidden"
+          aria-hidden
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(122,60,255,0.42)_0%,rgba(9,8,13,0.2)_45%,transparent_72%)]" />
+          <div className="absolute inset-0 backdrop-blur-[2.5px]" />
+          <div
+            className="absolute left-1/2 top-1/2 h-[min(140vw,620px)] w-[min(140vw,620px)] -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full opacity-[0.14]"
+            style={{
+              background:
+                "conic-gradient(from 120deg, rgba(255,255,255,0.55), transparent 40%, rgba(122,60,255,0.35), transparent 75%)",
+              animationDuration: "1.4s",
+            }}
+          />
+        </div>
+      ) : null}
       <div className="absolute left-1/2 z-20 flex w-[min(94vw,420px)] -translate-x-1/2 flex-col items-stretch gap-2 top-[calc(env(safe-area-inset-top,0px)+30px)]">
         <aside className="rounded-2xl border border-white/15 bg-black/60 p-2 backdrop-blur-xl">
           <div className="scrollbar-none flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
@@ -2841,7 +3200,7 @@ useEffect(() => {
             type="button"
             onClick={runLocateCycle}
             className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[11px] font-semibold text-white/85 backdrop-blur transition"
-            aria-label="Center on me, then zoom out on next tap"
+            aria-label="Center on this venue when open, or your map location; second tap zooms out"
           >
             <LocateFixed size={13} strokeWidth={2.2} className="shrink-0 opacity-85" />
             Locate
@@ -3093,17 +3452,20 @@ useEffect(() => {
                           {selectedVenuePeople.insideFriends.slice(0, 5).map((friend, index) => {
                             const profile = friendProfilesById[friend.user_id];
                             return (
-                              <div
+                              <button
                                 key={`${friend.user_id}-inside-avatar`}
-                                className="relative"
-                                style={{ marginLeft: index === 0 ? 0 : -8 }}
+                                type="button"
+                                onClick={() => focusFriendOnMap(friend.user_id)}
+                                className="relative rounded-full border-0 bg-transparent p-0"
+                                style={{ marginLeft: index === 0 ? 0 : -8, zIndex: 5 - index }}
                                 title={friend.name}
+                                aria-label={`Show ${friend.name} on map`}
                               >
                                 {profile?.avatar_url ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
                                     src={profile.avatar_url}
-                                    alt={friend.name}
+                                    alt=""
                                     className="h-9 w-9 rounded-full border border-white/25 object-cover"
                                   />
                                 ) : (
@@ -3111,19 +3473,24 @@ useEffect(() => {
                                     {initialsFromName(friend.name)}
                                   </div>
                                 )}
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
                         {selectedVenuePeople.insideFriends.slice(0, 12).map((friend) => (
-                          <p key={`${friend.user_id}-inside-label`} className="truncate text-xs text-white/80">
+                          <button
+                            key={`${friend.user_id}-inside-label`}
+                            type="button"
+                            onClick={() => focusFriendOnMap(friend.user_id)}
+                            className="block w-full truncate rounded-lg py-1 text-left text-xs text-white/80 hover:bg-white/[0.06]"
+                          >
                             {friend.name}
                             {friend.isRecentPresence ? (
                               <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-white/40">
                                 Recently
                               </span>
                             ) : null}
-                          </p>
+                          </button>
                         ))}
                       </div>
                     ) : (
@@ -3135,19 +3502,21 @@ useEffect(() => {
                     {selectedVenuePeople.nearbyFriends.length ? (
                       <div className="space-y-1.5">
                         {selectedVenuePeople.nearbyFriends.map((friend) => (
-                          <div
+                          <button
                             key={`${friend.user_id}-nearby`}
-                            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs"
+                            type="button"
+                            onClick={() => focusFriendOnMap(friend.user_id)}
+                            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-left text-xs hover:bg-white/[0.05]"
                           >
-                            <p className="truncate">
+                            <span className="block truncate">
                               {friend.name}
                               {friend.isRecentPresence ? (
                                 <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-white/40">
                                   Recently
                                 </span>
                               ) : null}
-                            </p>
-                          </div>
+                            </span>
+                          </button>
                         ))}
                       </div>
                     ) : (

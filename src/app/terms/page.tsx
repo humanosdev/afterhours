@@ -7,7 +7,7 @@ export default function TermsPage() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-black text-white px-6 py-10">
+    <div className="min-h-[100dvh] bg-primary px-6 pb-[max(env(safe-area-inset-bottom,0px),40px)] pt-[calc(env(safe-area-inset-top,0px)+32px)] text-white">
       <div className="mx-auto max-w-2xl">
         <button
           type="button"

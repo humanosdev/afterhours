@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Avatar } from "@/components/ui";
 import { formatRelativeTime } from "@/lib/time";
 import { useRouter } from "next/navigation";
+import { createNotification } from "@/lib/notifications";
 
 export type StoryViewerStory = {
   id: string;
@@ -234,6 +235,18 @@ export default function StoryViewerModal({
     }
     setLiked(true);
     setLikesCount((c) => c + 1);
+    if (activeStory.user_id !== currentUserId) {
+      await createNotification({
+        recipientId: activeStory.user_id,
+        actorId: currentUserId,
+        type: "story_like",
+        storyId: activeStory.id,
+        dedupeKey: `story_like:${activeStory.id}:${currentUserId}`,
+        pushTitle: `${myProfile?.username ?? "A friend"} liked your post`,
+        pushBody: activeIsShare ? "They liked your share." : "They liked your moment.",
+        route: `/moments/${activeStory.id}`,
+      });
+    }
   };
 
   const submitComment = async () => {
@@ -266,6 +279,18 @@ export default function StoryViewerModal({
       },
     ]);
     setCommentText("");
+    if (activeStory.user_id !== currentUserId) {
+      await createNotification({
+        recipientId: activeStory.user_id,
+        actorId: currentUserId,
+        type: "story_comment",
+        storyId: activeStory.id,
+        messagePreview: text.slice(0, 140),
+        pushTitle: `${myProfile?.username ?? "A friend"} commented`,
+        pushBody: text.slice(0, 120),
+        route: `/moments/${activeStory.id}`,
+      });
+    }
   };
 
   const deleteComment = async (comment: ViewerComment) => {
@@ -312,7 +337,7 @@ export default function StoryViewerModal({
 
   return (
     <div
-      className="fixed inset-0 z-[160] bg-black/95"
+      className="fixed inset-0 z-[10160] bg-black/95"
       onClick={close}
       onTouchStart={(e) => {
         touchStartY.current = e.touches[0]?.clientY ?? null;

@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { ensureProfileExists } from "@/lib/ensureProfile";
+import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
+import { AuthScreenShell } from "@/components/AuthScreenShell";
+import { AuthIntencityWordmark } from "@/components/AuthIntencityWordmark";
 
 function normalizeUsername(input: string) {
   return input
@@ -16,6 +19,7 @@ function normalizeUsername(input: string) {
 
 export default function UsernameOnboardingPage() {
   const router = useRouter();
+  const { start } = useAuthRouteTransition();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [raw, setRaw] = useState("");
@@ -90,13 +94,15 @@ export default function UsernameOnboardingPage() {
       return;
     }
 
+    start();
     router.replace("/profile");
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6 flex flex-col justify-center">
-      <h1 className="text-2xl font-semibold">Choose a username</h1>
-      <p className="mt-2 text-white/60">
+    <AuthScreenShell marketing>
+      <AuthIntencityWordmark className="mb-8 shrink-0" />
+      <h1 className="text-center text-2xl font-semibold tracking-tight">Choose a username</h1>
+      <p className="mt-2 text-center text-sm text-text-secondary">
         This is how other people will find you.
       </p>
 
@@ -104,11 +110,11 @@ export default function UsernameOnboardingPage() {
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
         placeholder="username"
-        className="mt-6 rounded-xl bg-white/5 border border-white/10 p-4 outline-none"
+        className="mt-6 w-full rounded-xl border border-white/10 bg-white/5 p-4 outline-none"
       />
 
-      <div className="mt-2 text-sm">
-        {checking && <span className="text-white/50">Checking…</span>}
+      <div className="mt-2 w-full text-sm">
+        {checking && <span className="text-text-muted">Checking…</span>}
         {!checking && available === true && (
           <span className="text-green-400">Available</span>
         )}
@@ -117,15 +123,17 @@ export default function UsernameOnboardingPage() {
         )}
       </div>
 
-      {msg && <div className="mt-2 text-red-400 text-sm">{msg}</div>}
+      {msg ? (
+        <div className="mt-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">{msg}</div>
+      ) : null}
 
       <button
         disabled={!available || saving}
         onClick={saveUsername}
-        className="mt-6 rounded-xl bg-white text-black font-semibold px-4 py-3 disabled:opacity-50"
+        className="mt-6 w-full rounded-xl bg-white px-4 py-3 font-semibold text-black disabled:opacity-50"
       >
         {saving ? "Saving…" : "Continue"}
       </button>
-    </div>
+    </AuthScreenShell>
   );
 }

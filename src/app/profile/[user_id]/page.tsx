@@ -33,8 +33,8 @@ export default function ProfileByIdRedirectPage() {
   }, [router, user_id]);
 
   return (
-    <div className="min-h-screen grid place-items-center bg-black text-white">
-      <div className="text-sm text-white/60">Opening profile...</div>
+    <div className="grid min-h-[100dvh] place-items-center bg-primary text-text-primary">
+      <div className="text-sm text-text-muted">Opening profile...</div>
     </div>
   );
 }

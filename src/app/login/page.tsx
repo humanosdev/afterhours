@@ -5,11 +5,16 @@ import { supabase } from "@/lib/supabaseClient";
 import { appConfig } from "@/lib/appConfig";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
+import { AuthScreenShell } from "@/components/AuthScreenShell";
+import { AuthIntencityWordmark } from "@/components/AuthIntencityWordmark";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { start } = useAuthRouteTransition();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -23,9 +28,10 @@ export default function LoginPage() {
         .select("onboarding_complete")
         .eq("id", session.user.id)
         .maybeSingle();
+      start();
       router.replace(profile?.onboarding_complete ? "/hub" : "/onboarding");
     })();
-  }, [router]);
+  }, [router, start]);
 
   const mapLoginError = (raw: string) => {
     const text = raw.toLowerCase();
@@ -58,7 +64,6 @@ export default function LoginPage() {
     await supabase.from("profiles").upsert(
       {
         id: session.user.id,
-        onboarding_complete: false,
       },
       { onConflict: "id" }
     );
@@ -72,7 +77,11 @@ export default function LoginPage() {
     // Record legal consent once per active terms/privacy version (audit trail).
     await fetch("/api/legal/consent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(session.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      credentials: "same-origin",
       body: JSON.stringify({
         termsVersion: appConfig.termsVersion,
         privacyVersion: appConfig.privacyVersion,
@@ -87,21 +96,23 @@ export default function LoginPage() {
       if (typeof window !== "undefined") {
         window.localStorage.setItem("ah_has_logged_in", "1");
       }
+      start();
       router.push(next || "/hub");
     } else {
       if (typeof window !== "undefined") {
         window.localStorage.setItem("ah_has_logged_in", "1");
       }
+      start();
       router.push("/onboarding");
     }
   }
 
   return (
-    <div className="min-h-screen bg-primary text-text-primary p-6 transition-colors">
-      <h1 className="text-2xl font-semibold">Log in</h1>
-      <p className="mt-2 text-text-secondary">Access your account.</p>
+    <AuthScreenShell marketing className="transition-colors">
+      <AuthIntencityWordmark className="mb-8 shrink-0" />
+      <h1 className="text-center text-2xl font-semibold tracking-tight">Log in</h1>
 
-      <form onSubmit={onLogin} className="mt-6 space-y-4 max-w-sm">
+      <form onSubmit={onLogin} className="mt-8 w-full space-y-4">
         <input
           className="w-full rounded-xl bg-white/5 border border-white/10 p-3 outline-none"
           placeholder="Email"
@@ -109,14 +120,36 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
         />
-        <input
-          className="w-full rounded-xl bg-white/5 border border-white/10 p-3 outline-none"
-          placeholder="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-        />
+        <div className="space-y-1.5">
+          <input
+            className="w-full rounded-xl bg-white/5 border border-white/10 p-3 outline-none"
+            placeholder="Password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-text-secondary select-none">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-white/20 bg-transparent accent-accent-violet"
+              checked={showPassword}
+              onChange={(e) => setShowPassword(e.target.checked)}
+            />
+            Show password
+          </label>
+          <div className="flex flex-col items-end gap-1">
+            <Link
+              href="/forgot-password"
+              className="text-sm font-medium text-accent-violet hover:text-accent-violet-active"
+            >
+              Forgot password?
+            </Link>
+            <p className="max-w-[280px] text-right text-[11px] leading-snug text-white/45">
+              Reset emails can stall on crowded Wi‑Fi—use cellular if the link doesn&apos;t arrive.
+            </p>
+          </div>
+        </div>
 
         {msg && <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">{msg}</div>}
 
@@ -127,23 +160,14 @@ export default function LoginPage() {
           {loading ? "Logging in..." : "Log in"}
         </button>
 
-        <button
-          type="button"
-          onClick={() => router.push("/signup")}
-          className="w-full rounded-xl bg-white/10 text-white p-3"
-        >
-          Create an account
-        </button>
+        <p className="text-center text-sm text-text-secondary">
+          Don&apos;t have an account?{" "}
+          <Link href="/signup" className="font-medium text-accent-violet hover:text-accent-violet-active">
+            Sign up
+          </Link>
+        </p>
 
-        <button
-          type="button"
-          onClick={() => router.push("/forgot-password")}
-          className="w-full rounded-xl bg-white/10 text-white/90 p-3"
-        >
-          Forgot password
-        </button>
-
-        <p className="text-xs text-white/50 leading-relaxed">
+        <p className="text-center text-xs text-white/50 leading-relaxed">
           By continuing, you agree to our{" "}
           <Link href="/terms" className="text-white/80 underline underline-offset-2">
             Terms of Service
@@ -155,6 +179,6 @@ export default function LoginPage() {
           .
         </p>
       </form>
-    </div>
+    </AuthScreenShell>
   );
 }

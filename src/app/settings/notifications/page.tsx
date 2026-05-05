@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { SkeletonLine } from "@/components/ui/Skeleton";
 import { registerPushSubscription } from "@/lib/pushClient";
+import { AuthScreenShell } from "@/components/AuthScreenShell";
+import { AppSubpageHeader, APP_TAB_BOTTOM_PADDING_CLASS } from "@/components/AppSubpageHeader";
 
 export default function NotificationSettingsPage() {
   const router = useRouter();
@@ -23,6 +25,7 @@ export default function NotificationSettingsPage() {
   const [venuePopEnabled, setVenuePopEnabled] = useState(true);
   const [friendRequestEnabled, setFriendRequestEnabled] = useState(true);
   const [storiesEnabled, setStoriesEnabled] = useState(true);
+  const [messagesEnabled, setMessagesEnabled] = useState(true);
   const [quietStart, setQuietStart] = useState("");
   const [quietEnd, setQuietEnd] = useState("");
   const [uiMsg, setUiMsg] = useState<string | null>(null);
@@ -33,6 +36,7 @@ export default function NotificationSettingsPage() {
     venuePopEnabled: boolean;
     friendRequestEnabled: boolean;
     storiesEnabled: boolean;
+    messagesEnabled: boolean;
     quietStart: string;
     quietEnd: string;
   } | null>(null);
@@ -55,7 +59,7 @@ export default function NotificationSettingsPage() {
       const { data } = await supabase
         .from("notification_preferences")
         .select(
-          "push_enabled, friend_activity_enabled, venue_pop_enabled, friend_request_enabled, stories_enabled, quiet_hours_start, quiet_hours_end"
+          "push_enabled, friend_activity_enabled, venue_pop_enabled, friend_request_enabled, stories_enabled, messages_enabled, quiet_hours_start, quiet_hours_end"
         )
         .eq("user_id", user.id)
         .maybeSingle();
@@ -66,6 +70,7 @@ export default function NotificationSettingsPage() {
       setVenuePopEnabled(data?.venue_pop_enabled ?? true);
       setFriendRequestEnabled(data?.friend_request_enabled ?? true);
       setStoriesEnabled(data?.stories_enabled ?? true);
+      setMessagesEnabled(data?.messages_enabled ?? true);
       setQuietStart(data?.quiet_hours_start ? String(data.quiet_hours_start).slice(0, 5) : "");
       setQuietEnd(data?.quiet_hours_end ? String(data.quiet_hours_end).slice(0, 5) : "");
       setInitialPrefs({
@@ -74,6 +79,7 @@ export default function NotificationSettingsPage() {
         venuePopEnabled: data?.venue_pop_enabled ?? true,
         friendRequestEnabled: data?.friend_request_enabled ?? true,
         storiesEnabled: data?.stories_enabled ?? true,
+        messagesEnabled: data?.messages_enabled ?? true,
         quietStart: data?.quiet_hours_start ? String(data.quiet_hours_start).slice(0, 5) : "",
         quietEnd: data?.quiet_hours_end ? String(data.quiet_hours_end).slice(0, 5) : "",
       });
@@ -92,6 +98,7 @@ export default function NotificationSettingsPage() {
     venuePopEnabled: boolean;
     friendRequestEnabled: boolean;
     storiesEnabled: boolean;
+    messagesEnabled: boolean;
     quietStart: string;
     quietEnd: string;
   }) {
@@ -105,6 +112,7 @@ export default function NotificationSettingsPage() {
         venue_pop_enabled: next.venuePopEnabled,
         friend_request_enabled: next.friendRequestEnabled,
         stories_enabled: next.storiesEnabled,
+        messages_enabled: next.messagesEnabled,
         quiet_hours_start: next.quietStart || null,
         quiet_hours_end: next.quietEnd || null,
       });
@@ -129,6 +137,7 @@ export default function NotificationSettingsPage() {
     venuePopEnabled,
     friendRequestEnabled,
     storiesEnabled,
+    messagesEnabled,
     quietStart,
     quietEnd,
   };
@@ -172,7 +181,7 @@ export default function NotificationSettingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black p-6 text-white">
+      <AuthScreenShell className={`text-white ${APP_TAB_BOTTOM_PADDING_CLASS}`}>
         <SkeletonLine width={72} height={14} className="mb-6 rounded-md" />
         <SkeletonLine width={220} height={26} className="mb-2 rounded-md" />
         <SkeletonLine width="100%" height={44} className="mb-8 max-w-md rounded-md opacity-70" />
@@ -181,18 +190,17 @@ export default function NotificationSettingsPage() {
             <SkeletonLine key={i} width="100%" height={72} className="rounded-2xl" />
           ))}
         </div>
-      </div>
+      </AuthScreenShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
-      <button onClick={goBackSafe} className="mb-6 text-sm text-white/60">
-        ←
-      </button>
-
-      <h1 className="text-2xl font-semibold">Notification Settings</h1>
-      <p className="mt-2 text-sm text-white/60">Tune alerts for social urgency without spam.</p>
+    <AuthScreenShell className={`text-white ${APP_TAB_BOTTOM_PADDING_CLASS}`}>
+      <AppSubpageHeader
+        title="Notification settings"
+        subtitle="Tune alerts without spam."
+        onBack={goBackSafe}
+      />
 
       <div className="mt-6 space-y-3">
         <button
@@ -200,7 +208,7 @@ export default function NotificationSettingsPage() {
             setPushEnabled((v) => !v);
             setHasDraftChanges(true);
           }}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 text-left transition-colors hover:bg-white/[0.07]"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -218,10 +226,31 @@ export default function NotificationSettingsPage() {
         </button>
         <button
           onClick={() => {
+            setMessagesEnabled((v) => !v);
+            setHasDraftChanges(true);
+          }}
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 text-left transition-colors hover:bg-white/[0.07]"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium">Messages</div>
+              <div className="text-xs text-white/50 mt-1">Allow message alerts and in-app toasts.</div>
+            </div>
+            <div className={`h-6 w-11 rounded-full transition ${messagesEnabled ? "bg-accent-violet" : "bg-white/20"}`}>
+              <div
+                className={`h-5 w-5 rounded-full bg-white mt-0.5 transition ${
+                  messagesEnabled ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={() => {
             setFriendActivityEnabled((v) => !v);
             setHasDraftChanges(true);
           }}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 text-left transition-colors hover:bg-white/[0.07]"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -243,7 +272,7 @@ export default function NotificationSettingsPage() {
             setVenuePopEnabled((v) => !v);
             setHasDraftChanges(true);
           }}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 text-left transition-colors hover:bg-white/[0.07]"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -265,7 +294,7 @@ export default function NotificationSettingsPage() {
             setStoriesEnabled((v) => !v);
             setHasDraftChanges(true);
           }}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 text-left transition-colors hover:bg-white/[0.07]"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -283,7 +312,7 @@ export default function NotificationSettingsPage() {
             setFriendRequestEnabled((v) => !v);
             setHasDraftChanges(true);
           }}
-          className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
+          className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 text-left transition-colors hover:bg-white/[0.07]"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -296,7 +325,7 @@ export default function NotificationSettingsPage() {
           </div>
         </button>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-4">
           <div className="font-medium">Quiet hours</div>
           <div className="mt-1 text-xs text-white/50">No push delivery during this window.</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -324,15 +353,19 @@ export default function NotificationSettingsPage() {
           type="button"
           onClick={handleSaveChanges}
           disabled={saving || !hasUnsavedChanges}
-          className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black disabled:opacity-45"
+          className="w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black shadow-[0_0_24px_rgba(122,60,255,0.15)] disabled:opacity-45"
         >
           {saving ? "Saving..." : "Save changes"}
         </button>
       </div>
 
-      {uiMsg ? <div className="mt-4 text-xs text-amber-300">{uiMsg}</div> : null}
+      {uiMsg ? (
+        <div className="mt-4 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2.5 text-xs leading-snug text-amber-200/95">
+          {uiMsg}
+        </div>
+      ) : null}
       {saving ? <div className="mt-4 text-xs text-white/50">Saving…</div> : null}
-    </div>
+    </AuthScreenShell>
   );
 }
 

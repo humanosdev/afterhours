@@ -25,7 +25,7 @@ function VenueActivityContent() {
   }, [venueId]);
 
   return (
-    <div className="min-h-screen bg-primary px-4 pb-[calc(env(safe-area-inset-bottom,0px)+36px)] pt-[calc(env(safe-area-inset-top,0px)+16px)] text-white">
+    <div className="min-h-[100dvh] bg-primary px-4 pb-[calc(env(safe-area-inset-bottom,0px)+36px)] pt-[calc(env(safe-area-inset-top,0px)+16px)] text-white">
       <div className="mx-auto w-full max-w-md">
         <button
           type="button"
@@ -92,7 +92,7 @@ export default function VenueActivityPage() {
   return (
     <ProtectedRoute>
       <Suspense
-        fallback={<div className="min-h-screen w-screen bg-black" aria-hidden />}
+        fallback={<div className="min-h-[100dvh] w-screen bg-primary" aria-hidden />}
       >
         <VenueActivityContent />
       </Suspense>

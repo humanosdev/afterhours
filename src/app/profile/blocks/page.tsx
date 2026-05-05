@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabaseClient";
 import NotificationListSkeleton from "@/components/skeletons/NotificationListSkeleton";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
+import { AuthScreenShell } from "@/components/AuthScreenShell";
+import { AppSubpageHeader, APP_TAB_BOTTOM_PADDING_CLASS } from "@/components/AppSubpageHeader";
 
 type Profile = {
   id: string;
@@ -97,34 +99,32 @@ export default function BlocksPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black p-6 text-white">
+      <AuthScreenShell className={`text-white ${APP_TAB_BOTTOM_PADDING_CLASS}`}>
         <NotificationListSkeleton rows={8} />
-      </div>
+      </AuthScreenShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-6">
-      {/* Back button */}
-      <button
-        onClick={goBackSafe}
-        className="mb-6 text-sm text-white/60"
-      >
-        ←
-      </button>
-
-      <h1 className="text-2xl font-semibold">Blocked Users</h1>
+    <AuthScreenShell className={`text-white ${APP_TAB_BOTTOM_PADDING_CLASS}`}>
+      <AppSubpageHeader
+        title="Blocked users"
+        subtitle="Accounts you’ve blocked can’t interact with you."
+        onBack={goBackSafe}
+      />
 
       <div className="mt-6 space-y-2">
         {blockedUsers.length === 0 ? (
-          <div className="text-white/40 text-sm">No blocked users</div>
+          <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-8 text-center text-sm text-white/45">
+            No blocked users
+          </div>
         ) : (
           blockedUsers.map((user) => (
             <div
               key={user.id}
-              className="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 p-4"
+              className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 transition-colors hover:bg-white/[0.06]"
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex min-w-0 items-center gap-3">
                 <Avatar
                   src={null}
                   fallbackText={user.display_name || user.username}
@@ -132,18 +132,15 @@ export default function BlocksPage() {
                   className="shrink-0"
                 />
                 <div className="min-w-0">
-                  <div className="font-medium truncate">
-                    {user.display_name || user.username}
-                  </div>
-                  <div className="text-xs text-white/40 truncate">
-                    @{user.username}
-                  </div>
+                  <div className="truncate font-medium">{user.display_name || user.username}</div>
+                  <div className="truncate text-xs text-white/45">@{user.username}</div>
                 </div>
               </div>
 
               <button
+                type="button"
                 onClick={() => unblockUser(user.id)}
-                className="rounded-xl bg-gray-800 border border-white/20 text-white px-3 py-2"
+                className="shrink-0 rounded-xl border border-white/15 bg-white/[0.08] px-3 py-2 text-sm font-semibold text-white/92 transition hover:bg-white/[0.12]"
               >
                 Unblock
               </button>
@@ -151,6 +148,6 @@ export default function BlocksPage() {
           ))
         )}
       </div>
-    </div>
+    </AuthScreenShell>
   );
 }

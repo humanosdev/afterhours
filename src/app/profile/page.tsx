@@ -6,12 +6,15 @@ import { useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
 import ProfilePageSkeleton from "@/components/skeletons/ProfilePageSkeleton";
 import { getPresenceFreshness } from "@/lib/presence";
 import { preloadImage } from "@/lib/preloadImage";
+import { Menu } from "lucide-react";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { end } = useAuthRouteTransition();
   const [menuOpen, setMenuOpen] = useState(false);
   const [friendCount, setFriendCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -87,6 +90,11 @@ export default function ProfilePage() {
       setLoading(false);
     })();
   }, [router]);
+
+  useEffect(() => {
+    if (loading) return;
+    end();
+  }, [loading, end]);
 
   useEffect(() => {
     if (!userId) return;
@@ -237,8 +245,8 @@ export default function ProfilePage() {
       {loading ? (
         <ProfilePageSkeleton />
       ) : (
-      <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
-        <div className="mx-auto flex w-full flex-1 flex-col">
+      <div className="flex min-h-[100dvh] w-full flex-col bg-black text-white">
+        <div className="mx-auto flex w-full max-w-[min(100%,28rem)] flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] sm:max-w-[30rem] sm:px-5 sm:pt-3 lg:max-w-[32rem]">
           <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
             <div className="min-w-0 flex-1">
               <h1 className="text-[17px] font-bold tracking-tight">Profile</h1>
@@ -258,37 +266,56 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => setMenuOpen(!menuOpen)}
-                className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[15px] text-white/85"
+                className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.12] bg-white/[0.05] text-white/88 shadow-[0_0_20px_rgba(122,60,255,0.08)] transition hover:bg-white/[0.09]"
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                aria-label="Open menu"
               >
-                ☰
+                <Menu size={20} strokeWidth={2} className="opacity-90" />
               </button>
               {menuOpen ? (
-                <div className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-[12px] border border-white/[0.1] bg-zinc-900/95 backdrop-blur">
+                <div
+                  className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-white/[0.12] bg-black/92 shadow-[0_16px_48px_rgba(0,0,0,0.65)] backdrop-blur-xl"
+                  role="menu"
+                >
                   <button
                     type="button"
-                    onClick={() => router.push("/settings")}
-                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/settings");
+                    }}
+                    className="w-full px-4 py-3 text-left text-[14px] text-white/92 transition hover:bg-white/[0.06]"
                   >
                     Settings
                   </button>
                   <button
                     type="button"
-                    onClick={() => router.push("/profile/edit")}
-                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/profile/edit");
+                    }}
+                    className="w-full px-4 py-3 text-left text-[14px] text-white/92 transition hover:bg-white/[0.06]"
                   >
                     Edit profile
                   </button>
                   <button
                     type="button"
-                    onClick={() => router.push("/archive/hidden")}
-                    className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/archive/hidden");
+                    }}
+                    className="w-full px-4 py-3 text-left text-[14px] text-white/92 transition hover:bg-white/[0.06]"
                   >
                     Hidden shares
                   </button>
+                  <div className="border-t border-white/[0.08]" />
                   <button
                     type="button"
-                    onClick={signOut}
-                    className="w-full px-4 py-2.5 text-left text-[14px] text-red-400 hover:bg-red-500/15"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void signOut();
+                    }}
+                    className="w-full px-4 py-3 text-left text-[14px] font-medium text-red-400/95 transition hover:bg-red-500/12"
                   >
                     Sign out
                   </button>

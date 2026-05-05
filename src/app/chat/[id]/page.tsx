@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useParams, useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
 import ChatConversationSkeleton from "@/components/skeletons/ChatConversationSkeleton";
+import { createNotification } from "@/lib/notifications";
 
 type ChatRow = {
   id: string;
@@ -222,6 +223,15 @@ export default function ChatConversationPage() {
   useEffect(() => {
     if (!conversationId || !meId) return;
     supabase
+      .from("notifications")
+      .update({ read: true })
+      .eq("recipient_user_id", meId)
+      .eq("type", "message")
+      .eq("chat_id", conversationId)
+      .eq("read", false)
+      .then(() => {});
+
+    supabase
       .from("messages")
       .update({ seen: true })
       .eq("chat_id", conversationId)
@@ -342,6 +352,17 @@ export default function ChatConversationPage() {
       if (updateChatErr) {
         console.error("chat update error:", updateChatErr);
       }
+      await createNotification({
+        recipientId: partner.id,
+        actorId: meId,
+        type: "message",
+        chatId: conversationId,
+        messagePreview: payload.slice(0, 140),
+        dedupeKey: `message:${inserted.id}`,
+        pushTitle: "New message",
+        pushBody: payload.slice(0, 120),
+        route: `/chat/${conversationId}`,
+      });
     }
     setSending(false);
   }
@@ -369,6 +390,7 @@ export default function ChatConversationPage() {
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[min(100%,28rem)] flex-col overflow-hidden sm:max-w-[30rem] lg:max-w-[32rem]">
       <div className="sticky top-0 z-20 border-b border-white/[0.08] bg-black/92 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+8px)] backdrop-blur-xl sm:px-4">
         <div className="flex min-h-[44px] items-center gap-2">
           <button
@@ -480,6 +502,7 @@ export default function ChatConversationPage() {
             Send
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

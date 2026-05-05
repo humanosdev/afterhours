@@ -1,48 +1,37 @@
-import { supabase } from "@/lib/supabaseClient";
 import type { NotificationType } from "../../types/notifications";
+import { supabase } from "@/lib/supabaseClient";
 
-const ONLINE_COOLDOWN_MS = 20 * 60_000;
-const VENUE_COOLDOWN_MS = 2 * 60 * 60_000;
-const NEARBY_COOLDOWN_MS = 30 * 60_000;
-const DAILY_PUSH_LIMIT = 3;
-
-type PrefRow = {
-  push_enabled: boolean;
-  friend_activity_enabled: boolean;
-  venue_pop_enabled: boolean;
-  friend_request_enabled: boolean;
-  stories_enabled: boolean;
-  quiet_hours_start: string | null;
-  quiet_hours_end: string | null;
-  last_sent_at: string | null;
+type PreferenceRow = {
+  user_id: string;
+  push_enabled: boolean | null;
+  friend_activity_enabled: boolean | null;
+  venue_pop_enabled: boolean | null;
+  friend_request_enabled: boolean | null;
+  stories_enabled: boolean | null;
+  messages_enabled?: boolean | null;
 };
 
-function isWithinQuietHours(now: Date, start: string | null, end: string | null) {
-  if (!start || !end) return false;
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const startMin = (sh ?? 0) * 60 + (sm ?? 0);
-  const endMin = (eh ?? 0) * 60 + (em ?? 0);
-  if (startMin === endMin) return false;
-  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
-  return nowMin >= startMin || nowMin < endMin;
-}
-
-async function sendPushToUser(
-  userId: string,
-  title: string,
-  body: string,
-  data?: Record<string, unknown>
-) {
-  try {
-    await fetch("/api/push/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, title, body, data: data ?? {} }),
-    });
-  } catch {
-    // noop (best effort)
+function typePreferenceEnabled(type: NotificationType, prefs?: PreferenceRow | null) {
+  if (!prefs) return true;
+  switch (type) {
+    case "friend_online":
+    case "friend_nearby":
+    case "friend_joined_venue":
+    case "friends_active_bundle":
+      return prefs.friend_activity_enabled ?? true;
+    case "friend_request_received":
+    case "friend_request_accepted":
+      return prefs.friend_request_enabled ?? true;
+    case "story_like":
+    case "story_comment":
+    case "friend_story":
+      return prefs.stories_enabled ?? true;
+    case "venue_popping":
+      return prefs.venue_pop_enabled ?? true;
+    case "message":
+      return prefs.messages_enabled ?? true;
+    default:
+      return true;
   }
 }
 
@@ -51,216 +40,90 @@ export async function createNotification(params: {
   actorId: string;
   type: NotificationType;
   venueId?: string | null;
+  storyId?: string | null;
+  commentId?: string | null;
+  chatId?: string | null;
+  messagePreview?: string | null;
+  dedupeKey?: string | null;
+  pushTitle?: string;
+  pushBody?: string;
+  route?: string;
 }) {
-  const { recipientId, actorId, type, venueId = null } = params;
+  const { recipientId, actorId, type } = params;
+  if (!recipientId || !actorId || recipientId === actorId) return;
 
-  if (!recipientId || !actorId) return;
-  if (recipientId === actorId) return;
-
-  const { data: pref } = await supabase
+  const { data: prefRow } = await supabase
     .from("notification_preferences")
     .select(
-      "push_enabled, friend_activity_enabled, venue_pop_enabled, friend_request_enabled, stories_enabled, quiet_hours_start, quiet_hours_end, last_sent_at"
+      "user_id, push_enabled, friend_activity_enabled, venue_pop_enabled, friend_request_enabled, stories_enabled, messages_enabled"
     )
     .eq("user_id", recipientId)
     .maybeSingle();
 
-  const prefs = (pref as PrefRow | null) ?? {
-    push_enabled: true,
-    friend_activity_enabled: true,
-    venue_pop_enabled: true,
-    friend_request_enabled: true,
-    stories_enabled: true,
-    quiet_hours_start: null,
-    quiet_hours_end: null,
-    last_sent_at: null,
-  };
+  const prefs = (prefRow ?? null) as PreferenceRow | null;
+  if (!typePreferenceEnabled(type, prefs)) return;
 
-  const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const { count: sentToday } = await supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("recipient_user_id", recipientId)
-    .gte("created_at", todayStart.toISOString());
-
-  const directSocialEvent =
-    type === "friend_online" ||
-    type === "friend_request_received" ||
-    type === "friend_request_accepted" ||
-    type === "friend_story" ||
-    type === "friend_joined_venue";
-  if (!directSocialEvent && (sentToday ?? 0) >= DAILY_PUSH_LIMIT) return;
-
-  if (isWithinQuietHours(now, prefs.quiet_hours_start, prefs.quiet_hours_end)) return;
-
-  if (type === "friend_online") {
-    if (!prefs.friend_activity_enabled) return;
-    const sinceIso = new Date(Date.now() - ONLINE_COOLDOWN_MS).toISOString();
-    const { data: recent } = await supabase
-      .from("notifications")
-      .select("id")
-      .eq("recipient_user_id", recipientId)
-      .eq("actor_user_id", actorId)
-      .eq("type", "friend_online")
-      .gte("created_at", sinceIso)
-      .limit(1);
-
-    if (recent?.length) return;
-  }
-
-  if (type === "friend_joined_venue") {
-    if (!prefs.friend_activity_enabled) return;
-    const { data: recentVenue } = await supabase
-      .from("notifications")
-      .select("id, venue_id")
-      .eq("recipient_user_id", recipientId)
-      .eq("actor_user_id", actorId)
-      .eq("type", "friend_joined_venue")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Anti-spam: do not re-notify same venue repeatedly for 2 hours.
-    if (recentVenue?.venue_id && recentVenue.venue_id === venueId) {
-      const { data: latestSame } = await supabase
-        .from("notifications")
-        .select("created_at")
-        .eq("recipient_user_id", recipientId)
-        .eq("actor_user_id", actorId)
-        .eq("type", "friend_joined_venue")
-        .eq("venue_id", venueId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (
-        latestSame?.created_at &&
-        Date.now() - new Date(latestSame.created_at).getTime() < VENUE_COOLDOWN_MS
-      ) {
-        return;
-      }
-    }
-  }
-
-  if (type === "friend_nearby") {
-    if (!prefs.friend_activity_enabled) return;
-    const sinceIso = new Date(Date.now() - NEARBY_COOLDOWN_MS).toISOString();
-    const { data: recentNearby } = await supabase
-      .from("notifications")
-      .select("id")
-      .eq("recipient_user_id", recipientId)
-      .eq("actor_user_id", actorId)
-      .eq("type", "friend_nearby")
-      .gte("created_at", sinceIso)
-      .limit(1);
-    if (recentNearby?.length) return;
-  }
-
-  if (type === "venue_popping" && !prefs.venue_pop_enabled) return;
-  if (type === "friend_story" && !prefs.stories_enabled) return;
-  if ((type === "friend_request_accepted" || type === "friend_request_received") && !prefs.friend_request_enabled) return;
-
-  const { error } = await supabase.from("notifications").insert({
+  const insertPayload = {
     recipient_user_id: recipientId,
     actor_user_id: actorId,
     type,
-    venue_id: venueId,
-  });
-  if (error) return;
+    venue_id: params.venueId ?? null,
+    story_id: params.storyId ?? null,
+    comment_id: params.commentId ?? null,
+    chat_id: params.chatId ?? null,
+    message_preview: params.messagePreview ?? null,
+    dedupe_key: params.dedupeKey ?? null,
+  };
 
-  const { data: actor } = await supabase
-    .from("profiles")
-    .select("display_name, username")
-    .eq("id", actorId)
-    .maybeSingle();
-  const actorName = actor?.display_name || actor?.username || "Someone";
-  let pushTitle = "Intencity";
-  let pushBody = "Something new is happening.";
-  if (type === "friend_online") {
-    pushTitle = "Friends active";
-    pushBody = `${actorName} is out right now`;
-  } else if (type === "friend_nearby") {
-    pushTitle = "Friend nearby";
-    pushBody = `${actorName} is nearby`;
-  } else if (type === "friend_joined_venue") {
-    const { data: venue } = venueId
-      ? await supabase.from("venues").select("name").eq("id", venueId).maybeSingle()
-      : { data: null as any };
-    pushTitle = "Friend at venue";
-    pushBody = `${actorName} is at ${venue?.name ?? "a venue"} 👀`;
-  } else if (type === "friend_story") {
-    pushTitle = "New story";
-    pushBody = `${actorName} posted a new story`;
-  } else if (type === "friend_request_received") {
-    pushTitle = "New friend request";
-    pushBody = `${actorName} sent you a friend request`;
-  } else if (type === "friend_request_accepted") {
-    pushTitle = "New connection";
-    pushBody = `You and ${actorName} are now connected`;
-  } else if (type === "venue_popping") {
-    pushTitle = "Venue update";
-    pushBody = `${venueId ? "A nearby venue" : "A venue"} is heating up 🔥`;
-  }
+  const { error: insertError } = await supabase.from("notifications").insert(insertPayload);
+  // Dedupe: unique index on dedupe_key — skip quietly (no duplicate push).
+  if (insertError?.code === "23505") return;
+  if (insertError) return;
 
-  if (prefs.push_enabled) {
-    // Do not push if user appears currently active in app.
-    const { data: recPresence } = await supabase
-      .from("user_presence")
-      .select("updated_at")
-      .eq("user_id", recipientId)
-      .maybeSingle();
-    const currentlyActive =
-      !!recPresence?.updated_at &&
-      Date.now() - new Date(recPresence.updated_at).getTime() < 20_000;
-    const shouldSuppressForActiveSession = currentlyActive && type !== "friend_online";
-    if (!shouldSuppressForActiveSession) {
-      await sendPushToUser(recipientId, pushTitle, pushBody, {
-        type,
-        venueId: venueId ?? null,
-        actorId,
-      });
-      await supabase
-        .from("notification_preferences")
-        .upsert({ user_id: recipientId, last_sent_at: new Date().toISOString() });
-    }
+  if ((prefs?.push_enabled ?? true) === false) return;
+
+  if (params.pushTitle && params.pushBody) {
+    await fetch("/api/push/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: recipientId,
+        title: params.pushTitle,
+        body: params.pushBody,
+        route: params.route ?? "/notifications",
+      }),
+    }).catch(() => {});
   }
 }
 
 export async function getMyFriendIds(userId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("friend_requests")
     .select("requester_id, addressee_id")
     .eq("status", "accepted")
     .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
-
-  const friendIds = (data ?? []).map((r: any) =>
-    r.requester_id === userId ? r.addressee_id : r.requester_id
-  );
-
-  return Array.from(new Set(friendIds));
+  if (error) return [] as string[];
+  const rows = (data ?? []) as Array<{ requester_id: string; addressee_id: string }>;
+  const ids = new Set<string>();
+  for (const row of rows) {
+    ids.add(row.requester_id === userId ? row.addressee_id : row.requester_id);
+  }
+  return Array.from(ids);
 }
 
 export async function getNotificationPreferences(userIds: string[]) {
-  if (!userIds.length) return new Map<string, { online: boolean; venue: boolean }>();
-
+  const prefs = new Map<string, { online: boolean; venue: boolean }>();
+  if (userIds.length === 0) return prefs;
   const { data } = await supabase
     .from("notification_preferences")
-    .select("user_id, friend_activity_enabled, venue_pop_enabled")
+    .select("user_id, friend_activity_enabled")
     .in("user_id", userIds);
-
-  const prefs = new Map<string, { online: boolean; venue: boolean }>();
+  const rows = (data ?? []) as Array<{ user_id: string; friend_activity_enabled: boolean | null }>;
   for (const uid of userIds) {
-    prefs.set(uid, { online: true, venue: true });
+    const row = rows.find((x) => x.user_id === uid);
+    const enabled = row?.friend_activity_enabled ?? true;
+    prefs.set(uid, { online: enabled, venue: enabled });
   }
-
-  (data ?? []).forEach((row: any) => {
-    prefs.set(row.user_id, {
-      online: row.friend_activity_enabled ?? true,
-      venue: row.venue_pop_enabled ?? true,
-    });
-  });
-
   return prefs;
 }
 

@@ -4,8 +4,8 @@ import { SkeletonCircle, SkeletonGrid, SkeletonLine } from "@/components/ui/Skel
 
 export default function ProfilePageSkeleton() {
   return (
-    <div className="flex min-h-[100dvh] w-full max-w-none flex-col bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
-      <div className="mx-auto flex w-full flex-1 flex-col">
+    <div className="flex min-h-[100dvh] w-full flex-col bg-black text-white">
+      <div className="mx-auto flex w-full max-w-[min(100%,28rem)] flex-1 flex-col px-4 pb-[calc(env(safe-area-inset-bottom,0px)+96px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] sm:max-w-[30rem] sm:px-5 sm:pt-3 lg:max-w-[32rem]">
         <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
           <div className="min-w-0 flex-1 space-y-2">
             <SkeletonLine width={88} height={18} />

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui";
 import EditProfileSkeleton from "@/components/skeletons/EditProfileSkeleton";
+import { AppSubpageHeader } from "@/components/AppSubpageHeader";
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
@@ -38,6 +39,15 @@ async function canDecodeImage(src: string): Promise<boolean> {
     image.onload = () => resolve(true);
     image.onerror = () => resolve(false);
   });
+}
+
+function normalizeUsername(input: string) {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .slice(0, 20);
 }
 
 async function cropImageToSquare(
@@ -148,8 +158,14 @@ const [userId, setUserId] = useState<string | null>(null);
       return;
     }
 
-    if (!username.trim()) {
+    const normalizedUsername = normalizeUsername(username);
+    if (!normalizedUsername) {
       setError("Username cannot be empty.");
+      setSaving(false);
+      return;
+    }
+    if (normalizedUsername.length < 3) {
+      setError("Username must be at least 3 characters.");
       setSaving(false);
       return;
     }
@@ -157,7 +173,7 @@ const [userId, setUserId] = useState<string | null>(null);
     const { error } = await supabase
       .from("profiles")
       .update({
-        username: username.trim(),
+        username: normalizedUsername,
         display_name: displayName.trim() || null,
         bio: bio.trim() || null,
       })
@@ -300,17 +316,12 @@ useEffect(() => {
   }
   return (
     <div className="min-h-[100dvh] bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
-      <div className="mb-5 flex items-center gap-2 border-b border-white/[0.08] pb-3">
-        <button
-          type="button"
-          onClick={goBackSafe}
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/80"
-          aria-label="Back"
-        >
-          ←
-        </button>
-        <h1 className="text-[1.25rem] font-bold tracking-tight">Edit profile</h1>
-      </div>
+      <AppSubpageHeader
+        className="mb-5"
+        title="Edit profile"
+        subtitle="Photo, name, and bio"
+        onBack={goBackSafe}
+      />
 
       {error && (
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
@@ -318,7 +329,7 @@ useEffect(() => {
         </div>
       )}
 {cropSrc && (
-  <div className="fixed inset-0 z-[170] bg-black/90">
+  <div className="fixed inset-0 z-[10170] bg-black/90">
     <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+12px)]">
       <button
         type="button"
@@ -369,7 +380,7 @@ useEffect(() => {
       src={avatarUrl}
       fallbackText={displayName || username}
       size="xl"
-      className="border-2 border-purple-500/40"
+      className="border-2 border-accent-violet/40"
     />
 
     <input

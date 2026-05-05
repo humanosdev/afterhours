@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import MomentDetailSkeleton from "@/components/skeletons/MomentDetailSkeleton";
 import { formatRelativeTime } from "@/lib/time";
+import { createNotification } from "@/lib/notifications";
 
 type ViewerComment = {
   id: string;
@@ -156,6 +157,18 @@ export default function MomentDetailPage() {
     if (error) return;
     setLiked(true);
     setLikesCount((v) => v + 1);
+    if (moment.user_id !== meId) {
+      await createNotification({
+        recipientId: moment.user_id,
+        actorId: meId,
+        type: "story_like",
+        storyId: moment.id,
+        dedupeKey: `story_like:${moment.id}:${meId}`,
+        pushTitle: "Your post got a new like",
+        pushBody: "A friend liked your post.",
+        route: `/moments/${moment.id}`,
+      });
+    }
   };
 
   const sendComment = async () => {
@@ -179,6 +192,18 @@ export default function MomentDetailPage() {
       },
     ]);
     setCommentText("");
+    if (moment.user_id !== meId) {
+      await createNotification({
+        recipientId: moment.user_id,
+        actorId: meId,
+        type: "story_comment",
+        storyId: moment.id,
+        messagePreview: text.slice(0, 140),
+        pushTitle: "New comment on your post",
+        pushBody: text.slice(0, 120),
+        route: `/moments/${moment.id}`,
+      });
+    }
   };
 
   const deleteMoment = async () => {

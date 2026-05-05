@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { SkeletonGrid } from "@/components/ui/Skeleton";
+import { AppSubpageHeader } from "@/components/AppSubpageHeader";
 
 type HiddenShareRow = {
   id: string;
@@ -14,6 +15,13 @@ type HiddenShareRow = {
 
 export default function HiddenArchivePage() {
   const router = useRouter();
+  const goBackSafe = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/profile");
+  };
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<HiddenShareRow[]>([]);
 
@@ -49,19 +57,10 @@ export default function HiddenArchivePage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-[100dvh] bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
-        <div className="mb-4 flex items-center gap-2 border-b border-white/[0.08] pb-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.1] bg-white/[0.04] text-[17px] text-white/80"
-            aria-label="Back"
-          >
-            ←
-          </button>
-          <h1 className="text-[1.1rem] font-semibold tracking-tight">Hidden shares</h1>
-        </div>
+      <div className="min-h-[100dvh] bg-black px-4 pb-[calc(env(safe-area-inset-bottom,0px)+92px)] pt-[calc(env(safe-area-inset-top,0px)+12px)] text-white sm:px-5">
+        <AppSubpageHeader title="Hidden shares" subtitle="Shares hidden from your profile grid." onBack={goBackSafe} />
 
+        <div className="mt-5">
         {loading ? (
           <SkeletonGrid
             columns={3}
@@ -96,6 +95,7 @@ export default function HiddenArchivePage() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </ProtectedRoute>
   );

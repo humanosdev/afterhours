@@ -18,10 +18,10 @@ const rightTabs = [
 
 export default function BottomNav({
   onOpenStories,
-  unreadCount = 0,
+  chatUnreadCount = 0,
 }: {
   onOpenStories?: () => void;
-  unreadCount?: number;
+  chatUnreadCount?: number;
 }) {
   const pathname = usePathname();
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
@@ -68,7 +68,7 @@ export default function BottomNav({
 
   return (
     <nav
-      className="fixed inset-x-0 z-[100] flex justify-center px-3"
+      className="pointer-events-auto fixed inset-x-0 z-[10000] flex justify-center px-3 [transform:translateZ(0)]"
       style={{
         // Keep web Safari and Home Screen visually aligned while preserving safe-area.
         bottom: isStandalone
@@ -76,9 +76,9 @@ export default function BottomNav({
           : "calc(env(safe-area-inset-bottom, 0px) + 0.375rem)",
       }}
     >
-      <div className="relative w-full max-w-[min(100vw-16px,360px)] rounded-2xl border border-white/[0.12] bg-black/60 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.06] to-transparent" />
-        <div className="relative mx-auto flex items-center justify-center gap-2 sm:gap-3">
+      <div className="relative isolate w-full max-w-[min(100vw-16px,360px)] rounded-2xl border border-white/[0.12] bg-black/60 px-2 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-0 z-0 rounded-2xl bg-gradient-to-b from-white/[0.06] to-transparent" />
+        <div className="relative z-10 mx-auto flex items-center justify-center gap-2 sm:gap-3">
         {/* LEFT SIDE */}
         <div className="flex flex-1 items-center justify-end gap-1 pr-0.5">
           {leftTabs.map(({ href, label, Icon }) => {
@@ -101,11 +101,6 @@ export default function BottomNav({
                   strokeWidth={active ? 2.25 : 2}
                   className={active ? "text-accent-violet-active" : "text-white/65"}
                 />
-                {label === "Profile" && unreadCount > 0 ? (
-                  <span className="absolute -top-1 -right-1 inline-flex min-w-[16px] h-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                ) : null}
               </Link>
             );
           })}
@@ -141,7 +136,7 @@ export default function BottomNav({
                 key={href}
                 href={href}
                 className={[
-                  "grid h-9 w-9 place-items-center rounded-[10px] border transition-all",
+                  "relative grid h-9 w-9 place-items-center rounded-[10px] border transition-all",
                   label === "Profile" && profileAvatarUrl
                     ? "border-transparent bg-transparent shadow-none"
                     : active
@@ -169,6 +164,11 @@ export default function BottomNav({
                     className={active ? "text-accent-violet-active" : "text-white/65"}
                   />
                 )}
+                {label === "Chat" && chatUnreadCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 inline-flex min-w-[16px] h-4 items-center justify-center rounded-full bg-accent-violet px-1 text-[10px] font-semibold text-white">
+                    {chatUnreadCount > 9 ? "9+" : chatUnreadCount}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
