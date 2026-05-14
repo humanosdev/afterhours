@@ -1,0 +1,797 @@
+"use client";
+
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import FriendListSkeleton from "@/components/skeletons/FriendListSkeleton";
+import { Avatar } from "@/components/ui";
+import { createNotification } from "@/lib/notifications";
+import {
+  getFriendSocialActivitySubtitle,
+  isFriendOnlineNow,
+  isValidCoordinatePair,
+} from "@/lib/presence";
+import { subscribeUserPresenceChanges } from "@/lib/userPresenceRealtime";
+import { navigateBack, SubpageBackButton } from "@/components/AppSubpageHeader";
+import { idsBlockedWithMe, getPairBlockStatus } from "@/lib/pairBlockStatus";
+import { APP_PAGE_TAIL_PADDING_CLASS } from "@/lib/appShellLayout";
+
+type ProfileLite = {
+  id: string;
+  username: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  is_private?: boolean | null;
+  ghost_mode?: boolean | null;
+  block_relation?: "you_blocked_them" | "they_blocked_you" | null;
+};
+type FriendRequestRow = {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: "pending" | "accepted" | "declined" | "canceled";
+  created_at: string;
+};
+type PresenceRow = { user_id: string; venue_id: string | null; updated_at: string; lat: number; lng: number };
+type VenueRow = { id: string; name: string };
+
+function normalizeUsername(v: string) {
+  return v.trim().replace(/^@/, "").toLowerCase();
+}
+
+function FriendsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const viewUsername = (searchParams.get("view") || "").trim().toLowerCase();
+  const goBackSafe = () => navigateBack(router, "/profile");
+
+  const [meId, setMeId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [discoverResult, setDiscoverResult] = useState<ProfileLite | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [incoming, setIncoming] = useState<FriendRequestRow[]>([]);
+  const [outgoing, setOutgoing] = useState<FriendRequestRow[]>([]);
+  const [friends, setFriends] = useState<ProfileLite[]>([]);
+  const [nameById, setNameById] = useState<Record<string, ProfileLite>>({});
+  const [presenceById, setPresenceById] = useState<Record<string, PresenceRow>>({});
+  const [venueById, setVenueById] = useState<Record<string, string>>({});
+  /** Bumps on an interval so “Away / Offline” subtitles update without new DB rows. */
+  const [presenceClock, setPresenceClock] = useState(0);
+  const [viewerTarget, setViewerTarget] = useState<ProfileLite | null>(null);
+  const [viewerCanSeeFriends, setViewerCanSeeFriends] = useState(true);
+  const [viewerRelationship, setViewerRelationship] = useState<"none" | "incoming" | "outgoing" | "accepted">("none");
+  /** When viewing someone else's list: which user ids are also your friends (for Mutual vs Other). */
+  const [viewerMyFriendIds, setViewerMyFriendIds] = useState<Record<string, true>>({});
+
+  useEffect(() => {
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) {
+        router.push("/login");
+        return;
+      }
+      setMeId(auth.user.id);
+      if (viewUsername) {
+        await refreshViewer(auth.user.id, viewUsername);
+      } else {
+        await refreshAll(auth.user.id);
+      }
+      setLoading(false);
+    })();
+  }, [router, viewUsername]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setPresenceClock((n) => n + 1), 15_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const friendIdsKey = useMemo(() => friends.map((f) => f.id).sort().join(","), [friends]);
+
+  useEffect(() => {
+    if (!meId || viewerTarget) return;
+    if (!friendIdsKey) return;
+    const allowed = new Set(friends.map((f) => f.id));
+    return subscribeUserPresenceChanges(supabase, {
+      channelName: `friends-presence:${meId}`,
+      onInsertOrUpdate: (row) => {
+        if (!allowed.has(row.user_id)) return;
+        setPresenceById((prev) => {
+          const existing = prev[row.user_id];
+          const lat = typeof row.lat === "number" ? row.lat : existing?.lat ?? 0;
+          const lng = typeof row.lng === "number" ? row.lng : existing?.lng ?? 0;
+          const updatedAt = (typeof row.updated_at === "string" ? row.updated_at : null) ?? existing?.updated_at;
+          const venue_id =
+            (row.venue_id as string | null | undefined) !== undefined
+              ? (row.venue_id as string | null)
+              : (existing?.venue_id ?? null);
+          return {
+            ...prev,
+            [row.user_id]: {
+              user_id: row.user_id,
+              lat,
+              lng,
+              venue_id,
+              updated_at: updatedAt,
+            },
+          };
+        });
+        const vid = row.venue_id as string | null | undefined;
+        if (vid) {
+          setVenueById((vm0) => {
+            if (vm0[vid]) return vm0;
+            void supabase
+              .from("venues")
+              .select("id, name")
+              .eq("id", vid)
+              .maybeSingle()
+              .then(({ data }) => {
+                if (data?.id && data.name) {
+                  setVenueById((vm) => ({ ...vm, [data.id]: data.name }));
+                }
+              });
+            return vm0;
+          });
+        }
+      },
+      onDelete: (uid) => {
+        if (!allowed.has(uid)) return;
+        setPresenceById((prev) => {
+          const next = { ...prev };
+          delete next[uid];
+          return next;
+        });
+      },
+    });
+  }, [meId, viewerTarget, friendIdsKey, friends]);
+
+  async function refreshViewer(viewerId: string, usernameToView: string) {
+    setMsg(null);
+    const { data: target } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, is_private, ghost_mode")
+      .eq("username", usernameToView)
+      .maybeSingle();
+    if (!target?.id) {
+      setMsg("Could not find that profile.");
+      setViewerTarget(null);
+      setFriends([]);
+      setViewerMyFriendIds({});
+      return;
+    }
+
+    const typedTarget = target as ProfileLite;
+    setViewerTarget(typedTarget);
+
+    const { data: relRows } = await supabase
+      .from("friend_requests")
+      .select("requester_id, addressee_id, status")
+      .or(`and(requester_id.eq.${viewerId},addressee_id.eq.${typedTarget.id}),and(requester_id.eq.${typedTarget.id},addressee_id.eq.${viewerId})`);
+
+    const relationRows = (relRows ?? []) as FriendRequestRow[];
+    const accepted = relationRows.some((r) => r.status === "accepted");
+    const incoming = relationRows.some((r) => r.status === "pending" && r.requester_id === typedTarget.id && r.addressee_id === viewerId);
+    const outgoing = relationRows.some((r) => r.status === "pending" && r.requester_id === viewerId && r.addressee_id === typedTarget.id);
+    setViewerRelationship(accepted ? "accepted" : incoming ? "incoming" : outgoing ? "outgoing" : "none");
+
+    const canSee = !typedTarget.is_private || typedTarget.id === viewerId || accepted;
+    setViewerCanSeeFriends(canSee);
+    if (!canSee) {
+      setFriends([]);
+      setViewerMyFriendIds({});
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
+
+    const blockedViewer = await idsBlockedWithMe(supabase, viewerId);
+
+    const { data: myReqs } = await supabase
+      .from("friend_requests")
+      .select("requester_id, addressee_id")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${viewerId},addressee_id.eq.${viewerId}`);
+    const myFriendMap: Record<string, true> = {};
+    for (const r of (myReqs ?? []) as { requester_id: string; addressee_id: string }[]) {
+      const other = r.requester_id === viewerId ? r.addressee_id : r.requester_id;
+      if (other && other !== viewerId && !blockedViewer.has(other)) myFriendMap[other] = true;
+    }
+    setViewerMyFriendIds(myFriendMap);
+
+    const { data: reqs, error: reqsErr } = await supabase
+      .from("friend_requests")
+      .select("requester_id, addressee_id, status")
+      .eq("status", "accepted")
+      .or(`requester_id.eq.${typedTarget.id},addressee_id.eq.${typedTarget.id}`);
+    if (reqsErr) {
+      setMsg("Could not load their friends list.");
+      setFriends([]);
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
+    const acceptedRows = (reqs ?? []) as FriendRequestRow[];
+    const friendIds = Array.from(
+      new Set(acceptedRows.map((r) => (r.requester_id === typedTarget.id ? r.addressee_id : r.requester_id)))
+    ).filter((id) => id && !blockedViewer.has(id));
+    if (!friendIds.length) {
+      setFriends([]);
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
+    const { data: friendRows, error: profilesErr } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, is_private, ghost_mode")
+      .in("id", friendIds);
+    if (profilesErr) {
+      setMsg("Could not load friend profiles.");
+      setFriends([]);
+      return;
+    }
+    setFriends((friendRows ?? []) as ProfileLite[]);
+  }
+
+  async function refreshAll(uid: string) {
+    setMsg(null);
+    setViewerMyFriendIds({});
+    const { data: reqs, error } = await supabase
+      .from("friend_requests")
+      .select("id, requester_id, addressee_id, status, created_at")
+      .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`)
+      .order("created_at", { ascending: false });
+    if (error) {
+      setMsg("Could not load friend requests.");
+      return;
+    }
+
+    const all = (reqs ?? []) as FriendRequestRow[];
+    const blockedIds = await idsBlockedWithMe(supabase, uid);
+
+    const inc = all.filter(
+      (r) => r.addressee_id === uid && r.status === "pending" && !blockedIds.has(r.requester_id)
+    );
+    const out = all.filter(
+      (r) => r.requester_id === uid && r.status === "pending" && !blockedIds.has(r.addressee_id)
+    );
+    setIncoming(inc);
+    setOutgoing(out);
+
+    const accepted = all.filter((r) => r.status === "accepted");
+    const friendIds = Array.from(
+      new Set(accepted.map((r) => (r.requester_id === uid ? r.addressee_id : r.requester_id)))
+    ).filter((id) => id && !blockedIds.has(id));
+
+    const idsToResolve = Array.from(
+      new Set([...inc.map((r) => r.requester_id), ...out.map((r) => r.addressee_id), ...friendIds])
+    );
+    if (idsToResolve.length > 0) {
+      const { data: resolved } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url, is_private, ghost_mode")
+        .in("id", idsToResolve);
+      const map: Record<string, ProfileLite> = {};
+      for (const row of (resolved ?? []) as any[]) {
+        map[row.id] = {
+          id: row.id,
+          username: row.username ?? null,
+          display_name: row.display_name ?? null,
+          avatar_url: row.avatar_url ?? null,
+          is_private: row.is_private ?? false,
+        };
+      }
+      setNameById(map);
+    } else {
+      setNameById({});
+    }
+
+    if (!friendIds.length) {
+      setFriends([]);
+      setPresenceById({});
+      setVenueById({});
+      return;
+    }
+
+    const { data: friendRows } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, is_private, ghost_mode")
+      .in("id", friendIds);
+    const friendProfiles = (friendRows ?? []) as ProfileLite[];
+    setFriends(friendProfiles);
+
+    const { data: presenceRows } = await supabase
+      .from("user_presence")
+      .select("user_id, venue_id, updated_at, lat, lng")
+      .in("user_id", friendIds);
+    const pMap: Record<string, PresenceRow> = {};
+    for (const p of (presenceRows ?? []) as PresenceRow[]) {
+      const existing = pMap[p.user_id];
+      if (!existing || new Date(p.updated_at).getTime() > new Date(existing.updated_at).getTime()) {
+        pMap[p.user_id] = p;
+      }
+    }
+    setPresenceById(pMap);
+
+    const venueIds = Array.from(
+      new Set(((presenceRows ?? []) as PresenceRow[]).map((p) => p.venue_id).filter(Boolean))
+    ) as string[];
+    if (venueIds.length) {
+      const { data: venues } = await supabase.from("venues").select("id, name").in("id", venueIds);
+      const vm: Record<string, string> = {};
+      (venues ?? []).forEach((v: VenueRow) => {
+        vm[v.id] = v.name;
+      });
+      setVenueById(vm);
+    } else {
+      setVenueById({});
+    }
+  }
+
+  useEffect(() => {
+    if (viewUsername) {
+      setDiscoverResult(null);
+      return;
+    }
+    const uid = meId;
+    if (!uid) return;
+    const q = normalizeUsername(search);
+    if (q.length < 2 || friends.some((f) => f.username?.toLowerCase() === q)) {
+      setDiscoverResult(null);
+      return;
+    }
+
+    let alive = true;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      const { data, error } = await supabase.rpc("discover_profile_by_username", {
+        p_needle: q,
+      });
+      if (!alive) return;
+      setSearching(false);
+      if (error) {
+        setDiscoverResult(null);
+        return;
+      }
+      if (!data || typeof data !== "object") {
+        setDiscoverResult(null);
+        return;
+      }
+      const target = data as unknown as ProfileLite;
+      if (!target?.id || target.id === uid) {
+        setDiscoverResult(null);
+        return;
+      }
+      setDiscoverResult(target);
+    }, 220);
+
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [friends, meId, search, viewUsername]);
+
+  async function unblockDiscoveredUser(targetId: string) {
+    if (!meId) return;
+    const ok = window.confirm("Unblock this user? You’ll be able to find each other and send requests again.");
+    if (!ok) return;
+    const { error } = await supabase
+      .from("blocks")
+      .delete()
+      .eq("blocker_id", meId)
+      .eq("blocked_id", targetId);
+    if (error) {
+      setMsg("Could not unblock.");
+      return;
+    }
+    setDiscoverResult(null);
+    setMsg(null);
+    await refreshAll(meId);
+  }
+
+  async function sendRequest(targetId: string) {
+    if (!meId) return;
+    const pair = await getPairBlockStatus(supabase, meId, targetId);
+    if (pair !== "none") {
+      setMsg("Resolve the block before sending a friend request.");
+      return;
+    }
+    const { error } = await supabase.from("friend_requests").insert({
+      requester_id: meId,
+      addressee_id: targetId,
+      status: "pending",
+    });
+    if (error) {
+      if (error.code === "23505") {
+        setMsg("Request already sent.");
+        setDiscoverResult(null);
+        await refreshAll(meId);
+        return;
+      }
+      setMsg("Could not send request.");
+      return;
+    }
+    await createNotification({
+      recipientId: targetId,
+      actorId: meId,
+      type: "friend_request_received",
+    });
+    setDiscoverResult(null);
+    await refreshAll(meId);
+  }
+
+  async function sendRequestToViewerTarget() {
+    if (!meId || !viewerTarget?.id || viewerRelationship !== "none") return;
+    const pair = await getPairBlockStatus(supabase, meId, viewerTarget.id);
+    if (pair !== "none") {
+      setMsg("Resolve the block before sending a friend request.");
+      return;
+    }
+    const { error } = await supabase.from("friend_requests").insert({
+      requester_id: meId,
+      addressee_id: viewerTarget.id,
+      status: "pending",
+    });
+    if (error) {
+      if (error.code === "23505") {
+        setViewerRelationship("outgoing");
+        return;
+      }
+      setMsg("Could not send request.");
+      return;
+    }
+    await createNotification({
+      recipientId: viewerTarget.id,
+      actorId: meId,
+      type: "friend_request_received",
+    });
+    setViewerRelationship("outgoing");
+  }
+
+  async function acceptRequest(requestId: string) {
+    if (!meId) return;
+    const req = incoming.find((r) => r.id === requestId);
+    if (!req?.requester_id) return;
+    const pair = await getPairBlockStatus(supabase, meId, req.requester_id);
+    if (pair !== "none") {
+      setMsg("Can’t accept while a block is active with this user.");
+      await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
+      await refreshAll(meId);
+      return;
+    }
+    await supabase.from("friend_requests").update({ status: "accepted" }).eq("id", requestId);
+    if (req?.requester_id) {
+      await createNotification({
+        recipientId: req.requester_id,
+        actorId: meId,
+        type: "friend_request_accepted",
+      });
+    }
+    await refreshAll(meId);
+  }
+
+  async function declineRequest(requestId: string) {
+    if (!meId) return;
+    await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
+    await refreshAll(meId);
+  }
+
+  async function cancelRequest(requestId: string) {
+    if (!meId) return;
+    await supabase.from("friend_requests").update({ status: "canceled" }).eq("id", requestId);
+    await refreshAll(meId);
+  }
+
+  const filteredFriends = useMemo(() => {
+    const q = normalizeUsername(search);
+    if (!q) return friends;
+    return friends.filter((f) => {
+      const d = (f.display_name ?? "").toLowerCase();
+      const u = (f.username ?? "").toLowerCase();
+      return d.includes(q) || u.includes(q);
+    });
+  }, [friends, search]);
+
+  const activeFriends = useMemo(
+    () =>
+      filteredFriends.filter((f) => {
+        const p = presenceById[f.id];
+        if (!p) return false;
+        if (f.ghost_mode) return false;
+        if (!isValidCoordinatePair(p.lat, p.lng)) return false;
+        return isFriendOnlineNow(p.updated_at);
+      }),
+    [filteredFriends, presenceById, presenceClock]
+  );
+
+  const mutualFriendsFiltered = useMemo(() => {
+    if (!viewerTarget || !meId) return [];
+    return filteredFriends.filter(
+      (f) => f.id !== meId && f.id !== viewerTarget.id && viewerMyFriendIds[f.id]
+    );
+  }, [viewerTarget, meId, filteredFriends, viewerMyFriendIds]);
+
+  const otherFriendsFiltered = useMemo(() => {
+    if (!viewerTarget || !meId) return [];
+    return filteredFriends.filter(
+      (f) => f.id !== meId && f.id !== viewerTarget.id && !viewerMyFriendIds[f.id]
+    );
+  }, [viewerTarget, meId, filteredFriends, viewerMyFriendIds]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[100dvh] bg-primary pb-6 text-white">
+        <FriendListSkeleton rows={14} withHeader />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-[100dvh] bg-primary text-white">
+      <div className="sticky top-0 z-20 border-b border-white/10 bg-primary/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top,0px)+10px)] backdrop-blur">
+        <div className="flex items-center justify-between">
+          <SubpageBackButton onBack={goBackSafe} />
+          <h1 className="text-xl font-semibold">
+            {viewerTarget ? `${viewerTarget.display_name || viewerTarget.username}'s Friends` : "Friends"}
+          </h1>
+          {!viewerTarget ? (
+            <Link href="/profile/blocks" className="ah-glass-control ah-glass-control-interactive rounded-full px-3 py-1 text-sm text-white/80">
+              <span>Blocked</span>
+            </Link>
+          ) : (
+            <div className="w-[72px]" />
+          )}
+        </div>
+        {(!viewerTarget || (viewerTarget && viewerCanSeeFriends)) ? (
+        <div className="mt-3">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={viewerTarget ? "Search their friends" : "Search friends or username"}
+            className="w-full rounded-xl border border-white/10 bg-[#101015] px-3 py-2.5 text-sm outline-none focus:border-white/20"
+          />
+        </div>
+        ) : null}
+        {!viewerTarget && searching ? <div className="mt-2 text-xs text-white/45">Searching...</div> : null}
+        {!viewerTarget && discoverResult ? (
+          <div className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2">
+            <button
+              onClick={() => discoverResult.username && router.push(`/u/${encodeURIComponent(discoverResult.username)}`)}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            >
+              <Avatar src={discoverResult.avatar_url?.trim() || null} fallbackText={discoverResult.display_name || discoverResult.username} size="sm" className="shrink-0" />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{discoverResult.display_name || discoverResult.username}</div>
+                <div className="truncate text-xs text-white/45">
+                  @{discoverResult.username}
+                  {discoverResult.is_private ? " · Private" : ""}
+                </div>
+                {discoverResult.block_relation === "you_blocked_them" ? (
+                  <div className="mt-0.5 text-xs font-medium text-amber-200/80">You blocked this user</div>
+                ) : discoverResult.block_relation === "they_blocked_you" ? (
+                  <div className="mt-0.5 text-xs font-medium text-amber-200/80">This user blocked you</div>
+                ) : null}
+              </div>
+            </button>
+            {discoverResult.block_relation === "you_blocked_them" ? (
+              <button
+                type="button"
+                onClick={() => unblockDiscoveredUser(discoverResult.id)}
+                className="shrink-0 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Unblock
+              </button>
+            ) : discoverResult.block_relation === "they_blocked_you" ? (
+              <button
+                type="button"
+                onClick={() =>
+                  discoverResult.username &&
+                  router.push(`/u/${encodeURIComponent(discoverResult.username)}`)
+                }
+                className="shrink-0 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                View profile
+              </button>
+            ) : (
+              <button onClick={() => sendRequest(discoverResult.id)} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black">
+                Add
+              </button>
+            )}
+          </div>
+        ) : null}
+        {viewerTarget && !viewerCanSeeFriends ? (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
+            <p className="text-sm font-semibold">This account is private</p>
+            <p className="mt-1 text-xs text-white/60">You need to be friends to view their friends list.</p>
+            {viewerRelationship === "none" ? (
+              <button
+                type="button"
+                onClick={sendRequestToViewerTarget}
+                className="mt-3 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black"
+              >
+                Add friend
+              </button>
+            ) : viewerRelationship === "outgoing" ? (
+              <p className="mt-3 text-xs text-white/70">Request sent</p>
+            ) : viewerRelationship === "incoming" ? (
+              <button
+                type="button"
+                onClick={() => router.push("/profile/friends")}
+                className="mt-3 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black"
+              >
+                Respond to request
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {viewerTarget && !viewerCanSeeFriends ? null : (
+      <div className={`space-y-5 px-2 pt-2 ${APP_PAGE_TAIL_PADDING_CLASS}`}>
+        {!viewerTarget && activeFriends.length > 0 ? (
+          <section>
+            <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Active friends</div>
+            {activeFriends.map((f) => {
+              const p = presenceById[f.id];
+              const status = getFriendSocialActivitySubtitle(
+                {
+                  ghostMode: !!f.ghost_mode,
+                  updatedAt: p?.updated_at,
+                  venueId: p?.venue_id ?? null,
+                  venueName: p?.venue_id ? venueById[p.venue_id] ?? null : null,
+                },
+                Date.now()
+              );
+              return (
+                <div key={`active-${f.id}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                  <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                  <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
+                    <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
+                    <div className="truncate text-xs text-emerald-300/90">{status}</div>
+                  </button>
+                </div>
+              );
+            })}
+          </section>
+        ) : null}
+
+        {!viewerTarget && (incoming.length > 0 || outgoing.length > 0) ? (
+          <section>
+            <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Friend requests</div>
+            {incoming.map((r) => {
+              const person = nameById[r.requester_id];
+              const label = person?.display_name || person?.username || "Unknown";
+              return (
+                <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                  <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{label}</div>
+                    <div className="truncate text-xs text-white/45">@{person?.username || "unknown"}</div>
+                  </div>
+                  <button onClick={() => acceptRequest(r.id)} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-black">Accept</button>
+                  <button onClick={() => declineRequest(r.id)} className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-white/80">Decline</button>
+                </div>
+              );
+            })}
+            {outgoing.map((r) => {
+              const person = nameById[r.addressee_id];
+              const label = person?.display_name || person?.username || "Unknown";
+              return (
+                <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                  <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{label}</div>
+                    <div className="truncate text-xs text-white/45">Request sent</div>
+                  </div>
+                  <button onClick={() => cancelRequest(r.id)} className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-white/80">Cancel</button>
+                </div>
+              );
+            })}
+          </section>
+        ) : null}
+
+        {viewerTarget && friends.length === 0 ? (
+          <section>
+            <div className="px-3 py-10 text-center text-sm text-white/50">No friends to show yet.</div>
+          </section>
+        ) : viewerTarget ? (
+          <>
+            <section>
+              <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-emerald-300/85">
+                Mutual friends
+              </div>
+              {mutualFriendsFiltered.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-white/45">No mutual friends</p>
+              ) : (
+                mutualFriendsFiltered.map((f) => {
+                  const subtitle = f.is_private ? `@${f.username} · Private` : `@${f.username}`;
+                  return (
+                    <div key={`m-${f.id}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                      <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                      <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
+                        <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
+                        <div className="truncate text-xs text-emerald-200/55">Friends with you · {subtitle}</div>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </section>
+            <section className="mt-5">
+              <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">
+                Not in your friends
+              </div>
+              {otherFriendsFiltered.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-white/45">
+                  {mutualFriendsFiltered.length > 0
+                    ? "You’re friends with everyone on this list."
+                    : "No one else on this list."}
+                </p>
+              ) : (
+                otherFriendsFiltered.map((f) => {
+                  const subtitle = f.is_private ? `@${f.username} · Private` : `@${f.username}`;
+                  return (
+                    <div key={`o-${f.id}`} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                      <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                      <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
+                        <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
+                        <div className="truncate text-xs text-white/45">{subtitle}</div>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </section>
+          </>
+        ) : (
+        <section>
+          <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Friends</div>
+          {filteredFriends.length === 0 ? (
+            <div className="px-3 py-10 text-center">
+              <div className="text-base font-medium text-white/85">No friends yet</div>
+              <div className="mt-1 text-sm text-white/50">Add people by username to start connecting</div>
+            </div>
+          ) : (
+            filteredFriends.map((f) => {
+              const p = presenceById[f.id];
+              const status = getFriendSocialActivitySubtitle(
+                {
+                  ghostMode: !!f.ghost_mode,
+                  updatedAt: p?.updated_at,
+                  venueId: p?.venue_id ?? null,
+                  venueName: p?.venue_id ? venueById[p.venue_id] ?? null : null,
+                },
+                Date.now()
+              );
+              const subtitle = `@${f.username} · ${status}`;
+              return (
+                <div key={f.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+                  <Avatar src={f.avatar_url?.trim() || null} fallbackText={f.display_name || f.username} size="md" className="shrink-0" />
+                  <button onClick={() => f.username && router.push(`/u/${f.username}`)} className="min-w-0 flex-1 text-left">
+                    <div className="truncate text-sm font-semibold">{f.display_name || f.username}</div>
+                    <div className="truncate text-xs text-white/45">{subtitle}</div>
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </section>
+        )}
+
+        {msg ? <div className="px-3 text-sm text-red-400">{msg}</div> : null}
+      </div>
+      )}
+    </div>
+  );
+}
+
+export default function FriendsPage() {
+  return (
+    <Suspense
+      fallback={<div className="min-h-[100dvh] w-screen bg-primary" aria-hidden />}
+    >
+      <FriendsPageContent />
+    </Suspense>
+  );
+}
