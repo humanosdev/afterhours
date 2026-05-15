@@ -1,68 +1,49 @@
-export const RECENT_WINDOW_MS = 60 * 60_000;
-
 /**
- * Venue heat counts, map participation bands, distance thresholds that mean “still around this spot.”
- * Keep this **looser** so dots don’t flicker off while someone is walking nearby but pings slowly.
+ * Curated public API — explicit re-exports from `@intencity/shared` only (no `export *`).
+ * Social copy helpers remain local below.
  */
-export const MAP_ACTIVITY_WINDOW_MS = 20 * 60_000;
 
-/** @deprecated Use MAP_ACTIVITY_WINDOW_MS — alias for existing imports */
-export const LIVE_WINDOW_MS = MAP_ACTIVITY_WINDOW_MS;
+export {
+  RECENT_WINDOW_MS,
+  MAP_ACTIVITY_WINDOW_MS,
+  LIVE_WINDOW_MS,
+  FRIEND_ONLINE_BADGE_MS,
+  MAP_FALLBACK_CENTER_LAT,
+  MAP_FALLBACK_CENTER_LNG,
+  isLikelyMapFallbackPresence,
+  isValidCoordinatePair,
+  getPresenceFreshness,
+  isPresenceLive,
+  isFriendOnlineNow,
+  isPresenceRecent,
+} from "@intencity/shared";
 
-/**
- * Friend-facing “Online now” label / pulse ring / profile status — **stricter** than venue math.
- * Does **not** change who counts toward venue heat (`isPresenceLive` still uses MAP_ACTIVITY_WINDOW_MS).
+export type { PresenceFreshness } from "@intencity/shared";
+
+import {
+  isFriendOnlineNow,
+  isPresenceLive,
+  isPresenceRecent,
+} from "@intencity/shared";
+
+/*
+ * Phase 1B-large-lite transition — pre-shim inline (db59947 parity reference).
+ *
+ * export const RECENT_WINDOW_MS = 60 * 60_000;
+ * export const MAP_ACTIVITY_WINDOW_MS = 20 * 60_000;
+ * export const LIVE_WINDOW_MS = MAP_ACTIVITY_WINDOW_MS;
+ * export const FRIEND_ONLINE_BADGE_MS = 4 * 60_000;
+ * export const MAP_FALLBACK_CENTER_LAT = 39.9526;
+ * export const MAP_FALLBACK_CENTER_LNG = -75.1636;
+ *
+ * export function isLikelyMapFallbackPresence(lat: number, lng: number): boolean { ... }
+ * export type PresenceFreshness = "live" | "recent" | "stale";
+ * export function isValidCoordinatePair(...) { ... }
+ * export function getPresenceFreshness(...) { ... }
+ * export function isPresenceLive(...) { ... }
+ * export function isFriendOnlineNow(...) { ... }
+ * export function isPresenceRecent(...) { ... }
  */
-export const FRIEND_ONLINE_BADGE_MS = 4 * 60_000;
-
-/** Matches `map/page.tsx` initial Mapbox center — rows without real GPS often sit here and stack as one cluster. */
-export const MAP_FALLBACK_CENTER_LAT = 39.9526;
-export const MAP_FALLBACK_CENTER_LNG = -75.1636;
-
-/** True when coords are effectively the map default (DB placeholder / missing GPS), not a real pin. */
-export function isLikelyMapFallbackPresence(lat: number, lng: number): boolean {
-  const eps = 0.00045;
-  return (
-    Math.abs(lat - MAP_FALLBACK_CENTER_LAT) < eps &&
-    Math.abs(lng - MAP_FALLBACK_CENTER_LNG) < eps
-  );
-}
-
-export type PresenceFreshness = "live" | "recent" | "stale";
-
-export function isValidCoordinatePair(lat: number | null | undefined, lng: number | null | undefined): boolean {
-  if (typeof lat !== "number" || typeof lng !== "number") return false;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-}
-
-/** “Live / recent / stale” tiers use **map activity** timing (includes venue & heat logic). */
-export function getPresenceFreshness(updatedAt: string | null | undefined, nowMs = Date.now()): PresenceFreshness {
-  if (!updatedAt) return "stale";
-  const ts = new Date(updatedAt).getTime();
-  if (!Number.isFinite(ts)) return "stale";
-  const age = Math.max(0, nowMs - ts);
-  if (age <= MAP_ACTIVITY_WINDOW_MS) return "live";
-  if (age <= RECENT_WINDOW_MS) return "recent";
-  return "stale";
-}
-
-/** Venue counts, heatmap “people here,” notifications nearby — **map activity window** (~20 min). */
-export function isPresenceLive(updatedAt: string | null | undefined, nowMs = Date.now()): boolean {
-  return getPresenceFreshness(updatedAt, nowMs) === "live";
-}
-
-/** Friends strip “Online now”, pulse ring, profile **Online** — **badge window** (~4 min). */
-export function isFriendOnlineNow(updatedAt: string | null | undefined, nowMs = Date.now()): boolean {
-  if (!updatedAt) return false;
-  const ts = new Date(updatedAt).getTime();
-  if (!Number.isFinite(ts)) return false;
-  return nowMs - ts <= FRIEND_ONLINE_BADGE_MS;
-}
-
-export function isPresenceRecent(updatedAt: string | null | undefined, nowMs = Date.now()): boolean {
-  return getPresenceFreshness(updatedAt, nowMs) === "recent";
-}
 
 /**
  * Hub / Friends list / any “@user · …” line: one ladder so **Online** (`isFriendOnlineNow`)
