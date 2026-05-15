@@ -26,6 +26,60 @@ Presence on web today is **best-effort PWA** (12s shell pings, map `watchPositio
 
 ---
 
+## UX source of truth (critical)
+
+| | |
+|---|---|
+| **`apps/web` (PWA)** | **Source of truth** for final UX, navigation structure, information hierarchy, brand feel, and product behavior |
+| **`apps/mobile`** | **Phased read-only scaffold** — temporary shells until features migrate; **not** an independent product redesign |
+
+**Do not** treat the current native tab layout as long-term navigation. **Do not** invent alternate information architecture on native. Native should **gradually inherit** the production web/PWA structure as each capability ships in a planned migration phase.
+
+### Production web/PWA navigation (target model)
+
+Implemented in `apps/web/src/components/BottomNav.tsx` and related shell:
+
+| Surface | Role |
+|---------|------|
+| **Hub** (`/hub`) | Home feed — stories, venue energy, social pulse |
+| **Map** (`/map`) | **Primary core surface** — map-centered going-out experience |
+| **Create** (center) | Stories / share capture — not a generic “fifth tab” label |
+| **Chat** (`/chat`) | Messages and conversation |
+| **Profile** (`/profile`) | Account, moments, settings entry |
+| **Search** | Integrated into hub, map, and overlays — **not** necessarily its own permanent bottom tab |
+
+Visual model on web: **floating / glass** bottom control (`ah-glass-control`), icon-only items, map as the anchor of the product.
+
+### Native navigation today (temporary — Phase 2E scaffold)
+
+| Native tab | Status |
+|------------|--------|
+| Home | Placeholder — rough stand-in for hub/feed concepts |
+| Search | Placeholder — discovery shell; **web does not mirror this as a fixed tab** |
+| Activity | Placeholder — rough stand-in for chat/notifications/stories activity |
+| Profile | Partially real (Phase 2F: read-only own `profiles` row) |
+
+These four tabs exist **only** to exercise auth, routing, and phased read-only surfaces. A future phase will **replace** this bar with web-parity navigation (hub, map, create, chat, profile + integrated search), not extend the current four-tab model as canonical.
+
+### Long-term native UX convergence
+
+When map and social features migrate, native should match web/PWA:
+
+- **Map-centered** experience (same primary surface as production)
+- **Floating / glass** bottom nav aligned with web tokens and interaction model
+- **Integrated search** (overlays/surfaces — same as web, not a bolt-on permanent tab unless web does)
+- **Same information hierarchy** and Intencity brand feel
+- **Inherited behavior** from existing web flows — not parallel “native-only” product decisions
+
+### Boundaries (unchanged by UX work)
+
+- Web/PWA still owns **live** production presence and map logic until an explicit presence phase
+- **No** `user_presence` writes on native yet
+- **No** changes to `@intencity/shared` timing / activity constants without a cross-platform plan
+- **No** accidental navigation divergence — if native nav changes, it must be an explicit phase tied to web parity, not drive-by tab edits
+
+---
+
 ## What is complete today
 
 ### Phase 0 — monorepo (`e066023`)
@@ -58,27 +112,28 @@ Phase 1 git range (for `git log` / `git diff`):
 
 ---
 
-## Current mobile status (post–2E)
+## Current mobile status (post–2F)
 
 | | |
 |---|---|
 | **Expo** | SDK 54, expo-router, Expo Go verified |
 | **Auth** | Supabase email/password, SecureStore |
 | **UI** | Phase 2C — dark Intencity shell, safe areas, login |
-| **Navigation** | Phase 2E — bottom tabs: Home, Search, Activity, Profile (read-only placeholders) |
-| **Shared** | Smoke import on Home tab only — not production presence math in use |
+| **Navigation** | Phase 2E — **temporary** bottom tabs (Home / Search / Activity / Profile); **not** final IA — see [UX source of truth](#ux-source-of-truth-critical) |
+| **Data** | Phase 2F — read-only own `profiles` row on Profile tab |
+| **Shared** | Smoke import on Home tab only — **presence windows unchanged** |
 | **Authority** | **Non-authoritative** — web owns `user_presence` |
 
 **Production UX today** is entirely on **`apps/web` (PWA):** map, venues, stories/shares, chat, profile, friends, notifications, presence.
 
 ---
 
-## Current architecture (as of Phase 2E)
+## Current architecture (as of Phase 2F)
 
 ```
 packages/shared/     ← deterministic engine (math, windows, zone state)
 apps/web/            ← production runtime (GPS, DB, notifications, full product UI, PWA)
-apps/mobile/         ← native read-only product shell (auth + tab placeholders)
+apps/mobile/         ← native shell + read-only own profile (profiles table only)
 ```
 
 ### `packages/shared` owns
@@ -121,7 +176,8 @@ Phase 2 prepares native/mobile **without** changing production presence behavior
 | **2C** | ✅ | Native shell polish — **no** new product behavior |
 | **2D** | ✅ | Docs + audit checkpoint |
 | **2E** | ✅ | Read-only product shell — bottom tabs + placeholder surfaces |
-| **2F+** | Future | Read-only Supabase data, gated presence, map — **explicit plan required** |
+| **2F** | ✅ | Read-only own `profiles` hydration on Profile tab |
+| **2G+** | Future | More read-only data, gated presence, map — **explicit plan required** |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md).
 
@@ -233,5 +289,6 @@ Web continues using existing Next.js `NEXT_PUBLIC_*` and root `.env.local`.
 1. Read [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) before editing presence-related web files.
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) before any `user_presence` write on a new platform.
 3. Do not conflate **migration Phase 2** with **V1 launch plan** moderation phases in `V1_LAUNCH_PLAN.md`.
-4. Post–2E: **no** `expo-location`, map, `user_presence`, or Supabase table reads on mobile without a new phase plan.
-5. Web/PWA = production product; mobile = read-only shell until a later phase wires data or presence.
+4. Post–2F: **no** `expo-location`, map, or `user_presence` on mobile; Supabase reads limited to own `profiles` until a new phase plan.
+5. Web/PWA = production product **and UX source of truth**; mobile = read-only scaffold — **do not** cement the current four-tab layout as long-term.
+6. Native nav/IA changes require explicit web-parity intent — see [UX source of truth](#ux-source-of-truth-critical).

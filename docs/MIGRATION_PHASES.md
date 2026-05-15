@@ -2,26 +2,42 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Phase 2E complete** — native read-only product shell (bottom tabs + placeholder surfaces). **No** location, map, Supabase table reads, or `user_presence` without an explicit planned phase and approval.
+**Current phase:** **Phase 2F complete** — read-only profile hydration on native Profile tab. **No** `user_presence`, location, or reads beyond current user's `profiles` row without an explicit planned phase.
 
 ---
 
-## Current mobile status (as of Phase 2E)
+## Current mobile status (as of Phase 2F)
 
 | Area | Status |
 |------|--------|
 | **Expo scaffold** | ✅ `apps/mobile` — Expo SDK 54, expo-router, dev client config, EAS skeleton |
 | **Supabase auth** | ✅ Email/password, SecureStore session, sign in / sign out |
 | **Native shell UI** | ✅ Phase 2C — dark Intencity theme, safe areas, loading / login |
-| **Product navigation** | ✅ Phase 2E — bottom tabs: Home, Search, Activity, Profile (read-only placeholders) |
-| **`@intencity/shared`** | ✅ Harmless smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) |
+| **Product navigation** | ✅ Phase 2E — **temporary** tabs (not final IA); web/PWA nav is source of truth |
+| **Profile hydration** | ✅ Phase 2F — read-only `profiles` row for signed-in user on Profile tab |
+| **`@intencity/shared`** | ✅ Harmless smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) — **windows unchanged** |
 | **Production presence authority** | ❌ **Mobile is not authoritative** — web/PWA only |
 | **`expo-location` / GPS** | ❌ Not installed |
 | **`user_presence` reads/writes** | ❌ None |
-| **Supabase table reads** | ❌ None (auth session/user only) |
+| **Supabase table reads** | ✅ `profiles` only (current user, read-only) |
 | **Map / hub / chat / stories** | ❌ Shell placeholders only — **web/PWA has production UX** |
 
 **Production product today:** `apps/web` (PWA) — map, venues, stories/shares, chat, profile, friends, notifications, and **all** physical presence writes.
+
+### UX / navigation (do not confuse with production)
+
+**Web/PWA is the source of truth** for final UX and navigation. **`apps/mobile` is a phased read-only scaffold** — not a parallel product design.
+
+| Web/PWA (production) | Native today (temporary 2E shell) |
+|----------------------|-----------------------------------|
+| Hub feed (`/hub`) | “Home” placeholder |
+| **Map** (primary core, `/map`) | Not on native yet |
+| Create / share (center action) | Not on native yet |
+| Chat (`/chat`) | “Activity” placeholder |
+| Profile (`/profile`) | Profile tab (+ 2F read-only hydration) |
+| Search (integrated in surfaces) | “Search” tab — **scaffold only**, not web IA |
+
+Long-term: native **converges toward** web — map-centered, floating/glass bottom nav, integrated search, same hierarchy and brand. **Do not** assume or extend the current four native tabs as permanent. Details: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
 
 ---
 
@@ -36,9 +52,10 @@
 | **2C** | Native shell polish | **Complete** | Branded dark UI, safe areas, loading/login/home — auth logic unchanged |
 | **2D** | Docs + audit checkpoint | **Complete** | Boundaries reconfirmed; audits pass — **no app logic** |
 | **2E** | Native read-only product shell | **Complete** | Bottom tabs + placeholder Home/Search/Activity/Profile — **no data, no GPS** |
-| **2F+** | Native data & presence | **Future** | Read-only Supabase surfaces, then gated presence — **requires explicit plan** |
+| **2F** | Read-only profile hydration | **Complete** | Profile tab reads current user's `profiles` row — **no edit, no presence** |
+| **2G+** | More read-only data & presence | **Future** | Friends, venues, `user_presence` display, then gated writes — **requires explicit plan** |
 
-**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **What shipped as 2C** is the polished auth shell only. **2E** adds product-shaped navigation without backend reads. Presence beta and map are **2F+** and must be planned before coding.
+**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **2F** is the first Supabase product read (own profile only). Presence beta and map remain **2G+** and must be planned before coding.
 
 ---
 
@@ -53,7 +70,7 @@ Do **not** add any of the following without a written phase plan, presence-owner
 - `user_presence` **writes** (except in a gated beta phase per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md))
 - Changing production presence ownership
 
-**Safe without a new phase:** mobile UI polish and read-only shell layout (2E-style) that does not touch location, map, presence tables, Supabase `.from()` reads, or web sacred files.
+**Safe without a new phase:** mobile UI polish and read-only shell layout (2E-style) that does not touch location, map, presence tables, or web sacred files. **2F allows** read-only `profiles` for the signed-in user only.
 
 ---
 
@@ -155,7 +172,7 @@ Artifacts: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md), [PRESENCE_OWNERSH
 
 **What changed:**
 
-- Bottom tab navigator: **Home**, **Search**, **Activity**, **Profile** (`app/(app)/_layout.tsx`)
+- Bottom tab navigator: **Home**, **Search**, **Activity**, **Profile** (`app/(app)/_layout.tsx`) — **migration scaffold only**; production web uses hub / map / create / chat / profile (search integrated, not a fixed tab)
 - Placeholder tab screens with Phase 2E copy (no Supabase table queries)
 - **Home:** live city / venues + friends preview shell; subtle `@intencity/shared` smoke
 - **Search:** friends/venues discovery shell
@@ -190,13 +207,51 @@ Artifacts: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md), [PRESENCE_OWNERSH
 
 ---
 
-## Phase 2F+ — Future native work (not started)
+## Phase 2F — Read-only profile hydration ✅
+
+**Goal:** Safely hydrate native with read-only Supabase product data — **signed-in user's `profiles` row only**.
+
+**What changed:**
+
+- `fetchMyProfile` + `useMyProfile` — `profiles` select for `auth.user.id` only
+- Profile tab: username, display name, avatar, bio, member since; loading / empty / error states
+- Auth email/user id fallback when row missing or fetch fails
+- **No** profile edit, avatar upload, or other table reads
+
+**What did not change:**
+
+- No `user_presence` reads or writes
+- No `expo-location`, Mapbox, background tracking, geofencing, or push
+- No friends, venues, stories, messages, or notifications reads
+- No changes to `packages/shared` presence timing/windows
+- No changes to `apps/web/src` or `packages/shared`
+
+**Verify:** Expo Go — Profile tab shows hydrated row or auth fallback; `npx tsc --noEmit`
+
+### Phase 2F audit results
+
+| Check | Result |
+|-------|--------|
+| `npm run test:shared` | ✅ 24/24 pass |
+| `cd apps/mobile && npx tsc --noEmit` | ✅ Pass |
+| `expo-location` in `apps/mobile` source/deps | ✅ Not present |
+| `user_presence` in `apps/mobile/src` | ✅ Not present |
+| `user_presence` in `apps/mobile/app` | ✅ Placeholder copy only (`home.tsx`, `profile.tsx`) |
+| `.from(` in `apps/mobile/src` | ✅ `profiles` only (`fetchMyProfile.ts`) |
+| `git diff HEAD -- apps/web/src` | ✅ No changes vs HEAD |
+| `git diff HEAD -- packages/shared` | ✅ No changes vs HEAD |
+
+**Manual:** Profile tab — data if row exists; auth fallback if not; sign out works.
+
+---
+
+## Phase 2G+ — Future native work (not started)
 
 Planned direction (order and numbering TBD when approved):
 
 | Topic | Notes |
 |-------|--------|
-| **Read-only mobile data** | Read venues, friends, `user_presence` for display — still **no** mobile writes |
+| **More read-only mobile data** | Friends, venues, optional `user_presence` **display** — still **no** mobile writes |
 | **Foreground presence beta** | Gated `user_presence` writes; requires schema/flag per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
 | **Background native presence** | Confidence model, OS permissions, likely schema |
 | **Web write retirement** | Web stops GPS upserts; mobile becomes authority for opted-in users |
@@ -208,17 +263,18 @@ See [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) and [PRESENCE_OWNERSHIP.m
 ## Architecture diagram
 
 ```
-Today (post–2E):
+Today (post–2F):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
 
-  apps/mobile ──auth only──► Supabase (auth session)
+  apps/mobile ──auth──► Supabase (auth session)
        │
-       ├──► Tab shell (Home / Search / Activity / Profile) — placeholders only
+       ├──► profiles (read own row only)
+       ├──► Tab shell — Home/Search/Activity placeholders; Profile hydrated
        └──► @intencity/shared (display smoke on Home)
 
-Target (2F+):
+Target (2G+ presence):
   apps/mobile ──writes──► user_presence (gated)
   apps/web ──reads──► viewer + social
 ```

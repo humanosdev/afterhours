@@ -12,22 +12,22 @@
 
 ---
 
-## Current state (post–2E)
+## Current state (post–2F)
 
 | Layer | Owner |
 |-------|--------|
-| **Deterministic rules** | `packages/shared` — zone math, windows, heat ramp, distance |
+| **Deterministic rules** | `packages/shared` — zone math, windows, heat ramp, distance (**unchanged in 2F**) |
 | **Side effects** | `apps/web` only — GPS, Supabase presence upserts, notifications |
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile** | **Auth session only** — no `user_presence` reads/writes, no `expo-location`, no Supabase table reads |
+| **Mobile** | Auth + **read-only own `profiles` row** — no `user_presence`, no `expo-location` |
 | **Mobile shared usage** | Display smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
-| **Mobile navigation** | Phase 2E tab shell (Home / Search / Activity / Profile) — placeholders only |
+| **Mobile navigation** | Phase 2E tabs; Profile tab hydrated in Phase 2F |
 
-`apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or venue data.
+`apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or venue data and does **not** read `user_presence`.
 
-**Product split:** Web/PWA = map, venues, stories, chat, profile, presence. Mobile = read-only product shell (no live data).
+**Product split:** Web/PWA = map, venues, stories, chat, full profile/presence — **and** source of truth for navigation/UX. Mobile = read-only scaffold + own profile display; temporary native tabs are not final IA ([NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical)).
 
 ---
 
@@ -131,13 +131,13 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
-| 2A–2E | No | Yes | ✅ Complete (docs, scaffold, shell polish, audit, tab shell) |
-| 2F+ read-only data | No | Yes | Future — explicit plan |
-| 2F+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
+| 2A–2F | No | Yes | ✅ Complete (through read-only own profile) |
+| 2G+ read-only data | No | Yes | Future — friends/venues/presence display |
+| 2G+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` reads or writes through Phase 2E.** Phase 2E added tab navigation and placeholder surfaces only; no `expo-location`.
+**No mobile `user_presence` reads or writes through Phase 2F.** Phase 2F adds read-only `profiles` for the signed-in user only; no `expo-location`.
 
 ---
 

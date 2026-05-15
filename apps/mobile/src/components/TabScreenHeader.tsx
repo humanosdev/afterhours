@@ -5,12 +5,13 @@ import { colors } from "../theme/colors";
 type TabScreenHeaderProps = {
   title: string;
   subtitle: string;
+  phaseLabel?: string;
 };
 
-export function TabScreenHeader({ title, subtitle }: TabScreenHeaderProps) {
+export function TabScreenHeader({ title, subtitle, phaseLabel }: TabScreenHeaderProps) {
   return (
     <View style={styles.wrap}>
-      <PhaseBadge />
+      <PhaseBadge label={phaseLabel} />
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>
     </View>

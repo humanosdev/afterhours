@@ -8,7 +8,11 @@ import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 
 const TAB_ICON_SIZE = 24;
-/** Content row height above the home-indicator inset (icon-only, matches web/PWA). */
+/**
+ * Temporary Phase 2E tab bar (Home / Search / Activity / Profile).
+ * NOT long-term IA — production web uses hub / map / create / chat / profile.
+ * See docs/NATIVE_ARCHITECTURE.md § UX source of truth.
+ */
 const TAB_BAR_CONTENT_HEIGHT = 52;
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];

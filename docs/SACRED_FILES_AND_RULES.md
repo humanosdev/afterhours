@@ -13,7 +13,7 @@
 3. **`packages/shared`** changes affect future mobile + web — require `npm run test:shared`.
 4. **Do not enable mobile `user_presence` writes** without gates in [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md).
 5. Phase 1 intentionally **did not** touch map or AppShell — keep that discipline until web write retirement.
-6. **Post–2E:** `apps/mobile` may change for UI-only / read-only shell work; do **not** add location, Supabase table reads, or presence there without a new phase plan.
+6. **Post–2F:** `apps/mobile` may read **own `profiles` row** only; do **not** add location, `user_presence`, or other table reads without a new phase plan.
 
 ---
 
@@ -178,14 +178,15 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 ---
 
-## `apps/mobile` (post–2E)
+## `apps/mobile` (post–2F)
 
 | | |
 |---|---|
-| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2E bottom tabs + placeholder surfaces, `@intencity/shared` smoke on Home, Metro monorepo config |
+| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2E tabs, Phase 2F read-only own profile, `@intencity/shared` smoke on Home, Metro monorepo config |
 | **Does not own** | `user_presence`, geolocation, live map, hub/chat/stories data, notifications delivery |
-| **Change when** | UI-only / read-only shell polish (2E-style) or an **approved** phase plan for Supabase reads or presence |
-| **Avoid** | `expo-location`, Supabase `.from()` table reads, presence upserts, “quick map screen” without phase approval |
+| **Change when** | UI polish, own-profile read (2F), or an **approved** phase plan for more reads or presence |
+| **Avoid** | `expo-location`, reads beyond approved tables, `user_presence` I/O, “quick map screen” without phase approval |
+| **Navigation** | Current four native tabs are **temporary** — web/PWA (`BottomNav.tsx`) is UX source of truth; do not treat native tabs as long-term IA |
 
 ---
 
@@ -193,7 +194,8 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2E** = no data/presence work without plan).
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2F** = own profile read only; no presence without plan).
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
 3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
 4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.
+5. Do not redesign native navigation independently — inherit web/PWA structure; see [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
