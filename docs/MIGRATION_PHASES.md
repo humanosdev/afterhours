@@ -2,22 +2,24 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Post–2D audit checkpoint** — mobile shell is polished and verified; **no further native feature work** (location, map, presence reads/writes) without an explicit planned phase and approval.
+**Current phase:** **Phase 2E complete** — native read-only product shell (bottom tabs + placeholder surfaces). **No** location, map, Supabase table reads, or `user_presence` without an explicit planned phase and approval.
 
 ---
 
-## Current mobile status (as of Phase 2D checkpoint)
+## Current mobile status (as of Phase 2E)
 
 | Area | Status |
 |------|--------|
 | **Expo scaffold** | ✅ `apps/mobile` — Expo SDK 54, expo-router, dev client config, EAS skeleton |
 | **Supabase auth** | ✅ Email/password, SecureStore session, sign in / sign out |
-| **Native shell UI** | ✅ Phase 2C — dark Intencity theme, safe areas, loading / login / home |
-| **`@intencity/shared`** | ✅ Harmless smoke on home (`MAP_ACTIVITY_WINDOW_MS`, `isValidCoordinatePair`) |
+| **Native shell UI** | ✅ Phase 2C — dark Intencity theme, safe areas, loading / login |
+| **Product navigation** | ✅ Phase 2E — bottom tabs: Home, Search, Activity, Profile (read-only placeholders) |
+| **`@intencity/shared`** | ✅ Harmless smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) |
 | **Production presence authority** | ❌ **Mobile is not authoritative** — web/PWA only |
 | **`expo-location` / GPS** | ❌ Not installed |
 | **`user_presence` reads/writes** | ❌ None |
-| **Map / hub / chat / stories** | ❌ Not on mobile — **web/PWA has production UX** |
+| **Supabase table reads** | ❌ None (auth session/user only) |
+| **Map / hub / chat / stories** | ❌ Shell placeholders only — **web/PWA has production UX** |
 
 **Production product today:** `apps/web` (PWA) — map, venues, stories/shares, chat, profile, friends, notifications, and **all** physical presence writes.
 
@@ -33,9 +35,10 @@
 | **2B** | Mobile scaffold | **Complete** | `apps/mobile`, auth, `@intencity/shared` smoke, Expo Go verified |
 | **2C** | Native shell polish | **Complete** | Branded dark UI, safe areas, loading/login/home — auth logic unchanged |
 | **2D** | Docs + audit checkpoint | **Complete** | Boundaries reconfirmed; audits pass — **no app logic** |
-| **2E+** | Native product features | **Future** | Read-only surfaces, then gated presence — **requires explicit plan** |
+| **2E** | Native read-only product shell | **Complete** | Bottom tabs + placeholder Home/Search/Activity/Profile — **no data, no GPS** |
+| **2F+** | Native data & presence | **Future** | Read-only Supabase surfaces, then gated presence — **requires explicit plan** |
 
-**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **What shipped as 2C** is the polished auth shell only. The next **implementation** phases (read-only data, presence beta, etc.) are **2E+** and must be planned before coding.
+**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **What shipped as 2C** is the polished auth shell only. **2E** adds product-shaped navigation without backend reads. Presence beta and map are **2F+** and must be planned before coding.
 
 ---
 
@@ -50,7 +53,7 @@ Do **not** add any of the following without a written phase plan, presence-owner
 - `user_presence` **writes** (except in a gated beta phase per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md))
 - Changing production presence ownership
 
-**Safe without a new phase:** mobile UI polish that does not touch location, map, presence tables, or web sacred files.
+**Safe without a new phase:** mobile UI polish and read-only shell layout (2E-style) that does not touch location, map, presence tables, Supabase `.from()` reads, or web sacred files.
 
 ---
 
@@ -89,7 +92,7 @@ Artifacts: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md), [PRESENCE_OWNERSH
 
 - `apps/mobile` — Expo + expo-router + expo-dev-client + EAS skeleton
 - Supabase auth (`signInWithPassword`) with SecureStore
-- Routes: `/login`, `/home` (auth user id/email only)
+- Routes: `/login`, tab shell under `/(app)/` (`home`, `search`, `activity`, `profile`)
 - `@intencity/shared` smoke on home
 - Bundle ID: `com.intencity.app`
 - Metro monorepo config (singleton React resolution)
@@ -146,13 +149,54 @@ Artifacts: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md), [PRESENCE_OWNERSH
 
 ---
 
-## Phase 2E+ — Future native work (not started)
+## Phase 2E — Native read-only product shell ✅
+
+**Goal:** Make the native app **structurally resemble** the Intencity product (tabs + placeholder surfaces) while remaining completely **non-authoritative**.
+
+**What changed:**
+
+- Bottom tab navigator: **Home**, **Search**, **Activity**, **Profile** (`app/(app)/_layout.tsx`)
+- Placeholder tab screens with Phase 2E copy (no Supabase table queries)
+- **Home:** live city / venues + friends preview shell; subtle `@intencity/shared` smoke
+- **Search:** friends/venues discovery shell
+- **Activity:** stories/notifications shell
+- **Profile:** auth user email/id + sign out (moved from old single home screen)
+- Reusable shell components: `ShellCard`, `ShellListRow`, `TabScreenHeader`
+- `Screen` supports `edges` prop for tab-safe safe areas
+- Auth guard unchanged: signed out → login; signed in → `/home` tab shell
+
+**What did not change:**
+
+- No `user_presence` reads or writes
+- No `expo-location`, background tracking, geofencing, Mapbox, or push
+- No Supabase `.from()` table reads (auth session only)
+- No changes to `apps/web/src` or `packages/shared`
+
+**Verify:** Expo Go — login → four tabs → profile sign out; `npx tsc --noEmit` in `apps/mobile`
+
+### Phase 2E audit results
+
+| Check | Result |
+|-------|--------|
+| `npm run test:shared` | ✅ 24/24 pass |
+| `cd apps/mobile && npx tsc --noEmit` | ✅ Pass |
+| `expo-location` in `apps/mobile` source/deps | ✅ Not present |
+| `user_presence` in `apps/mobile/app` + `src` | ✅ Not present (placeholder copy in `home.tsx` only) |
+| `.from(` in `apps/mobile/app` + `src` | ✅ None |
+| `git diff HEAD -- apps/web/src` | ✅ No changes vs HEAD |
+| `git diff HEAD -- packages/shared` | ✅ No changes vs HEAD |
+
+**Manual:** Expo Go — login → bottom tabs (all four) → profile shows email/id → sign out → login.
+
+---
+
+## Phase 2F+ — Future native work (not started)
 
 Planned direction (order and numbering TBD when approved):
 
 | Topic | Notes |
 |-------|--------|
-| **Read-only mobile surfaces** | Optional: read venues, friends, `user_presence` for display — still **no** mobile writes |
+| **Read-only mobile data** | Read venues, friends, `user_presence` for display — still **no** mobile writes |
 | **Foreground presence beta** | Gated `user_presence` writes; requires schema/flag per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
 | **Background native presence** | Confidence model, OS permissions, likely schema |
 | **Web write retirement** | Web stops GPS upserts; mobile becomes authority for opted-in users |
@@ -164,16 +208,17 @@ See [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) and [PRESENCE_OWNERSHIP.m
 ## Architecture diagram
 
 ```
-Today (post–2C / 2D):
+Today (post–2E):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
 
   apps/mobile ──auth only──► Supabase (auth session)
        │
-       └──► @intencity/shared (display smoke only)
+       ├──► Tab shell (Home / Search / Activity / Profile) — placeholders only
+       └──► @intencity/shared (display smoke on Home)
 
-Target (2F+ in prior plans):
+Target (2F+):
   apps/mobile ──writes──► user_presence (gated)
   apps/web ──reads──► viewer + social
 ```

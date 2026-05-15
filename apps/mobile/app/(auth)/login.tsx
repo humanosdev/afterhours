@@ -59,10 +59,10 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.hero}>
-          <PhaseBadge />
+          <PhaseBadge label="Phase 2E · Sign in" />
           <IntencityWordmark
             size="large"
-            subtitle="Sign in with your Intencity account. Native app shell only — no map or presence yet."
+            subtitle="Sign in with your Intencity account. Read-only product shell — no map or presence on mobile."
           />
         </View>
 
@@ -100,7 +100,7 @@ export default function LoginScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Web still owns live presence. This build does not write location or venue data.
+          Web/PWA still owns live presence. Phase 2E adds tabs only — no location or venue data.
         </Text>
       </KeyboardAvoidingView>
     </Screen>

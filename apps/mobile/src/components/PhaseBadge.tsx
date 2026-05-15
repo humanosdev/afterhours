@@ -1,11 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 
-export function PhaseBadge() {
+type PhaseBadgeProps = {
+  label?: string;
+};
+
+export function PhaseBadge({ label = "Phase 2E · Read-only shell" }: PhaseBadgeProps) {
   return (
     <View style={styles.badge}>
       <View style={styles.dot} />
-      <Text style={styles.label}>Phase 2C · Native scaffold</Text>
+      <Text style={styles.label}>{label}</Text>
     </View>
   );
 }

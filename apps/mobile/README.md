@@ -1,8 +1,8 @@
-# Intencity mobile (Phase 2C — shell complete)
+# Intencity mobile (Phase 2E — read-only product shell)
 
-Expo native shell — **auth only**, Intencity-branded UI (Phase 2C). **Not** the production app: map, venues, stories, chat, and presence live on **web/PWA** (`apps/web`).
+Expo native app — **auth + read-only product shell** (Phase 2E bottom tabs). **Not** the production app: map, venues, stories, chat, and presence live on **web/PWA** (`apps/web`).
 
-Does not write `user_presence` or use location.
+Does not write `user_presence`, read Supabase tables (except auth), or use location.
 
 ## Environment
 
@@ -44,7 +44,7 @@ On your **iPhone**:
 1. Install **Expo Go** from the App Store.
 2. Ensure your phone and Mac are on the **same Wi‑Fi**.
 3. Scan the **QR code** shown in the terminal (Camera app or Expo Go).
-4. Test: **login** → **home** (user id/email + shared smoke line) → **sign out**.
+4. Test: **login** → **bottom tabs** (Home, Search, Activity, Profile) → **Profile** shows email/user id → **sign out**.
 
 If the app does not load over LAN (common on guest networks or strict firewalls):
 
@@ -58,12 +58,15 @@ Then scan the new QR code (tunnel is slower but works across networks).
 
 - Supabase email/password sign-in
 - Session persistence (SecureStore)
-- `@intencity/shared` import on home screen
+- Bottom tab navigation (four tabs)
+- Profile tab: auth user email/id + sign out
+- `@intencity/shared` smoke line on Home tab
 
 ### What this phase does **not** test
 
 - Maps, GPS, or background location
 - `user_presence` reads or writes
+- Supabase table queries (venues, friends, stories, notifications)
 - Push notifications
 - Physical presence or geofencing
 
@@ -75,7 +78,7 @@ npm run dev:mobile          # from repo root
 
 Or from this directory: `npm run start`.
 
-- **Expo Go** is enough for the current auth shell (Phase 2B/2C).
+- **Expo Go** is enough for the current auth + tab shell (Phase 2B–2E).
 - **Development build** (`expo run:ios` / `android`) is for later native modules (Mapbox, background location, etc.).
 
 ## Bundle ID
@@ -84,7 +87,7 @@ Or from this directory: `npm run start`.
 
 ## Monorepo
 
-`@intencity/shared` is imported from `packages/shared` via Metro (`metro.config.js`). Home screen shows a harmless shared smoke line.
+`@intencity/shared` is imported from `packages/shared` via Metro (`metro.config.js`). Home tab shows a harmless shared smoke line.
 
 ## Troubleshooting
 
@@ -113,15 +116,16 @@ Root `.gitignore` ignores all `node_modules/` and `.expo/`. Prefer **`npm instal
 
 ### Expo Go vs dev client
 
-Phase 2B auth shell works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
+Phase 2B–2E shell works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
 
-## Current boundaries (post–2D)
+## Current boundaries (post–2E)
 
 | Allowed | Not allowed without new phase plan |
 |---------|-------------------------------------|
 | Auth UI polish | `expo-location`, background GPS |
 | Sign in / sign out | `user_presence` reads or writes |
-| Shared smoke display | Map, hub, chat, stories |
+| Tab shell + placeholder screens | Supabase `.from()` table reads |
+| Shared smoke on Home | Map, live hub/chat/stories data |
 | | Push, geofencing |
 
 **Web** remains the only **physical presence** writer. See [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md) and [docs/PRESENCE_OWNERSHIP.md](../../docs/PRESENCE_OWNERSHIP.md).

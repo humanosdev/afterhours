@@ -58,26 +58,27 @@ Phase 1 git range (for `git log` / `git diff`):
 
 ---
 
-## Current mobile status (post–2C / 2D)
+## Current mobile status (post–2E)
 
 | | |
 |---|---|
 | **Expo** | SDK 54, expo-router, Expo Go verified |
 | **Auth** | Supabase email/password, SecureStore |
-| **UI** | Phase 2C — dark Intencity shell, safe areas, login/home |
-| **Shared** | Smoke import only — not production presence math in use |
+| **UI** | Phase 2C — dark Intencity shell, safe areas, login |
+| **Navigation** | Phase 2E — bottom tabs: Home, Search, Activity, Profile (read-only placeholders) |
+| **Shared** | Smoke import on Home tab only — not production presence math in use |
 | **Authority** | **Non-authoritative** — web owns `user_presence` |
 
 **Production UX today** is entirely on **`apps/web` (PWA):** map, venues, stories/shares, chat, profile, friends, notifications, presence.
 
 ---
 
-## Current architecture (as of Phase 2D)
+## Current architecture (as of Phase 2E)
 
 ```
 packages/shared/     ← deterministic engine (math, windows, zone state)
 apps/web/            ← production runtime (GPS, DB, notifications, full product UI, PWA)
-apps/mobile/         ← native scaffold (auth + polished shell only)
+apps/mobile/         ← native read-only product shell (auth + tab placeholders)
 ```
 
 ### `packages/shared` owns
@@ -119,7 +120,8 @@ Phase 2 prepares native/mobile **without** changing production presence behavior
 | **2B** | ✅ | Mobile scaffold — auth, shared smoke |
 | **2C** | ✅ | Native shell polish — **no** new product behavior |
 | **2D** | ✅ | Docs + audit checkpoint |
-| **2E+** | Future | Read-only surfaces, gated presence, map — **explicit plan required** |
+| **2E** | ✅ | Read-only product shell — bottom tabs + placeholder surfaces |
+| **2F+** | Future | Read-only Supabase data, gated presence, map — **explicit plan required** |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md).
 
@@ -231,5 +233,5 @@ Web continues using existing Next.js `NEXT_PUBLIC_*` and root `.env.local`.
 1. Read [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) before editing presence-related web files.
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) before any `user_presence` write on a new platform.
 3. Do not conflate **migration Phase 2** with **V1 launch plan** moderation phases in `V1_LAUNCH_PLAN.md`.
-4. Post–2D: **no** `expo-location`, map, or `user_presence` on mobile without a new phase plan.
-5. Web/PWA = production product; mobile = scaffold until a later phase says otherwise.
+4. Post–2E: **no** `expo-location`, map, `user_presence`, or Supabase table reads on mobile without a new phase plan.
+5. Web/PWA = production product; mobile = read-only shell until a later phase wires data or presence.

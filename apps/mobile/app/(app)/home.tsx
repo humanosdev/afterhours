@@ -1,171 +1,69 @@
-import { useState } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
-import { IntencityWordmark } from "../../src/components/IntencityWordmark";
-import { PhaseBadge } from "../../src/components/PhaseBadge";
-import { PrimaryButton } from "../../src/components/PrimaryButton";
+import { StyleSheet, Text, View } from "react-native";
 import { Screen } from "../../src/components/Screen";
+import { ShellCard } from "../../src/components/ShellCard";
+import { ShellListRow } from "../../src/components/ShellListRow";
+import { TabScreenHeader } from "../../src/components/TabScreenHeader";
 import { getSharedSmokeSummary } from "../../src/lib/sharedSmoke";
-import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 
-export default function HomeScreen() {
-  const { user, signOut } = useAuth();
-  const [signingOut, setSigningOut] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const PLACEHOLDER_VENUES = [
+  { title: "Venue preview", subtitle: "Live heat & check-ins — web only today", meta: "Soon" },
+  { title: "Friends nearby", subtitle: "Who’s out tonight — read from web data later", meta: "Soon" },
+  { title: "Your block", subtitle: "Home feed shell — no GPS on mobile yet", meta: "2E" },
+];
+
+export default function HomeTabScreen() {
   const sharedSmoke = getSharedSmokeSummary();
 
-  async function onSignOut() {
-    setSigningOut(true);
-    setError(null);
-    try {
-      await signOut();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Sign out failed.");
-    } finally {
-      setSigningOut(false);
-    }
-  }
-
   return (
-    <Screen scroll>
-      <View style={styles.header}>
-        <PhaseBadge />
-        <IntencityWordmark subtitle="Signed in · viewer shell" />
-      </View>
+    <Screen scroll edges={["top", "left", "right"]}>
+      <TabScreenHeader
+        title="Live city"
+        subtitle="Read-only shell for venues and friends. Production map and presence still run on web/PWA."
+      />
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Your account</Text>
-        <View style={styles.row}>
-          <Text style={styles.label}>Email</Text>
-          <Text style={styles.value} selectable>
-            {user?.email ?? "—"}
-          </Text>
-        </View>
-        <View style={styles.row}>
-          <Text style={styles.label}>User ID</Text>
-          <Text style={styles.valueMono} selectable numberOfLines={2}>
-            {user?.id ?? "—"}
-          </Text>
-        </View>
-      </View>
+      <ShellCard
+        title="Tonight’s pulse"
+        description="Placeholder for hub-style venue energy and friend activity. No live data in Phase 2E."
+        style={styles.cardSpacing}
+      >
+        {PLACEHOLDER_VENUES.map((row, index) => (
+          <ShellListRow
+            key={row.title}
+            title={row.title}
+            subtitle={row.subtitle}
+            meta={row.meta}
+            isLast={index === PLACEHOLDER_VENUES.length - 1}
+          />
+        ))}
+      </ShellCard>
 
-      <View style={styles.scaffoldCard}>
-        <Text style={styles.scaffoldTitle}>What’s next</Text>
-        <Text style={styles.scaffoldBody}>
-          Phase 2C is a polished native shell only. Map, live presence, and push are not enabled on
-          mobile yet — production presence still runs on web.
+      <ShellCard
+        title="Map & presence"
+        description="Native map and physical presence authority are future phases. Web continues to write user_presence."
+        style={styles.cardSpacing}
+      />
+
+      <View style={styles.smoke}>
+        <Text style={styles.smokeText}>
+          @intencity/shared · MAP_ACTIVITY_WINDOW_MS {sharedSmoke.mapActivityWindowMs}
         </Text>
       </View>
-
-      <View style={styles.smokeCard}>
-        <Text style={styles.smokeLabel}>Shared package</Text>
-        <Text style={styles.smokeLine}>MAP_ACTIVITY_WINDOW_MS {sharedSmoke.mapActivityWindowMs}</Text>
-        <Text style={styles.smokeLine}>
-          isValidCoordinatePair (Philly): {sharedSmoke.sampleValid ? "ok" : "no"}
-        </Text>
-      </View>
-
-      {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.error}>{error}</Text>
-        </View>
-      ) : null}
-
-      <PrimaryButton label="Sign out" onPress={onSignOut} loading={signingOut} variant="ghost" />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 24,
-    marginTop: 8,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: 18,
-    gap: 14,
+  cardSpacing: {
     marginBottom: 14,
   },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: colors.textPrimary,
+  smoke: {
+    marginTop: 4,
+    paddingVertical: 8,
   },
-  row: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  value: {
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  valueMono: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
-    lineHeight: 18,
-  },
-  scaffoldCard: {
-    backgroundColor: colors.accentGlow,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: 16,
-    gap: 8,
-    marginBottom: 12,
-  },
-  scaffoldTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textPrimary,
-  },
-  scaffoldBody: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.textSecondary,
-  },
-  smokeCard: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: colors.bgSecondary,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    gap: 4,
-    marginBottom: 20,
-  },
-  smokeLabel: {
+  smokeText: {
     fontSize: 11,
-    fontWeight: "600",
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  smokeLine: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
-  },
-  errorBox: {
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: colors.dangerMuted,
-    marginBottom: 12,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 14,
+    textAlign: "center",
   },
 });

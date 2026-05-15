@@ -12,7 +12,7 @@
 
 ---
 
-## Current state (post–2C / 2D)
+## Current state (post–2E)
 
 | Layer | Owner |
 |-------|--------|
@@ -21,12 +21,13 @@
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile** | **Auth session only** — no `user_presence` reads/writes, no `expo-location` |
-| **Mobile shared usage** | Display smoke only (`MAP_ACTIVITY_WINDOW_MS`, `isValidCoordinatePair`) — not production presence |
+| **Mobile** | **Auth session only** — no `user_presence` reads/writes, no `expo-location`, no Supabase table reads |
+| **Mobile shared usage** | Display smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
+| **Mobile navigation** | Phase 2E tab shell (Home / Search / Activity / Profile) — placeholders only |
 
 `apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or venue data.
 
-**Product split:** Web/PWA = map, venues, stories, chat, profile, presence. Mobile = native shell scaffold only.
+**Product split:** Web/PWA = map, venues, stories, chat, profile, presence. Mobile = read-only product shell (no live data).
 
 ---
 
@@ -130,13 +131,13 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
-| 2A–2D | No | Yes | ✅ Complete (docs, scaffold, shell polish, audit) |
-| 2E+ read-only | No | Yes | Future — explicit plan |
-| 2E+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
+| 2A–2E | No | Yes | ✅ Complete (docs, scaffold, shell polish, audit, tab shell) |
+| 2F+ read-only data | No | Yes | Future — explicit plan |
+| 2F+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` reads or writes through Phase 2D.** Phase 2C was UI-only; no `expo-location`.
+**No mobile `user_presence` reads or writes through Phase 2E.** Phase 2E added tab navigation and placeholder surfaces only; no `expo-location`.
 
 ---
 

@@ -37,7 +37,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Mobile (`apps/mobile`)
 
-**Phase 2C complete** — Expo auth shell with Intencity-branded UI. **Not** production parity: map, venues, stories, chat, and presence remain on **web/PWA** (`npm run dev`). Mobile does not write `user_presence` or use location.
+**Phase 2E complete** — Expo auth shell with bottom tabs (Home, Search, Activity, Profile) and read-only placeholder surfaces. **Not** production parity: map, venues, stories, chat, and presence remain on **web/PWA** (`npm run dev`). Mobile does not write `user_presence`, read Supabase tables (except auth), or use location.
 
 **Phone testing:** Expo Go + `apps/mobile/.env` — see [apps/mobile/README.md](apps/mobile/README.md). Migration status: [docs/MIGRATION_PHASES.md](docs/MIGRATION_PHASES.md).
 
