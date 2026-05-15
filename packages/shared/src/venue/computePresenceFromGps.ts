@@ -5,7 +5,7 @@ import type { ComputePresenceFromGpsResult, VenueForPresenceSync, VenueZoneType 
 
 /**
  * Pure venue zone selection + state transitions (mirrors apps/web `userPresenceVenueSync` inline logic).
- * Not wired to production yet — Phase 1B will call this from `syncUserPresenceWithVenuesFromCoords`.
+ * Production wiring: `apps/web/src/lib/userPresenceVenueSync.ts` (Phase 1B-small).
  */
 export function computePresenceFromGps(args: {
   lat: number;

@@ -15,6 +15,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@intencity/shared": "*",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.93.3",
     "autoprefixer": "^10.4.19",

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { computePresenceFromGps } from "@intencity/shared";
 import {
   createNotification,
   getMyFriendIds,
@@ -27,6 +28,7 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) 
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Phase 1B transition — kept for parity rollback; used by inline reference below. */
 function haloLimitM(v: VenueForPresenceSync): number {
   if (typeof v.halo_radius_m === "number" && Number.isFinite(v.halo_radius_m) && v.halo_radius_m > 0) {
     return v.halo_radius_m;
@@ -82,54 +84,54 @@ export async function syncUserPresenceWithVenuesFromCoords(
   const prev = (prevRow ?? null) as PrevPresence | null;
 
   const prevState = (prev?.venue_state ?? "outside") as string;
-  let nextVenueState = prevState;
-  let enteredInnerAt = prev?.entered_inner_at ?? null;
 
-  let venueId: string | null = null;
-  let zoneType: "halo" | "outer" | "inner" | null = null;
+  const computed = computePresenceFromGps({
+    lat,
+    lng,
+    venues,
+    prevVenueState: prevState,
+    prevEnteredInnerAt: prev?.entered_inner_at ?? null,
+  });
+  const venueId = computed.venueId;
+  const zoneType = computed.zoneType;
+  const nextVenueState = computed.venueState;
+  const enteredInnerAt = computed.enteredInnerAt;
 
-  let bestInner = { id: null as string | null, d: Infinity };
-  let bestOuter = { id: null as string | null, d: Infinity };
-  let bestHalo = { id: null as string | null, d: Infinity };
-
-  for (const v of venues) {
-    const d = distanceMeters(lat, lng, v.lat, v.lng);
-    if (d <= v.inner_radius_m && d < bestInner.d) bestInner = { id: v.id, d };
-    if (d <= v.outer_radius_m && d < bestOuter.d) bestOuter = { id: v.id, d };
-    const haloM = haloLimitM(v);
-    if (d <= haloM && d < bestHalo.d) bestHalo = { id: v.id, d };
-  }
-
-  if (bestInner.id) {
-    venueId = bestInner.id;
-    zoneType = "inner";
-  } else if (bestOuter.id) {
-    venueId = bestOuter.id;
-    zoneType = "outer";
-  } else if (bestHalo.id) {
-    venueId = bestHalo.id;
-    zoneType = "halo";
-  }
-
-  if (
-    zoneType === "inner" &&
-    prevState !== "inner_pending" &&
-    prevState !== "inner_confirmed"
-  ) {
-    nextVenueState = "inner_pending";
-    enteredInnerAt = new Date().toISOString();
-  }
-
-  if (zoneType !== "inner" && prevState !== "outside") {
-    nextVenueState = "outside";
-    enteredInnerAt = null;
-  }
-
-  if (prevState === "inner_pending" && enteredInnerAt) {
-    if (Date.now() - new Date(enteredInnerAt).getTime() >= 60_000) {
-      nextVenueState = "inner_confirmed";
-    }
-  }
+  /*
+   * Phase 1B transition — pre-shared inline zone/state (ffc452c parity reference).
+   * To rollback: restore this block and remove computePresenceFromGps() call above.
+   *
+   * let nextVenueState = prevState;
+   * let enteredInnerAt = prev?.entered_inner_at ?? null;
+   * let venueId: string | null = null;
+   * let zoneType: "halo" | "outer" | "inner" | null = null;
+   * let bestInner = { id: null as string | null, d: Infinity };
+   * let bestOuter = { id: null as string | null, d: Infinity };
+   * let bestHalo = { id: null as string | null, d: Infinity };
+   * for (const v of venues) {
+   *   const d = distanceMeters(lat, lng, v.lat, v.lng);
+   *   if (d <= v.inner_radius_m && d < bestInner.d) bestInner = { id: v.id, d };
+   *   if (d <= v.outer_radius_m && d < bestOuter.d) bestOuter = { id: v.id, d };
+   *   const haloM = haloLimitM(v);
+   *   if (d <= haloM && d < bestHalo.d) bestHalo = { id: v.id, d };
+   * }
+   * if (bestInner.id) { venueId = bestInner.id; zoneType = "inner"; }
+   * else if (bestOuter.id) { venueId = bestOuter.id; zoneType = "outer"; }
+   * else if (bestHalo.id) { venueId = bestHalo.id; zoneType = "halo"; }
+   * if (zoneType === "inner" && prevState !== "inner_pending" && prevState !== "inner_confirmed") {
+   *   nextVenueState = "inner_pending";
+   *   enteredInnerAt = new Date().toISOString();
+   * }
+   * if (zoneType !== "inner" && prevState !== "outside") {
+   *   nextVenueState = "outside";
+   *   enteredInnerAt = null;
+   * }
+   * if (prevState === "inner_pending" && enteredInnerAt) {
+   *   if (Date.now() - new Date(enteredInnerAt).getTime() >= 60_000) {
+   *     nextVenueState = "inner_confirmed";
+   *   }
+   * }
+   */
 
   const { error: upErr } = await supabase.from("user_presence").upsert(
     {

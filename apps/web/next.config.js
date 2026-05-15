@@ -57,6 +57,7 @@ const withPWA = require("next-pwa")({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@intencity/shared"],
   /**
    * Dev: discourage the browser from caching webpack chunks / RSC data with stale hashes
    * (especially when testing on LAN IP + phone, where HTTP caches are stickier).
