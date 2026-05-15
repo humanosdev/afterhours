@@ -1,24 +1,24 @@
-# Intencity mobile (Phase 2G — nav plan; 2F profile read)
+# Intencity mobile (Phase 2H — web-parity nav shell)
 
-Expo native app — **phased read-only scaffold** (Phase 2E tabs + Phase 2F profile read). **Not** the production app and **not** the source of truth for product UX.
+Expo native app — **phased read-only scaffold** with web-parity bottom navigation (Phase 2H) and read-only profile hydration (Phase 2F). **Not** the production app and **not** the source of truth for product UX.
 
-**Web/PWA** (`apps/web`) defines final navigation. Native’s current **Home / Search / Activity / Profile** tabs are **temporary Phase 2E placeholders only**.
+**Web/PWA** (`apps/web`) defines final navigation and behavior. Native matches web **tab structure** with placeholder screens only.
 
-## Navigation roadmap (Phase 2G → 2H)
+## Bottom navigation (Phase 2H)
 
-| | |
-|---|---|
-| **Today (2E scaffold)** | Home · Search · Activity · Profile |
-| **Target (web parity)** | **Hub** · **Map** · **Create** · **Chat** · **Profile** |
-| **Search** | Integrated into surfaces/overlays on web — **not** a permanent bottom tab; native Search tab will be removed or demoted in 2H |
-| **Phase 2G** | Docs/planning only — no route changes in this phase |
-| **Phase 2H (next code phase)** | Replace tab shell with web-parity labels; **placeholder** Map / Create / Chat screens — no Mapbox, no GPS, no new Supabase reads |
+| Tab | Status |
+|-----|--------|
+| **Hub** | Placeholder feed shell + `@intencity/shared` smoke |
+| **Map** | Placeholder — no Mapbox, no GPS, no location permissions |
+| **Create** | Placeholder — no camera, upload, or stories pipeline |
+| **Chat** | Placeholder — no messages API or realtime |
+| **Profile** | Read-only `profiles` row (Phase 2F) + sign out |
 
-**Do not implement yet (2G; still true for 2H shell):** map engine, live GPS, `user_presence`, background location, presence timing changes, independent native IA redesign.
+**Search** is **not** a permanent bottom tab (matches web integrated search). Integrated search UX is a later phase.
 
-See [docs/NATIVE_ARCHITECTURE.md](../../docs/NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical) and [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md#phase-2g--web-parity-native-navigation-plan-).
+Signed-in users land on **Hub** (`/hub`). Production map, chat, stories, and presence remain on web/PWA.
 
-Map, venues, stories, chat data, and presence remain on web/PWA until later migration phases.
+See [docs/NATIVE_ARCHITECTURE.md](../../docs/NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical) and [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md#phase-2h--native-nav-parity-shell-).
 
 Does not write `user_presence`, read presence, or use location.
 
@@ -62,7 +62,7 @@ On your **iPhone**:
 1. Install **Expo Go** from the App Store.
 2. Ensure your phone and Mac are on the **same Wi‑Fi**.
 3. Scan the **QR code** shown in the terminal (Camera app or Expo Go).
-4. Test: **login** → **Profile tab** (username, avatar, bio if set, or auth fallback) → **sign out**.
+4. Test: **login** → lands on **Hub** → tap **Map**, **Create**, **Chat**, **Profile** → Profile shows hydrated row or auth fallback → **sign out**.
 
 If the app does not load over LAN (common on guest networks or strict firewalls):
 
@@ -76,22 +76,23 @@ Then scan the new QR code (tunnel is slower but works across networks).
 
 - Supabase email/password sign-in
 - Session persistence (SecureStore)
-- Bottom tab navigation (icon-only)
-- **Read-only `profiles` fetch** for the signed-in user
+- Web-parity bottom tabs: Hub, Map, Create, Chat, Profile
+- Signed-in default route `/hub`
+- **Read-only `profiles` fetch** on Profile tab
 - Profile loading / empty / error states
-- Auth email/user id fallback
 - Sign out
+- No location permission prompt
 
 ### What this phase does **not** test
 
 - Maps, GPS, or background location
 - `user_presence` reads or writes
-- Friends, venues, stories, messages, or notifications
+- Friends, venues, stories, messages, or notifications data
 - Profile editing or avatar upload on native
 - Push notifications
-- Physical presence or geofencing
+- Integrated search overlays
 
-## Supabase reads (Phase 2F)
+## Supabase reads (Phase 2F / 2H)
 
 | Table | Scope | Notes |
 |-------|--------|--------|
@@ -107,7 +108,7 @@ npm run dev:mobile          # from repo root
 
 Or from this directory: `npm run start`.
 
-- **Expo Go** is enough for the current shell + profile read (Phase 2B–2F).
+- **Expo Go** is enough for the current shell + profile read (Phase 2B–2H).
 - **Development build** (`expo run:ios` / `android`) is for later native modules (Mapbox, background location, etc.).
 
 ## Bundle ID
@@ -116,7 +117,7 @@ Or from this directory: `npm run start`.
 
 ## Monorepo
 
-`@intencity/shared` is imported from `packages/shared` via Metro (`metro.config.js`). Home tab shows a harmless shared smoke line; **presence timing windows are unchanged**.
+`@intencity/shared` is imported from `packages/shared` via Metro (`metro.config.js`). Hub tab shows a harmless shared smoke line; **presence timing windows are unchanged**.
 
 ## Troubleshooting
 
@@ -149,19 +150,19 @@ Root `.gitignore` ignores all `node_modules/` and `.expo/`. Prefer **`npm instal
 
 ### Expo Go vs dev client
 
-Phase 2B–2F works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
+Phase 2B–2H works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
 
-## Current boundaries (post–2F; 2G planning)
+## Current boundaries (post–2H)
 
 | Allowed | Not allowed without new phase plan |
 |---------|-------------------------------------|
 | Auth UI polish | `expo-location`, background GPS |
 | Sign in / sign out | `user_presence` reads or writes |
 | Read own `profiles` row | Other Supabase table reads |
-| Tab shell + placeholder Home/Search/Activity | Mapbox, map engine, live map |
-| Shared smoke on Home | Live hub/chat/stories/messages data |
-| **Phase 2H (future):** web-parity tab **placeholders** only | GPS, geofencing, presence writes |
+| Hub/Map/Create/Chat/Profile placeholders | Mapbox, map engine, live map |
+| Shared smoke on Hub | Live hub/chat/stories/messages data |
 | | Profile edit / avatar upload on native |
-| | Push |
+| | Push, geofencing |
+| | Fixed Search bottom tab (use integrated search in later phase) |
 
 **Web** remains the only **physical presence** writer. See [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md) and [docs/PRESENCE_OWNERSHIP.md](../../docs/PRESENCE_OWNERSHIP.md).

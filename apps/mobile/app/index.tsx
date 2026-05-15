@@ -10,7 +10,7 @@ export default function Index() {
   }
 
   if (session) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/hub" />;
   }
 
   return <Redirect href="/login" />;

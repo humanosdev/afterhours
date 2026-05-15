@@ -11,7 +11,7 @@ export default function AuthLayout() {
   }
 
   if (session) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/hub" />;
   }
 
   return (

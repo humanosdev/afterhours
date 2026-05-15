@@ -49,7 +49,7 @@ export default function LoginScreen() {
       return;
     }
 
-    router.replace("/home");
+    router.replace("/hub");
   }
 
   return (
@@ -59,7 +59,7 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.hero}>
-          <PhaseBadge label="Phase 2E · Sign in" />
+          <PhaseBadge label="Phase 2H · Sign in" />
           <IntencityWordmark
             size="large"
             subtitle="Sign in with your Intencity account. Read-only product shell — no map or presence on mobile."
@@ -100,7 +100,7 @@ export default function LoginScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Web/PWA still owns live presence. Phase 2E adds tabs only — no location or venue data.
+          Web/PWA still owns live presence. Native nav matches web shell only — no location or venue data.
         </Text>
       </KeyboardAvoidingView>
     </Screen>

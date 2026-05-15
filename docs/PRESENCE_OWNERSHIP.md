@@ -23,7 +23,7 @@
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
 | **Mobile** | Auth + **read-only own `profiles` row** — no `user_presence`, no `expo-location` |
 | **Mobile shared usage** | Display smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
-| **Mobile navigation** | Phase 2E tabs (temporary); Phase 2G plans web-parity Hub/Map/Create/Chat/Profile; Profile hydrated in 2F |
+| **Mobile navigation** | Phase 2H Hub/Map/Create/Chat/Profile placeholders; Profile hydrated in 2F; no fixed Search tab |
 
 `apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or venue data and does **not** read `user_presence`.
 
@@ -132,7 +132,7 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
 | 2A–2F | No | Yes | ✅ Complete (through read-only own profile) |
-| 2G–2H | No | Yes | 📝 2G plan / future 2H nav shell — **no** presence or GPS; timing windows unchanged |
+| 2G–2H | No | Yes | ✅ Nav plan + web-parity shell — **no** presence or GPS; timing windows unchanged |
 | 2I+ read-only data | No | Yes | Future — friends/venues/presence display |
 | 2I+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |

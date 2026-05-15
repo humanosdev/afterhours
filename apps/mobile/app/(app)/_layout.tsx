@@ -1,16 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps } from "react";
 import { Redirect, Tabs } from "expo-router";
-import { Platform, StyleSheet } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppLoadingScreen } from "../../src/components/AppLoadingScreen";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 
 const TAB_ICON_SIZE = 24;
+const CREATE_ICON_SIZE = 28;
 /**
- * Temporary Phase 2E tab bar (Home / Search / Activity / Profile).
- * NOT long-term IA — production web uses hub / map / create / chat / profile.
+ * Phase 2H — web-parity tab bar (Hub / Map / Create / Chat / Profile).
+ * Placeholder screens only; production UX and data remain on web/PWA.
  * See docs/NATIVE_ARCHITECTURE.md § UX source of truth.
  */
 const TAB_BAR_CONTENT_HEIGHT = 52;
@@ -20,10 +21,22 @@ type IoniconName = ComponentProps<typeof Ionicons>["name"];
 function TabIcon({ name, color, focused }: { name: IoniconName; color: string; focused: boolean }) {
   return (
     <Ionicons
-      name={focused ? name.replace("-outline", "") as IoniconName : name}
+      name={focused ? (name.replace("-outline", "") as IoniconName) : name}
       size={TAB_ICON_SIZE}
       color={color}
     />
+  );
+}
+
+function CreateTabIcon({ color, focused }: { color: string; focused: boolean }) {
+  return (
+    <View style={[styles.createButton, focused && styles.createButtonFocused]}>
+      <Ionicons
+        name={focused ? "add" : "add-outline"}
+        size={CREATE_ICON_SIZE}
+        color={focused ? colors.bgPrimary : color}
+      />
+    </View>
   );
 }
 
@@ -71,32 +84,40 @@ export default function AppTabLayout() {
       }}
     >
       <Tabs.Screen
-        name="home"
+        name="hub"
         options={{
-          title: "Home",
-          tabBarAccessibilityLabel: "Home",
+          title: "Hub",
+          tabBarAccessibilityLabel: "Hub",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="home-outline" color={color} focused={focused} />
+            <TabIcon name="grid-outline" color={color} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
-        name="search"
+        name="map"
         options={{
-          title: "Search",
-          tabBarAccessibilityLabel: "Search",
+          title: "Map",
+          tabBarAccessibilityLabel: "Map",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="search-outline" color={color} focused={focused} />
+            <TabIcon name="map-outline" color={color} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
-        name="activity"
+        name="create"
         options={{
-          title: "Activity",
-          tabBarAccessibilityLabel: "Activity",
+          title: "Create",
+          tabBarAccessibilityLabel: "Create",
+          tabBarIcon: ({ color, focused }) => <CreateTabIcon color={color} focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: "Chat",
+          tabBarAccessibilityLabel: "Chat",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="notifications-outline" color={color} focused={focused} />
+            <TabIcon name="chatbubbles-outline" color={color} focused={focused} />
           ),
         }}
       />
@@ -113,3 +134,21 @@ export default function AppTabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  createButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: -4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.surfaceHover,
+  },
+  createButtonFocused: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+});

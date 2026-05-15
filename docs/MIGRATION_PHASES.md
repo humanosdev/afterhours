@@ -2,20 +2,20 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Phase 2G (planning)** — web-parity native navigation plan. **Phase 2F complete** (read-only own `profiles`). **No** `user_presence`, location, map engine, or reads beyond current user's `profiles` row without an explicit planned phase.
+**Current phase:** **Phase 2H complete** — web-parity native nav shell (Hub / Map / Create / Chat / Profile placeholders). **No** `user_presence`, location, map engine, or reads beyond current user's `profiles` row without an explicit planned phase.
 
 ---
 
-## Current mobile status (as of Phase 2F)
+## Current mobile status (as of Phase 2H)
 
 | Area | Status |
 |------|--------|
 | **Expo scaffold** | ✅ `apps/mobile` — Expo SDK 54, expo-router, dev client config, EAS skeleton |
 | **Supabase auth** | ✅ Email/password, SecureStore session, sign in / sign out |
 | **Native shell UI** | ✅ Phase 2C — dark Intencity theme, safe areas, loading / login |
-| **Product navigation** | 📝 Phase 2G — **plan** web-parity bottom nav; Phase 2E tabs still **temporary** scaffold |
+| **Product navigation** | ✅ Phase 2H — **Hub / Map / Create / Chat / Profile** (web-parity shell; placeholders only) |
 | **Profile hydration** | ✅ Phase 2F — read-only `profiles` row for signed-in user on Profile tab |
-| **`@intencity/shared`** | ✅ Harmless smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) — **windows unchanged** |
+| **`@intencity/shared`** | ✅ Harmless smoke on Hub tab (`MAP_ACTIVITY_WINDOW_MS`) — **windows unchanged** |
 | **Production presence authority** | ❌ **Mobile is not authoritative** — web/PWA only |
 | **`expo-location` / GPS** | ❌ Not installed |
 | **`user_presence` reads/writes** | ❌ None |
@@ -28,16 +28,16 @@
 
 **Web/PWA is the source of truth** for final UX and navigation. **`apps/mobile` is a phased read-only scaffold** — not a parallel product design.
 
-| Web/PWA (production) | Native today (temporary 2E shell) |
-|----------------------|-----------------------------------|
-| Hub feed (`/hub`) | “Home” placeholder |
-| **Map** (primary core, `/map`) | Not on native yet |
-| Create / share (center action) | Not on native yet |
-| Chat (`/chat`) | “Activity” placeholder |
-| Profile (`/profile`) | Profile tab (+ 2F read-only hydration) |
-| Search (integrated in surfaces) | “Search” tab — **scaffold only**, not web IA |
+| Web/PWA (production) | Native today (Phase 2H shell) |
+|----------------------|-------------------------------|
+| Hub feed (`/hub`) | **Hub** placeholder (+ shared smoke) |
+| **Map** (primary core, `/map`) | **Map** placeholder — no Mapbox/GPS |
+| Create / share (center action) | **Create** placeholder — no camera/upload |
+| Chat (`/chat`) | **Chat** placeholder — no messages API |
+| Profile (`/profile`) | **Profile** (+ 2F read-only `profiles` hydration) |
+| Search (integrated in surfaces) | **No fixed Search tab** — integrated search is a later phase |
 
-Long-term: native **converges toward** web — map-centered, floating/glass bottom nav, integrated search, same hierarchy and brand. **Do not** assume or extend the current four native tabs as permanent. Details: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
+Visual polish (floating/glass nav) and real map/chat data are **later** phases. Details: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
 
 ---
 
@@ -53,8 +53,8 @@ Long-term: native **converges toward** web — map-centered, floating/glass bott
 | **2D** | Docs + audit checkpoint | **Complete** | Boundaries reconfirmed; audits pass — **no app logic** |
 | **2E** | Native read-only product shell | **Complete** | Bottom tabs + placeholder Home/Search/Activity/Profile — **no data, no GPS** |
 | **2F** | Read-only profile hydration | **Complete** | Profile tab reads current user's `profiles` row — **no edit, no presence** |
-| **2G** | Web-parity native navigation **plan** | **In progress (docs)** | Target bottom nav aligned with web/PWA — **no map engine, no GPS, no presence** |
-| **2H** | Native nav parity **shell** | **Future** | Replace 2E tabs with Hub / Map / Create / Chat / Profile placeholders — **still read-only** |
+| **2G** | Web-parity native navigation **plan** | **Complete** | Documented target nav vs 2E scaffold — planning only |
+| **2H** | Native nav parity **shell** | **Complete** | Hub / Map / Create / Chat / Profile placeholders — **still read-only** |
 | **2I+** | More read-only data & presence | **Future** | Friends, venues, optional `user_presence` **display**, then gated writes — **requires explicit plan** |
 
 **Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **2F** is the first Supabase product read (own profile only). **2G–2H** are navigation/IA only (no location, no presence I/O). Data reads beyond `profiles` and presence beta remain **2I+** and must be planned before coding.
@@ -74,7 +74,7 @@ Do **not** add any of the following without a written phase plan, presence-owner
 
 **Safe without a new phase:** mobile UI polish and read-only shell layout (2E-style) that does not touch location, map, presence tables, or web sacred files. **2F allows** read-only `profiles` for the signed-in user only. **2G** is docs/planning only. **2H** may change tab routes/labels to match web IA using **placeholder screens only**.
 
-**Next implementation phase (approved direction, not started):** **Phase 2H** — native nav parity shell (see [Phase 2H](#phase-2h--native-nav-parity-shell-future) below).
+**Next implementation phase (approved direction, not started):** **Phase 2I+** — read-only data, integrated search UX, map engine — see [Phase 2I+](#phase-2i--future-native-work-not-started).
 
 ---
 
@@ -249,11 +249,11 @@ Artifacts: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md), [PRESENCE_OWNERSH
 
 ---
 
-## Phase 2G — Web-parity native navigation plan 📝
+## Phase 2G — Web-parity native navigation plan ✅
 
 **Goal:** Document how native navigation should **converge toward** the deployed web/PWA app — **without** implementing risky product behavior (map engine, GPS, presence, or new Supabase reads).
 
-**Status:** Planning / docs only. Current Expo routes remain the Phase 2E scaffold until **Phase 2H**.
+**Status:** Complete (docs). Implementation delivered in **Phase 2H**.
 
 ### Production web/PWA navigation (source of truth)
 
@@ -315,25 +315,42 @@ Visual direction (later): floating / glass bottom control aligned with web token
 
 ---
 
-## Phase 2H — Native nav parity shell (future)
+## Phase 2H — Native nav parity shell ✅
 
 **Goal:** Restructure native bottom navigation to match web/PWA **labels and hierarchy** using **placeholder screens only** — still read-only, still non-authoritative.
 
-**Proposed scope (when approved to implement):**
+**What changed:**
 
-| Change | Allowed | Not allowed |
-|--------|---------|-------------|
-| Tab routes / icons / labels | Hub, Map, Create, Chat, Profile | Mapbox, map tiles, venue layers |
-| Screen copy | “Coming soon” / phase labels | Live map, GPS, geofencing |
-| Profile tab | Keep 2F `profiles` read | Profile edit, new table reads |
-| Search | Demote or remove fixed Search tab; plan integrated search entry | Full search backend on native |
-| Create | Placeholder action or tab | Camera, upload, stories pipeline |
-| Chat | Placeholder | Messages API, realtime |
-| Dependencies | None new for location/map | `expo-location`, `@rnmapbox/maps` |
+- Bottom tabs: **Hub**, **Map**, **Create**, **Chat**, **Profile** (`app/(app)/_layout.tsx`)
+- Routes: `hub`, `map`, `create`, `chat`, `profile` — removed `home`, `search`, `activity`
+- Signed-in default: `/hub` (login, index, auth layout)
+- **Search** removed as a permanent bottom tab (web uses integrated search)
+- **Create** tab uses a subtle center-action style (accent circle when focused)
+- Placeholder screens for Hub, Map, Create, Chat; Profile keeps Phase 2F `profiles` hydration
+- `@intencity/shared` smoke moved to Hub tab
 
-**Still out of scope for 2H:** `user_presence`, `expo-location`, background tracking, presence writes, friends/venues/messages data reads, changes to `apps/web/src` or `packages/shared` timing constants.
+**What did not change:**
 
-**Verify (2H, when implemented):** Same boundary greps as 2F; `.from(` remains `profiles` only; manual Expo Go — five-tab shell, profile hydration, sign out.
+- No `user_presence` reads or writes
+- No `expo-location`, Mapbox, GPS, background tracking, geofencing, or push
+- No new Supabase table reads — still `profiles` only on Profile
+- No changes to `apps/web/src` or `packages/shared` timing constants
+- No profile edit or avatar upload on native
+
+**Verify:** Expo Go — login → Hub → five tabs → Profile hydration → sign out; `npx tsc --noEmit`
+
+### Phase 2H audit results
+
+| Check | Result |
+|-------|--------|
+| `npm run test:shared` | ✅ 24/24 pass |
+| `cd apps/mobile && npx tsc --noEmit` | ✅ Pass |
+| `expo-location` / `mapbox` in `apps/mobile` app + `src` | ✅ Not present (placeholder copy only) |
+| `user_presence` in `apps/mobile/app` + `src` | ✅ Placeholder copy only (`map.tsx`, `profile.tsx`) |
+| `.from(` in `apps/mobile` | ✅ `profiles` only (`fetchMyProfile.ts`) |
+| `git diff HEAD -- apps/web/src packages/shared` | ✅ No changes vs HEAD |
+
+**Manual:** Login → lands on Hub → all five tabs open → Profile shows `profiles` or auth fallback → sign out.
 
 ---
 
@@ -357,21 +374,16 @@ See [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) and [PRESENCE_OWNERSHIP.m
 ## Architecture diagram
 
 ```
-Today (post–2F, 2G planning):
+Today (post–2H):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
 
   apps/mobile ──auth──► Supabase (auth session)
        │
-       ├──► profiles (read own row only)
-       ├──► Tab shell — temporary Home/Search/Activity; Profile hydrated
-       └──► @intencity/shared (display smoke on Home)
-
-After 2H (nav shell only — still no presence):
-  apps/mobile ──tabs──► Hub / Map / Create / Chat / Profile placeholders
-       │
-       └──► profiles read on Profile only
+       ├──► profiles (read own row only, Profile tab)
+       ├──► Tab shell — Hub / Map / Create / Chat / Profile placeholders
+       └──► @intencity/shared (display smoke on Hub)
 
 Target (2I+ presence — gated):
   apps/mobile ──writes──► user_presence (gated)

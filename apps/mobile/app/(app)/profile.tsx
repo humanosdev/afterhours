@@ -46,8 +46,8 @@ export default function ProfileTabScreen() {
     <Screen scroll edges={["top", "left", "right"]}>
       <TabScreenHeader
         title="Profile"
-        phaseLabel="Phase 2F · Read-only profile"
-        subtitle="Hydrated from your profiles row — read-only. Edit on web/PWA; no presence or location on mobile."
+        phaseLabel="Phase 2H · Profile"
+        subtitle="Read-only profiles hydration (2F). Edit on web/PWA; no presence or location on mobile."
       />
 
       {loading ? (
@@ -104,7 +104,7 @@ export default function ProfileTabScreen() {
 
       <ShellCard
         title="Read-only"
-        description="Profile editing, moments, and settings remain on web/PWA. Mobile does not read user_presence or use GPS in Phase 2F."
+        description="Profile editing, moments, and settings remain on web/PWA. Mobile does not read user_presence or use GPS in Phase 2H."
         style={styles.cardSpacing}
       />
 
