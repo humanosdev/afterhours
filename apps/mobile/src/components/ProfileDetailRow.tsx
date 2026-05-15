@@ -25,8 +25,8 @@ export function ProfileDetailRow({ label, value, mono = false, isLast = false }:
 
 const styles = StyleSheet.create({
   row: {
-    gap: 4,
-    paddingVertical: 12,
+    gap: 3,
+    paddingVertical: 9,
   },
   rowBorder: {
     borderBottomWidth: 1,

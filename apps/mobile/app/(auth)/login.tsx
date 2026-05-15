@@ -59,11 +59,8 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.hero}>
-          <PhaseBadge label="Phase 2H · Sign in" />
-          <IntencityWordmark
-            size="large"
-            subtitle="Sign in with your Intencity account. Read-only product shell — no map or presence on mobile."
-          />
+          <PhaseBadge label="Sign in" />
+          <IntencityWordmark size="large" subtitle="Same account as web/PWA." />
         </View>
 
         <View style={styles.card}>
@@ -99,9 +96,7 @@ export default function LoginScreen() {
           <PrimaryButton label="Sign in" onPress={onLogin} loading={loading} />
         </View>
 
-        <Text style={styles.footer}>
-          Web/PWA still owns live presence. Native nav matches web shell only — no location or venue data.
-        </Text>
+        <Text style={styles.footer}>Production map and presence run on web/PWA.</Text>
       </KeyboardAvoidingView>
     </Screen>
   );

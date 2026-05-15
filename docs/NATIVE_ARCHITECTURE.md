@@ -62,7 +62,7 @@ Visual model on web: **floating / glass** bottom control (`ah-glass-control`), i
 
 **Search** is **not** a permanent bottom tab (matches web). Integrated search is a **later** phase.
 
-Phase 2E’s Home / Search / Activity / Profile scaffold was **replaced** in 2H. Visual parity (floating/glass nav) and real map/chat data are future phases.
+Phase 2E scaffold was **replaced** in 2H; **2I** added floating/glass nav styling and denser product placeholders. Real map/chat data are future phases.
 
 ### Phase 2G — Web-parity navigation plan ✅
 
@@ -87,7 +87,7 @@ Implemented Hub / Map / Create / Chat / Profile routes aligned with production `
 | Map engine (Mapbox, `@rnmapbox/maps`) | Map tab is shell only |
 | Live GPS / `expo-location` | Web remains presence writer |
 | `user_presence` reads or writes | See [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
-| Integrated search UX | Overlays on hub/map — 2I+ |
+| Integrated search UX | Overlays on hub/map — 2J+ |
 | Presence timing window changes | `packages/shared` constants unchanged |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md#phase-2h--native-nav-parity-shell-).
@@ -143,14 +143,14 @@ Phase 1 git range (for `git log` / `git diff`):
 
 ---
 
-## Current mobile status (post–2H)
+## Current mobile status (post–2I)
 
 | | |
 |---|---|
 | **Expo** | SDK 54, expo-router, Expo Go verified |
 | **Auth** | Supabase email/password, SecureStore |
-| **UI** | Phase 2C — dark Intencity shell, safe areas, login |
-| **Navigation** | Phase 2H — Hub / Map / Create / Chat / Profile (placeholders) — see [UX source of truth](#ux-source-of-truth-critical) |
+| **UI** | Phase 2C shell + **2I** visual parity (glass nav, compact placeholders) |
+| **Navigation** | Phase 2H routes + **2I** floating tab bar — see [UX source of truth](#ux-source-of-truth-critical) |
 | **Data** | Phase 2F — read-only own `profiles` row on Profile tab |
 | **Shared** | Smoke import on Home tab only — **presence windows unchanged** |
 | **Authority** | **Non-authoritative** — web owns `user_presence` |
@@ -159,7 +159,7 @@ Phase 1 git range (for `git log` / `git diff`):
 
 ---
 
-## Current architecture (as of Phase 2H)
+## Current architecture (as of Phase 2I)
 
 ```
 packages/shared/     ← deterministic engine (math, windows, zone state)
@@ -210,7 +210,8 @@ Phase 2 prepares native/mobile **without** changing production presence behavior
 | **2F** | ✅ | Read-only own `profiles` hydration on Profile tab |
 | **2G** | ✅ | Web-parity native navigation **plan** |
 | **2H** | ✅ | Nav parity **shell** — Hub / Map / Create / Chat / Profile placeholders |
-| **2I+** | Future | Read-only data, map engine, gated presence — **explicit plan required** |
+| **2I** | ✅ | Visual parity **shell** — glass nav, denser product-like placeholders |
+| **2J+** | Future | Read-only data, map engine, gated presence — **explicit plan required** |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md).
 
@@ -324,5 +325,5 @@ Web continues using existing Next.js `NEXT_PUBLIC_*` and root `.env.local`.
 3. Do not conflate **migration Phase 2** with **V1 launch plan** moderation phases in `V1_LAUNCH_PLAN.md`.
 4. Post–2F: **no** `expo-location`, map engine, or `user_presence` on mobile; Supabase reads limited to own `profiles` until a new phase plan.
 5. Web/PWA = production product **and UX source of truth**; mobile = read-only scaffold — **do not** cement the current four-tab layout as long-term.
-6. **Post–2H:** web-parity tab shell with placeholders — still no GPS/presence/map SDK until later phases.
+6. **Post–2I:** web-parity nav + visual shell — still no GPS/presence/map SDK until later phases.
 7. Native nav/IA changes require explicit web-parity intent — see [UX source of truth](#ux-source-of-truth-critical).

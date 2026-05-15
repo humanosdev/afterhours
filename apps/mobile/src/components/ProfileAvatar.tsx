@@ -35,8 +35,8 @@ export function ProfileAvatar({ avatarUrl, label, size = 72 }: ProfileAvatarProp
 const styles = StyleSheet.create({
   wrap: {
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   fallback: {
     backgroundColor: colors.surfaceHover,

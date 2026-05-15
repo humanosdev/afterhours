@@ -133,8 +133,8 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 |------|----------------|-------------|--------|
 | 2A–2F | No | Yes | ✅ Complete (through read-only own profile) |
 | 2G–2H | No | Yes | ✅ Nav plan + web-parity shell — **no** presence or GPS; timing windows unchanged |
-| 2I+ read-only data | No | Yes | Future — friends/venues/presence display |
-| 2I+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
+| 2J+ read-only data | No | Yes | Future — friends/venues/presence display |
+| 2J+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 

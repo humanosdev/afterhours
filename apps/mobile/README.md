@@ -1,17 +1,19 @@
-# Intencity mobile (Phase 2H — web-parity nav shell)
+# Intencity mobile (Phase 2I — visual parity shell)
 
-Expo native app — **phased read-only scaffold** with web-parity bottom navigation (Phase 2H) and read-only profile hydration (Phase 2F). **Not** the production app and **not** the source of truth for product UX.
+Expo native app — **phased read-only scaffold** with web-parity navigation (Phase 2H) and visual polish toward web/PWA (Phase 2I). Profile hydration (Phase 2F) is the only Supabase table read. **Not** production.
 
 **Web/PWA** (`apps/web`) defines final navigation and behavior. Native matches web **tab structure** with placeholder screens only.
 
-## Bottom navigation (Phase 2H)
+## Bottom navigation (Phase 2H / 2I)
+
+Floating glass-style tab bar aligned with web/PWA. Icon-only; Create is center-emphasized.
 
 | Tab | Status |
 |-----|--------|
-| **Hub** | Placeholder feed shell + `@intencity/shared` smoke |
-| **Map** | Placeholder — no Mapbox, no GPS, no location permissions |
-| **Create** | Placeholder — no camera, upload, or stories pipeline |
-| **Chat** | Placeholder — no messages API or realtime |
+| **Hub** | Moments rail, live places chips, feed placeholders + shared smoke |
+| **Map** | Static map canvas placeholder — no Mapbox, GPS, or permissions |
+| **Create** | Share hero shell — no camera, upload, or stories pipeline |
+| **Chat** | Messages list placeholder — no API or realtime |
 | **Profile** | Read-only `profiles` row (Phase 2F) + sign out |
 
 **Search** is **not** a permanent bottom tab (matches web integrated search). Integrated search UX is a later phase.
@@ -152,7 +154,7 @@ Root `.gitignore` ignores all `node_modules/` and `.expo/`. Prefer **`npm instal
 
 Phase 2B–2H works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
 
-## Current boundaries (post–2H)
+## Current boundaries (post–2I)
 
 | Allowed | Not allowed without new phase plan |
 |---------|-------------------------------------|

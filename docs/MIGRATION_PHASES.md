@@ -2,18 +2,18 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Phase 2H complete** — web-parity native nav shell (Hub / Map / Create / Chat / Profile placeholders). **No** `user_presence`, location, map engine, or reads beyond current user's `profiles` row without an explicit planned phase.
+**Current phase:** **Phase 2I complete** — native visual parity shell (floating/glass nav, denser product placeholders). **No** `user_presence`, location, map engine, or reads beyond current user's `profiles` row without an explicit planned phase.
 
 ---
 
-## Current mobile status (as of Phase 2H)
+## Current mobile status (as of Phase 2I)
 
 | Area | Status |
 |------|--------|
 | **Expo scaffold** | ✅ `apps/mobile` — Expo SDK 54, expo-router, dev client config, EAS skeleton |
 | **Supabase auth** | ✅ Email/password, SecureStore session, sign in / sign out |
 | **Native shell UI** | ✅ Phase 2C — dark Intencity theme, safe areas, loading / login |
-| **Product navigation** | ✅ Phase 2H — **Hub / Map / Create / Chat / Profile** (web-parity shell; placeholders only) |
+| **Product navigation** | ✅ Phase 2H routes + **2I** visual polish (floating/glass tab bar, denser placeholders) |
 | **Profile hydration** | ✅ Phase 2F — read-only `profiles` row for signed-in user on Profile tab |
 | **`@intencity/shared`** | ✅ Harmless smoke on Hub tab (`MAP_ACTIVITY_WINDOW_MS`) — **windows unchanged** |
 | **Production presence authority** | ❌ **Mobile is not authoritative** — web/PWA only |
@@ -55,9 +55,10 @@ Visual polish (floating/glass nav) and real map/chat data are **later** phases. 
 | **2F** | Read-only profile hydration | **Complete** | Profile tab reads current user's `profiles` row — **no edit, no presence** |
 | **2G** | Web-parity native navigation **plan** | **Complete** | Documented target nav vs 2E scaffold — planning only |
 | **2H** | Native nav parity **shell** | **Complete** | Hub / Map / Create / Chat / Profile placeholders — **still read-only** |
-| **2I+** | More read-only data & presence | **Future** | Friends, venues, optional `user_presence` **display**, then gated writes — **requires explicit plan** |
+| **2I** | Visual parity **shell** | **Complete** | Floating/glass nav, tighter layout, product-like placeholders — **no data/presence changes** |
+| **2J+** | More read-only data & presence | **Future** | Friends, venues, optional `user_presence` **display**, then gated writes — **requires explicit plan** |
 
-**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **2F** is the first Supabase product read (own profile only). **2G–2H** are navigation/IA only (no location, no presence I/O). Data reads beyond `profiles` and presence beta remain **2I+** and must be planned before coding.
+**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **2F** is the first Supabase product read (own profile only). **2G–2H** are navigation/IA only (no location, no presence I/O). Data reads beyond `profiles` and presence beta remain **2J+** and must be planned before coding.
 
 ---
 
@@ -74,7 +75,7 @@ Do **not** add any of the following without a written phase plan, presence-owner
 
 **Safe without a new phase:** mobile UI polish and read-only shell layout (2E-style) that does not touch location, map, presence tables, or web sacred files. **2F allows** read-only `profiles` for the signed-in user only. **2G** is docs/planning only. **2H** may change tab routes/labels to match web IA using **placeholder screens only**.
 
-**Next implementation phase (approved direction, not started):** **Phase 2I+** — read-only data, integrated search UX, map engine — see [Phase 2I+](#phase-2i--future-native-work-not-started).
+**Next implementation phase (approved direction, not started):** **Phase 2J+** — read-only data, integrated search UX, map engine — see [Phase 2J+](#phase-2j--future-native-work-not-started).
 
 ---
 
@@ -302,7 +303,7 @@ Visual direction (later): floating / glass bottom control aligned with web token
 | `user_presence` reads or writes | No dual-write; no display without plan |
 | Changing `@intencity/shared` timing / activity windows | Cross-platform display contract |
 | Independent native IA redesign | Web/PWA is UX source of truth |
-| New Supabase table reads (friends, venues, messages, etc.) | 2I+ read-only data phases |
+| New Supabase table reads (friends, venues, messages, etc.) | 2J+ read-only data phases |
 
 ### Deliverables (2G)
 
@@ -354,7 +355,31 @@ Visual direction (later): floating / glass bottom control aligned with web token
 
 ---
 
-## Phase 2I+ — Future native work (not started)
+## Phase 2I — Visual parity shell ✅
+
+**Goal:** Move native **visual feel** closer to deployed web/PWA (dark premium, glass nav, compact density) without new behavior, data reads, or presence.
+
+**What changed:**
+
+- Floating glass-style bottom tab bar (`FloatingTabBar`) — web-like center Create emphasis
+- Tighter screen padding and card density (`layout` tokens, updated `ShellCard` / rows)
+- Hub: search pill, moments rail, live places chips, feed sections (placeholders)
+- Map: static map canvas with venue dots (no Mapbox/GPS)
+- Create: center share hero + action list shell
+- Chat: Messages header, search pill, thread list placeholders
+- Profile: compact hero, stats row shell, kept 2F `profiles` hydration
+- Reduced migration-doc copy on screens
+
+**What did not change:**
+
+- Same 2H routes; no new Supabase reads; no `user_presence`; no location SDKs
+- No changes to `apps/web/src` or `packages/shared` timing constants
+
+**Verify:** `npx tsc --noEmit`; `npm run test:shared`; boundary greps; Expo Go visual pass
+
+---
+
+## Phase 2J+ — Future native work (not started)
 
 Planned direction (order TBD when approved):
 
@@ -374,7 +399,7 @@ See [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) and [PRESENCE_OWNERSHIP.m
 ## Architecture diagram
 
 ```
-Today (post–2H):
+Today (post–2I):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
@@ -385,7 +410,7 @@ Today (post–2H):
        ├──► Tab shell — Hub / Map / Create / Chat / Profile placeholders
        └──► @intencity/shared (display smoke on Hub)
 
-Target (2I+ presence — gated):
+Target (2J+ presence — gated):
   apps/mobile ──writes──► user_presence (gated)
   apps/web ──reads──► viewer + social
 ```

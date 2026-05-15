@@ -196,7 +196,7 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2H** = web-parity nav shell; no presence/map engine without **2I+** phase).
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2I** = visual shell; no presence/map engine without **2J+** phase).
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
 3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
 4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.

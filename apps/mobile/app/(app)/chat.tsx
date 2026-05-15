@@ -1,37 +1,64 @@
+import { Pressable, StyleSheet, Text } from "react-native";
 import { Screen } from "../../src/components/Screen";
-import { ShellCard } from "../../src/components/ShellCard";
-import { ShellListRow } from "../../src/components/ShellListRow";
-import { TabScreenHeader } from "../../src/components/TabScreenHeader";
+import { ScreenHeader } from "../../src/components/ScreenHeader";
+import { ChatThreadRow } from "../../src/components/ChatThreadRow";
+import { GlassSurface } from "../../src/components/GlassSurface";
+import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
+import { colors } from "../../src/theme/colors";
 
-const CHAT_ROWS = [
-  { title: "Messages", subtitle: "Conversations — web/PWA production today", meta: "Shell" },
-  { title: "Group threads", subtitle: "No messages API or realtime in Phase 2H", meta: "—" },
-  { title: "Activity", subtitle: "Friend and venue notifications stay on web for now", meta: "Shell" },
+const THREADS = [
+  { name: "Maya Chen", preview: "See you at the bar?", time: "9:41 PM", unread: true },
+  { name: "Jordan Lee", preview: "On my way", time: "8:12 PM" },
+  { name: "Alex Rivera", preview: "This place is packed 🔥", time: "Yesterday" },
+  { name: "Sam Ortiz", preview: "You still out?", time: "Mon" },
 ];
 
 export default function ChatTabScreen() {
   return (
-    <Screen scroll edges={["top", "left", "right"]}>
-      <TabScreenHeader
-        title="Chat"
-        phaseLabel="Phase 2H · Placeholder"
-        subtitle="Aligned with web/PWA chat tab. No Supabase reads or push in this phase."
+    <Screen scroll edges={["top", "left", "right"]} tabBarInset>
+      <ScreenHeader
+        title="Messages"
+        trailing={
+          <Pressable style={styles.newButton} accessibilityRole="button" accessibilityLabel="New message">
+            <Text style={styles.newLabel}>New</Text>
+          </Pressable>
+        }
       />
+      <SearchFieldPlaceholder placeholder="Search by username" />
 
-      <ShellCard
-        title="Inbox shell"
-        description="Read-only placeholder for messages. Production chat remains on web/PWA."
-      >
-        {CHAT_ROWS.map((row, index) => (
-          <ShellListRow
-            key={row.title}
-            title={row.title}
-            subtitle={row.subtitle}
-            meta={row.meta}
-            isLast={index === CHAT_ROWS.length - 1}
+      <GlassSurface style={styles.list} muted>
+        {THREADS.map((thread, index) => (
+          <ChatThreadRow
+            key={thread.name}
+            name={thread.name}
+            preview={thread.preview}
+            time={thread.time}
+            unread={thread.unread}
+            isLast={index === THREADS.length - 1}
           />
         ))}
-      </ShellCard>
+      </GlassSurface>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  newButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  newLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  list: {
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+});

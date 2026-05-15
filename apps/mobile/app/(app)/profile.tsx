@@ -5,7 +5,7 @@ import { ProfileAvatar } from "../../src/components/ProfileAvatar";
 import { ProfileDetailRow } from "../../src/components/ProfileDetailRow";
 import { Screen } from "../../src/components/Screen";
 import { ShellCard } from "../../src/components/ShellCard";
-import { TabScreenHeader } from "../../src/components/TabScreenHeader";
+import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { useMyProfile } from "../../src/hooks/useMyProfile";
 import { profileAvatarLabel, profileDisplayName } from "../../src/lib/profileDisplay";
 import { useAuth } from "../../src/providers/AuthProvider";
@@ -23,13 +23,6 @@ export default function ProfileTabScreen() {
   const username = profile?.username?.trim() ?? null;
   const bio = profile?.bio?.trim() ?? null;
 
-  const profileDetailRows: Array<{ label: string; value: string }> = [];
-  if (username) profileDetailRows.push({ label: "Username", value: `@${username}` });
-  if (profile?.display_name?.trim()) {
-    profileDetailRows.push({ label: "Display name", value: profile.display_name.trim() });
-  }
-  if (bio) profileDetailRows.push({ label: "Bio", value: bio });
-
   async function onSignOut() {
     setSigningOut(true);
     setSignOutError(null);
@@ -43,70 +36,55 @@ export default function ProfileTabScreen() {
   }
 
   return (
-    <Screen scroll edges={["top", "left", "right"]}>
-      <TabScreenHeader
-        title="Profile"
-        phaseLabel="Phase 2H · Profile"
-        subtitle="Read-only profiles hydration (2F). Edit on web/PWA; no presence or location on mobile."
-      />
+    <Screen scroll edges={["top", "left", "right"]} tabBarInset>
+      <ScreenHeader title="Profile" />
 
       {loading ? (
-        <ShellCard title="Loading profile" style={styles.cardSpacing}>
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color={colors.accent} />
-            <Text style={styles.loadingText}>Fetching your profile…</Text>
-          </View>
-        </ShellCard>
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
       ) : null}
 
       {!loading && profileError ? (
-        <ShellCard title="Could not load profile" style={styles.cardSpacing}>
-          <Text style={styles.muted}>{profileError}</Text>
-          <Text style={styles.mutedSmall}>Showing auth account details below.</Text>
-        </ShellCard>
+        <Text style={styles.hint}>Couldn’t load profile — showing account below.</Text>
       ) : null}
 
-      {!loading && !profileError && !hasProfileRow ? (
-        <ShellCard title="No profile row yet" style={styles.cardSpacing}>
-          <Text style={styles.muted}>
-            No matching row in profiles for this account. Complete onboarding on web/PWA, or use the
-            auth details below.
-          </Text>
-        </ShellCard>
-      ) : null}
-
-      {!loading && hasProfileRow ? (
-        <ShellCard title="Your profile" style={styles.cardSpacing}>
-          <View style={styles.hero}>
-            <ProfileAvatar avatarUrl={profile?.avatar_url ?? null} label={avatarLabel} />
-            <View style={styles.heroText}>
-              {displayName ? <Text style={styles.heroTitle}>{displayName}</Text> : null}
-              {username ? <Text style={styles.heroUsername}>@{username}</Text> : null}
-            </View>
+      <ShellCard style={styles.heroCard}>
+        <View style={styles.hero}>
+          <ProfileAvatar avatarUrl={profile?.avatar_url ?? null} label={avatarLabel} size={80} />
+          <View style={styles.heroText}>
+            <Text style={styles.heroTitle}>{displayName ?? "Your account"}</Text>
+            {username ? <Text style={styles.heroUsername}>@{username}</Text> : null}
+            {bio ? <Text style={styles.bio}>{bio}</Text> : null}
+            {!hasProfileRow && !loading ? (
+              <Text style={styles.bio}>Complete your profile on web/PWA.</Text>
+            ) : null}
           </View>
+        </View>
 
-          {profileDetailRows.map((row, index) => (
-            <ProfileDetailRow
-              key={row.label}
-              label={row.label}
-              value={row.value}
-              isLast={index === profileDetailRows.length - 1}
-            />
-          ))}
-          {profileDetailRows.length === 0 ? <View style={styles.profileEndPad} /> : null}
-        </ShellCard>
-      ) : null}
-
-      <ShellCard title="Auth account" description="Always available from Supabase Auth (fallback).">
-        <ProfileDetailRow label="Email" value={user?.email ?? "—"} />
-        <ProfileDetailRow label="User ID" value={user?.id ?? "—"} mono isLast />
+        <View style={styles.stats}>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>—</Text>
+            <Text style={styles.statLabel}>Moments</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>—</Text>
+            <Text style={styles.statLabel}>Friends</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>—</Text>
+            <Text style={styles.statLabel}>Places</Text>
+          </View>
+        </View>
       </ShellCard>
 
-      <ShellCard
-        title="Read-only"
-        description="Profile editing, moments, and settings remain on web/PWA. Mobile does not read user_presence or use GPS in Phase 2H."
-        style={styles.cardSpacing}
-      />
+      <ShellCard>
+        <ProfileDetailRow label="Email" value={user?.email ?? "—"} />
+        {username ? <ProfileDetailRow label="Username" value={`@${username}`} /> : null}
+        <ProfileDetailRow label="User ID" value={user?.id ?? "—"} mono isLast />
+      </ShellCard>
 
       {signOutError ? (
         <View style={styles.errorBox}>
@@ -120,39 +98,28 @@ export default function ProfileTabScreen() {
 }
 
 const styles = StyleSheet.create({
-  cardSpacing: {
-    marginBottom: 14,
-  },
   loadingRow: {
-    flexDirection: "row",
+    paddingVertical: 24,
     alignItems: "center",
-    gap: 12,
-    paddingVertical: 8,
   },
-  loadingText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  muted: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.textSecondary,
-  },
-  mutedSmall: {
+  hint: {
     fontSize: 13,
-    lineHeight: 18,
     color: colors.textMuted,
-    marginTop: 4,
+    marginBottom: 10,
+  },
+  heroCard: {
+    marginBottom: 10,
   },
   hero: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 8,
+    alignItems: "flex-start",
+    gap: 14,
+    marginBottom: 14,
   },
   heroText: {
     flex: 1,
     gap: 4,
+    paddingTop: 4,
   },
   heroTitle: {
     fontSize: 20,
@@ -161,11 +128,41 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   heroUsername: {
-    fontSize: 15,
-    color: colors.textSecondary,
+    fontSize: 14,
+    color: colors.accentActive,
+    fontWeight: "500",
   },
-  profileEndPad: {
-    height: 4,
+  bio: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  stats: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderSubtle,
+    paddingTop: 12,
+  },
+  stat: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.borderSubtle,
   },
   errorBox: {
     padding: 10,
