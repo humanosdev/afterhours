@@ -1,16 +1,13 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
+import { AppTextField } from "../../src/components/AppTextField";
+import { IntencityWordmark } from "../../src/components/IntencityWordmark";
+import { PhaseBadge } from "../../src/components/PhaseBadge";
+import { PrimaryButton } from "../../src/components/PrimaryButton";
+import { Screen } from "../../src/components/Screen";
 import { supabase } from "../../src/lib/supabase/client";
+import { colors } from "../../src/theme/colors";
 
 function mapLoginError(raw: string) {
   const text = raw.toLowerCase();
@@ -56,98 +53,106 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={styles.card}>
-        <Text style={styles.title}>Intencity</Text>
-        <Text style={styles.subtitle}>Phase 2B — sign in</Text>
+    <Screen scroll>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <View style={styles.hero}>
+          <PhaseBadge />
+          <IntencityWordmark
+            size="large"
+            subtitle="Sign in with your Intencity account. Native app shell only — no map or presence yet."
+          />
+        </View>
 
-        <TextInput
-          autoCapitalize="none"
-          autoComplete="email"
-          keyboardType="email-address"
-          placeholder="Email"
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          editable={!loading}
-        />
-        <TextInput
-          autoCapitalize="none"
-          autoComplete="password"
-          placeholder="Password"
-          secureTextEntry
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          editable={!loading}
-          onSubmitEditing={onLogin}
-        />
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Welcome back</Text>
+          <Text style={styles.cardHint}>Use the same credentials as the web app.</Text>
 
-        {message ? <Text style={styles.error}>{message}</Text> : null}
+          <AppTextField
+            autoCapitalize="none"
+            autoComplete="email"
+            keyboardType="email-address"
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            editable={!loading}
+          />
+          <AppTextField
+            autoCapitalize="none"
+            autoComplete="password"
+            placeholder="Password"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+            editable={!loading}
+            onSubmitEditing={onLogin}
+          />
 
-        <Pressable
-          accessibilityRole="button"
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={onLogin}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonLabel}>Sign in</Text>}
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          {message ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.error}>{message}</Text>
+            </View>
+          ) : null}
+
+          <PrimaryButton label="Sign in" onPress={onLogin} loading={loading} />
+        </View>
+
+        <Text style={styles.footer}>
+          Web still owns live presence. This build does not write location or venue data.
+        </Text>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
     justifyContent: "center",
-    padding: 24,
-    backgroundColor: "#f6f6f6",
+    gap: 28,
+    paddingVertical: 12,
+  },
+  hero: {
+    alignItems: "center",
+    gap: 20,
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    gap: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
-  input: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    borderColor: colors.borderSubtle,
+    padding: 20,
+    gap: 14,
   },
-  button: {
-    marginTop: 4,
-    backgroundColor: "#111",
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonLabel: {
-    color: "#fff",
-    fontSize: 16,
+  cardTitle: {
+    fontSize: 18,
     fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  cardHint: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  errorBox: {
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: colors.dangerMuted,
+    borderWidth: 1,
+    borderColor: "rgba(255, 107, 122, 0.25)",
   },
   error: {
-    color: "#b00020",
+    color: colors.danger,
     fontSize: 14,
+    lineHeight: 20,
+  },
+  footer: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.textMuted,
+    textAlign: "center",
+    paddingHorizontal: 8,
   },
 });

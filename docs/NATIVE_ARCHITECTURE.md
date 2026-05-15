@@ -15,7 +15,7 @@
 
 | Direction | Target |
 |-----------|--------|
-| **Native app** | Real downloadable iOS/Android app (`apps/mobile`, not started yet) |
+| **Native app** | Real downloadable iOS/Android app (`apps/mobile` — **auth shell only** today) |
 | **Physical presence authority** | Eventually **mobile** owns GPS → `user_presence` writes |
 | **Web** | Eventually **social viewer** — hub, map viewer, chat, stories, discovery — not the primary GPS writer |
 | **Shared logic** | `packages/shared` holds **deterministic** rules used by both platforms |
@@ -58,12 +58,26 @@ Phase 1 git range (for `git log` / `git diff`):
 
 ---
 
-## Current architecture (as of Phase 2A)
+## Current mobile status (post–2C / 2D)
+
+| | |
+|---|---|
+| **Expo** | SDK 54, expo-router, Expo Go verified |
+| **Auth** | Supabase email/password, SecureStore |
+| **UI** | Phase 2C — dark Intencity shell, safe areas, login/home |
+| **Shared** | Smoke import only — not production presence math in use |
+| **Authority** | **Non-authoritative** — web owns `user_presence` |
+
+**Production UX today** is entirely on **`apps/web` (PWA):** map, venues, stories/shares, chat, profile, friends, notifications, presence.
+
+---
+
+## Current architecture (as of Phase 2D)
 
 ```
 packages/shared/     ← deterministic engine (math, windows, zone state)
-apps/web/            ← production runtime (GPS, DB, notifications, UI, PWA)
-apps/mobile/         ← does not exist yet
+apps/web/            ← production runtime (GPS, DB, notifications, full product UI, PWA)
+apps/mobile/         ← native scaffold (auth + polished shell only)
 ```
 
 ### `packages/shared` owns
@@ -99,14 +113,13 @@ apps/mobile/         ← does not exist yet
 
 Phase 2 prepares native/mobile **without** changing production presence behavior in 2A.
 
-| Sub-phase | Scope |
-|-----------|--------|
-| **2A** (current) | Architecture docs only — **no** `apps/mobile`, **no** Expo install, **no** web runtime changes |
-| **2B** | Mobile scaffold: Expo app, auth, read-only screens — **no** `user_presence` writes |
-| **2C** | Mobile imports `@intencity/shared`; read-only map/hub-style flows |
-| **2D** | Foreground mobile presence **beta** (gated — see presence doc) |
-| **2E** | Background location + confidence-oriented model |
-| **2F** | Web stops physical presence writes; viewer mode |
+| Sub-phase | Status | Scope |
+|-----------|--------|--------|
+| **2A** | ✅ | Architecture docs |
+| **2B** | ✅ | Mobile scaffold — auth, shared smoke |
+| **2C** | ✅ | Native shell polish — **no** new product behavior |
+| **2D** | ✅ | Docs + audit checkpoint |
+| **2E+** | Future | Read-only surfaces, gated presence, map — **explicit plan required** |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md).
 
@@ -218,4 +231,5 @@ Web continues using existing Next.js `NEXT_PUBLIC_*` and root `.env.local`.
 1. Read [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) before editing presence-related web files.
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) before any `user_presence` write on a new platform.
 3. Do not conflate **migration Phase 2** with **V1 launch plan** moderation phases in `V1_LAUNCH_PLAN.md`.
-4. Phase 2A = **docs only**; no `apps/mobile` until 2B is explicitly requested.
+4. Post–2D: **no** `expo-location`, map, or `user_presence` on mobile without a new phase plan.
+5. Web/PWA = production product; mobile = scaffold until a later phase says otherwise.

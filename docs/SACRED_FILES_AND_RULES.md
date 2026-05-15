@@ -12,7 +12,8 @@
 2. **Do not bundle** map/AppShell/notification changes with mobile scaffold or shared deduplication.
 3. **`packages/shared`** changes affect future mobile + web — require `npm run test:shared`.
 4. **Do not enable mobile `user_presence` writes** without gates in [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md).
-5. Phase 1 intentionally **did not** touch map or AppShell — keep that discipline until 2F.
+5. Phase 1 intentionally **did not** touch map or AppShell — keep that discipline until web write retirement.
+6. **Post–2D:** `apps/mobile` may change for UI-only work; do **not** add location/presence there without a new phase plan.
 
 ---
 
@@ -177,10 +178,22 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 ---
 
+## `apps/mobile` (post–2C)
+
+| | |
+|---|---|
+| **Owns today** | Expo auth shell, Phase 2C UI, `@intencity/shared` smoke, Metro monorepo config |
+| **Does not own** | `user_presence`, geolocation, map, hub/chat/stories, notifications |
+| **Change when** | UI-only polish (2C-style) or an **approved** phase plan for read-only/presence features |
+| **Avoid** | `expo-location`, presence upserts, “quick map screen” without phase approval |
+
+---
+
 ## Cursor agent preamble
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase.
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2D** = no feature work without plan).
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
-3. Do not touch sacred files unless the user’s task **explicitly** names them and the phase allows it.
+3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
+4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.

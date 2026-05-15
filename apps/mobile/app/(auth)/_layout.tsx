@@ -1,30 +1,26 @@
 import { Redirect, Stack } from "expo-router";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { AppLoadingScreen } from "../../src/components/AppLoadingScreen";
 import { useAuth } from "../../src/providers/AuthProvider";
+import { colors } from "../../src/theme/colors";
 
 export default function AuthLayout() {
   const { session, loading } = useAuth();
 
   if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+    return <AppLoadingScreen message="Checking session…" />;
   }
 
   if (session) {
     return <Redirect href="/home" />;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.bgPrimary },
+        animation: "fade",
+      }}
+    />
+  );
 }
-
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#fff",
-  },
-});

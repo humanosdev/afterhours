@@ -2,46 +2,64 @@ import "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Screen } from "../src/components/Screen";
 import { hasSupabaseConfig } from "../src/lib/env";
 import { AuthProvider } from "../src/providers/AuthProvider";
+import { colors } from "../src/theme/colors";
 
 export default function RootLayout() {
   if (!hasSupabaseConfig()) {
     return (
-      <View style={styles.centered}>
-        <StatusBar style="auto" />
-        <Text style={styles.title}>Configuration required</Text>
-        <Text style={styles.body}>
-          Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env (see
-          .env.example).
-        </Text>
-      </View>
+      <SafeAreaProvider>
+        <Screen centered>
+          <StatusBar style="light" />
+          <View style={styles.configCard}>
+            <Text style={styles.configTitle}>Configuration required</Text>
+            <Text style={styles.configBody}>
+              Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env (see
+              .env.example).
+            </Text>
+          </View>
+        </Screen>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <AuthProvider>
-      <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }} />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bgPrimary },
+            animation: "fade",
+          }}
+        />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    padding: 24,
-    backgroundColor: "#fff",
+  configCard: {
+    maxWidth: 360,
+    padding: 20,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    gap: 10,
   },
-  title: {
+  configTitle: {
     fontSize: 20,
     fontWeight: "600",
-    marginBottom: 12,
+    color: colors.textPrimary,
   },
-  body: {
+  configBody: {
     fontSize: 15,
     lineHeight: 22,
-    color: "#444",
+    color: colors.textSecondary,
   },
 });

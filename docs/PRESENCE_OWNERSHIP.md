@@ -12,18 +12,21 @@
 
 ---
 
-## Current state (Phase 2A)
+## Current state (post–2C / 2D)
 
 | Layer | Owner |
 |-------|--------|
 | **Deterministic rules** | `packages/shared` — zone math, windows, heat ramp, distance |
-| **Side effects** | `apps/web` only — GPS, Supabase, notifications |
+| **Side effects** | `apps/web` only — GPS, Supabase presence upserts, notifications |
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile writes** | **None** — `apps/mobile` does not exist |
+| **Mobile** | **Auth session only** — no `user_presence` reads/writes, no `expo-location` |
+| **Mobile shared usage** | Display smoke only (`MAP_ACTIVITY_WINDOW_MS`, `isValidCoordinatePair`) — not production presence |
 
-`apps/web` imports `computePresenceFromGps` from `@intencity/shared`; everything after that (read prev row, upsert, notify friends) stays in web.
+`apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or venue data.
+
+**Product split:** Web/PWA = map, venues, stories, chat, profile, presence. Mobile = native shell scaffold only.
 
 ---
 
@@ -125,15 +128,15 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 ## Safe migration sequence (reference)
 
-| Step | Mobile writes? | Web writes? | Prerequisites |
-|------|----------------|-------------|---------------|
-| 2A | No | Yes | This doc |
-| 2B–2C | No | Yes | Scaffold + read-only UI |
-| 2D | Beta only | Yes for non-beta | Beta flag + source metadata + monitoring |
-| 2E | Primary (beta cohort) | Reduced / gated | Background location + confidence design |
-| 2F | Yes (target users) | **No** physical GPS upserts | RLS optional: mobile-only write |
+| Step | Mobile writes? | Web writes? | Status |
+|------|----------------|-------------|--------|
+| 2A–2D | No | Yes | ✅ Complete (docs, scaffold, shell polish, audit) |
+| 2E+ read-only | No | Yes | Future — explicit plan |
+| 2E+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
+| Later | Primary (cohort) | Reduced / gated | Background + confidence |
+| Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` writes in 2B or 2C.**
+**No mobile `user_presence` reads or writes through Phase 2D.** Phase 2C was UI-only; no `expo-location`.
 
 ---
 

@@ -10,9 +10,14 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
     "@intencity/shared": "*",
+    "@react-native/virtualized-lists": "0.81.5",
+    "@react-navigation/native": "^7.2.4",
     "@supabase/supabase-js": "^2.93.3",
+    "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.33",
+    "expo-asset": "~12.0.13",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.21",
     "expo-linking": "~8.0.12",

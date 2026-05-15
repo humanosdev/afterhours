@@ -33,11 +33,13 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run start` | Run production server |
 | `npm run dev:clean` | Clear `.next` and restart dev (stale chunk issues) |
 | `npm run test:shared` | Unit tests for `packages/shared` pure logic |
-| `npm run dev:mobile` | Expo dev server for `apps/mobile` (Phase 2B scaffold) |
+| `npm run dev:mobile` | Expo dev server for `apps/mobile` (native auth shell) |
 
 ## Mobile (`apps/mobile`)
 
-Phase 2B Expo scaffold — auth shell only (no presence writes, no location). See [apps/mobile/README.md](apps/mobile/README.md).
+**Phase 2C complete** — Expo auth shell with Intencity-branded UI. **Not** production parity: map, venues, stories, chat, and presence remain on **web/PWA** (`npm run dev`). Mobile does not write `user_presence` or use location.
+
+**Phone testing:** Expo Go + `apps/mobile/.env` — see [apps/mobile/README.md](apps/mobile/README.md). Migration status: [docs/MIGRATION_PHASES.md](docs/MIGRATION_PHASES.md).
 
 ## Shared package (`packages/shared`)
 
