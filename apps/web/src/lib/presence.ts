@@ -26,25 +26,6 @@ import {
   isPresenceRecent,
 } from "@intencity/shared";
 
-/*
- * Phase 1B-large-lite transition — pre-shim inline (db59947 parity reference).
- *
- * export const RECENT_WINDOW_MS = 60 * 60_000;
- * export const MAP_ACTIVITY_WINDOW_MS = 20 * 60_000;
- * export const LIVE_WINDOW_MS = MAP_ACTIVITY_WINDOW_MS;
- * export const FRIEND_ONLINE_BADGE_MS = 4 * 60_000;
- * export const MAP_FALLBACK_CENTER_LAT = 39.9526;
- * export const MAP_FALLBACK_CENTER_LNG = -75.1636;
- *
- * export function isLikelyMapFallbackPresence(lat: number, lng: number): boolean { ... }
- * export type PresenceFreshness = "live" | "recent" | "stale";
- * export function isValidCoordinatePair(...) { ... }
- * export function getPresenceFreshness(...) { ... }
- * export function isPresenceLive(...) { ... }
- * export function isFriendOnlineNow(...) { ... }
- * export function isPresenceRecent(...) { ... }
- */
-
 /**
  * Hub / Friends list / any “@user · …” line: one ladder so **Online** (`isFriendOnlineNow`)
  * matches strips, while softer **Away** / **Recently** use map windows (20m / 60m).

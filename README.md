@@ -32,5 +32,10 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run build` | Production build |
 | `npm run start` | Run production server |
 | `npm run dev:clean` | Clear `.next` and restart dev (stale chunk issues) |
+| `npm run test:shared` | Unit tests for `packages/shared` pure logic |
+
+## Shared package (`packages/shared`)
+
+Pure TypeScript helpers (presence windows, venue zone math, heat colors) live in **`@intencity/shared`**. The web app imports them through curated shims under `apps/web/src/lib/` (for example `presence.ts`, `venueHeatColors.ts`, and `computePresenceFromGps` in `userPresenceVenueSync.ts`). Run `npm run test:shared` from the repo root after changing shared code.
 
 See `docs/V1_LAUNCH_PLAN.md` for launch scope and status.
