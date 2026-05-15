@@ -2,7 +2,7 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **2A** — native architecture documentation only.
+**Current phase:** **2B** — mobile scaffold (auth shell only; no presence writes).
 
 ---
 
@@ -65,7 +65,7 @@ npm run build
 
 ---
 
-## Phase 2A — Native architecture docs (current)
+## Phase 2A — Native architecture docs ✅
 
 **Goal:** Durable docs for Cursor and humans — **no app code**, no `apps/mobile`, no Expo install, no web runtime changes, no DB/RLS changes.
 
@@ -76,22 +76,23 @@ npm run build
 - [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) (this file)
 - [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md)
 
-**Exit criteria:** Docs merged; team agrees on gates before 2B.
-
 ---
 
-## Phase 2B — Mobile scaffold (future)
+## Phase 2B — Mobile scaffold (current)
 
-- Create `apps/mobile` (Expo + expo-router + dev client + EAS config)
-- Supabase auth with secure session storage
-- Minimal UI: sign in, signed-in placeholder
-- Metro monorepo wiring for `@intencity/shared`
+- `apps/mobile` — Expo + expo-router + expo-dev-client + EAS skeleton
+- Supabase auth (`signInWithPassword`) with SecureStore session
+- Routes: `/login`, `/home` (user id/email only; no `profiles` reads)
+- `@intencity/shared` smoke on home (`MAP_ACTIVITY_WINDOW_MS`, `isValidCoordinatePair`)
+- Bundle ID: `com.intencity.app`
+- Run: `npm run dev:mobile` from repo root
 
 **Explicitly out of scope:**
 
-- `user_presence` writes
-- Background location
-- Changing `apps/web`
+- `user_presence` reads or writes
+- `expo-location` / background location
+- Map, push, schema/RLS changes
+- Changes to `apps/web/src`
 
 ---
 

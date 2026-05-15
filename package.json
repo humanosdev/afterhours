@@ -16,6 +16,7 @@
     "build": "npm run build -w web",
     "start": "npm run start -w web",
     "purge-scheduled-accounts": "npm run purge-scheduled-accounts -w web",
-    "test:shared": "npm run test -w @intencity/shared"
+    "test:shared": "npm run test -w @intencity/shared",
+    "dev:mobile": "npm run start -w mobile"
   }
 }

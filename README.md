@@ -33,6 +33,11 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm run start` | Run production server |
 | `npm run dev:clean` | Clear `.next` and restart dev (stale chunk issues) |
 | `npm run test:shared` | Unit tests for `packages/shared` pure logic |
+| `npm run dev:mobile` | Expo dev server for `apps/mobile` (Phase 2B scaffold) |
+
+## Mobile (`apps/mobile`)
+
+Phase 2B Expo scaffold — auth shell only (no presence writes, no location). See [apps/mobile/README.md](apps/mobile/README.md).
 
 ## Shared package (`packages/shared`)
 
