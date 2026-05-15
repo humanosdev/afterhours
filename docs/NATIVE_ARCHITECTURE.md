@@ -59,7 +59,44 @@ Visual model on web: **floating / glass** bottom control (`ah-glass-control`), i
 | Activity | Placeholder — rough stand-in for chat/notifications/stories activity |
 | Profile | Partially real (Phase 2F: read-only own `profiles` row) |
 
-These four tabs exist **only** to exercise auth, routing, and phased read-only surfaces. A future phase will **replace** this bar with web-parity navigation (hub, map, create, chat, profile + integrated search), not extend the current four-tab model as canonical.
+These four tabs exist **only** to exercise auth, routing, and phased read-only surfaces. **Phase 2G** documents the replacement plan; **Phase 2H** will implement the web-parity tab shell (placeholders only). Do **not** extend the current four-tab model as canonical.
+
+### Target native bottom navigation (Phase 2H — planned)
+
+Aligned with production `BottomNav.tsx` — **not** the current native scaffold:
+
+| Tab | Web route | Native 2H intent |
+|-----|-----------|------------------|
+| **Hub** | `/hub` | Placeholder feed shell — no hub data reads yet |
+| **Map** | `/map` | **Placeholder map surface first** — static copy, no Mapbox, no GPS, no `user_presence` |
+| **Create** | center action | **Placeholder only** — no camera, upload, or stories pipeline until share migration |
+| **Chat** | `/chat` | Placeholder messages shell — no chat API |
+| **Profile** | `/profile` | Keep Phase 2F read-only own `profiles` hydration |
+
+**Search:** Production web uses **integrated search** (hub, map, overlays) — **not** a permanent bottom tab. When 2H ships, the current native **Search** tab should be **removed or demoted** in favor of integrated search entry points (exact UX TBD in 2H/2I; no search backend on native in 2H).
+
+### Phase 2G — Web-parity navigation plan (current)
+
+**Docs/planning only.** Defines convergence toward web/PWA IA without risky implementation.
+
+**In scope (2G):** Document target tabs, temporary vs final nav, placeholder strategy for Map/Create, integrated search direction, link to [MIGRATION_PHASES.md](./MIGRATION_PHASES.md#phase-2g--web-parity-native-navigation-plan-).
+
+**Out of scope (2G and 2H shell):**
+
+| Do not implement yet | Notes |
+|----------------------|--------|
+| Map engine (Mapbox, `@rnmapbox/maps`) | Map tab can exist as empty/placeholder shell first |
+| Live GPS / `expo-location` | Web remains presence writer |
+| Background location / geofencing | Later gated phase |
+| `user_presence` reads or writes | See [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
+| Presence timing window changes | `packages/shared` constants unchanged |
+| Independent native product redesign | Inherit web hierarchy |
+
+### Phase 2H — Native nav parity shell (next implementation, future)
+
+**Proposed:** Replace 2E routes with Hub / Map / Create / Chat / Profile — **placeholder screens only**, same Supabase boundary as 2F (`profiles` read on Profile only). No new dependencies for location or maps.
+
+Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md#phase-2h--native-nav-parity-shell-future).
 
 ### Long-term native UX convergence
 
@@ -119,7 +156,7 @@ Phase 1 git range (for `git log` / `git diff`):
 | **Expo** | SDK 54, expo-router, Expo Go verified |
 | **Auth** | Supabase email/password, SecureStore |
 | **UI** | Phase 2C — dark Intencity shell, safe areas, login |
-| **Navigation** | Phase 2E — **temporary** bottom tabs (Home / Search / Activity / Profile); **not** final IA — see [UX source of truth](#ux-source-of-truth-critical) |
+| **Navigation** | Phase 2G **plan** for web-parity tabs; Phase 2E scaffold still live (Home / Search / Activity / Profile) — see [UX source of truth](#ux-source-of-truth-critical) |
 | **Data** | Phase 2F — read-only own `profiles` row on Profile tab |
 | **Shared** | Smoke import on Home tab only — **presence windows unchanged** |
 | **Authority** | **Non-authoritative** — web owns `user_presence` |
@@ -177,7 +214,9 @@ Phase 2 prepares native/mobile **without** changing production presence behavior
 | **2D** | ✅ | Docs + audit checkpoint |
 | **2E** | ✅ | Read-only product shell — bottom tabs + placeholder surfaces |
 | **2F** | ✅ | Read-only own `profiles` hydration on Profile tab |
-| **2G+** | Future | More read-only data, gated presence, map — **explicit plan required** |
+| **2G** | 📝 | Web-parity native navigation **plan** (docs only) |
+| **2H** | Future | Nav parity **shell** — Hub / Map / Create / Chat / Profile placeholders |
+| **2I+** | Future | Read-only data, map engine, gated presence — **explicit plan required** |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md).
 
@@ -289,6 +328,7 @@ Web continues using existing Next.js `NEXT_PUBLIC_*` and root `.env.local`.
 1. Read [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) before editing presence-related web files.
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) before any `user_presence` write on a new platform.
 3. Do not conflate **migration Phase 2** with **V1 launch plan** moderation phases in `V1_LAUNCH_PLAN.md`.
-4. Post–2F: **no** `expo-location`, map, or `user_presence` on mobile; Supabase reads limited to own `profiles` until a new phase plan.
+4. Post–2F: **no** `expo-location`, map engine, or `user_presence` on mobile; Supabase reads limited to own `profiles` until a new phase plan.
 5. Web/PWA = production product **and UX source of truth**; mobile = read-only scaffold — **do not** cement the current four-tab layout as long-term.
-6. Native nav/IA changes require explicit web-parity intent — see [UX source of truth](#ux-source-of-truth-critical).
+6. **Phase 2G** = nav planning docs only; **Phase 2H** = web-parity tab shell with placeholders — still no GPS/presence/map SDK.
+7. Native nav/IA changes require explicit web-parity intent — see [UX source of truth](#ux-source-of-truth-critical).

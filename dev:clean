@@ -1,0 +1,158 @@
+> npm run dev:clean -w web
+
+
+> dev:clean
+> npm run strip-pwa-dev && rm -rf .next && sh -c 'for pid in $(lsof -tiTCP:3000 -sTCP:LISTEN 2>/dev/null); do kill -9 $pid 2>/dev/null || true; done' && WATCHPACK_POLLING=true next dev -H 0.0.0.0
+
+
+> strip-pwa-dev
+> node scripts/strip-pwa-artifacts.mjs
+
+[strip-pwa-artifacts] removed fallback-pGhjVnQqaTrlwevLkSb98.js
+[strip-pwa-artifacts] removed sw.js
+[strip-pwa-artifacts] removed workbox-a41e51f5.js
+[strip-pwa-artifacts] removed worker-pGhjVnQqaTrlwevLkSb98.js
+[strip-pwa-artifacts] done, 4 file(s)
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3000
+  - Network:      http://0.0.0.0:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+> [PWA] PWA support is disabled
+> [PWA] PWA support is disabled
+ ✓ Ready in 1352ms
+ ○ Compiling /map ...
+ ✓ Compiled /map in 2.6s (843 modules)
+ GET /map 200 in 2810ms
+ ✓ Compiled / in 474ms (852 modules)
+ GET / 200 in 577ms
+ ✓ Compiled /login in 164ms (850 modules)
+ ✓ Compiled /api/legal/consent in 383ms (522 modules)
+Using the user object as returned from supabase.auth.getSession() or from some supabase.auth.onAuthStateChange() events could be insecure! This value comes directly from the storage medium (usually cookies on the server) and may not be authentic. Use supabase.auth.getUser() instead which authenticates the data by contacting the Supabase Auth server.
+ POST /api/legal/consent 200 in 754ms
+ ✓ Compiled /hub in 285ms (995 modules)
+^C
+(base) gleeshshiest@Victors-MacBook-Air intencity % cd /Users/gleeshshiest/intencity
+git status
+npm run test:shared
+cd apps/mobile && npx tsc --noEmit
+cd ../..
+git add .
+git commit -m "Fix Phase 2F native profile hydration columns"
+git push origin main
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   apps/mobile/README.md
+	modified:   apps/mobile/app/(app)/_layout.tsx
+	modified:   apps/mobile/app/(app)/profile.tsx
+	modified:   apps/mobile/src/components/TabScreenHeader.tsx
+	modified:   docs/MIGRATION_PHASES.md
+	modified:   docs/NATIVE_ARCHITECTURE.md
+	modified:   docs/PRESENCE_OWNERSHIP.md
+	modified:   docs/SACRED_FILES_AND_RULES.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	apps/mobile/src/components/ProfileAvatar.tsx
+	apps/mobile/src/components/ProfileDetailRow.tsx
+	apps/mobile/src/hooks/
+	apps/mobile/src/lib/fetchMyProfile.ts
+	apps/mobile/src/lib/profileDisplay.ts
+	apps/mobile/src/types/
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+> test:shared
+> npm run test -w @intencity/shared
+
+
+> @intencity/shared@0.0.0 test
+> node --import tsx --test src/**/*.test.ts
+
+▶ distanceMeters
+  ✔ returns 0 for identical points (1.150083ms)
+  ✔ matches a known short hop (~111m per 0.001° latitude) (0.131292ms)
+✔ distanceMeters (2.019625ms)
+▶ venueHeatHexFromActivity
+  ✔ returns neutral at zero (0.485541ms)
+  ✔ steps through heat breakpoints (0.063625ms)
+✔ venueHeatHexFromActivity (1.214208ms)
+▶ isValidCoordinatePair
+  ✔ rejects non-finite and out-of-range (0.48475ms)
+  ✔ accepts in-range finite coords (0.060875ms)
+✔ isValidCoordinatePair (1.248542ms)
+▶ isLikelyMapFallbackPresence
+  ✔ matches map fallback center within epsilon (0.093375ms)
+  ✔ does not match a real offset (0.04925ms)
+✔ isLikelyMapFallbackPresence (0.219458ms)
+▶ getPresenceFreshness
+  ✔ returns stale when updatedAt is missing (0.504834ms)
+  ✔ returns live within MAP_ACTIVITY_WINDOW_MS (0.684208ms)
+  ✔ returns recent between map activity and recent windows (0.074875ms)
+  ✔ returns stale after RECENT_WINDOW_MS (0.066375ms)
+✔ getPresenceFreshness (2.021292ms)
+▶ isFriendOnlineNow
+  ✔ is true within FRIEND_ONLINE_BADGE_MS (0.0995ms)
+  ✔ is false beyond FRIEND_ONLINE_BADGE_MS (0.049958ms)
+✔ isFriendOnlineNow (0.393292ms)
+▶ isPresenceLive / isPresenceRecent
+  ✔ live and recent are mutually exclusive tiers (0.164666ms)
+✔ isPresenceLive / isPresenceRecent (0.327334ms)
+▶ computePresenceFromGps zone selection
+  ✔ picks inner when inside inner radius (1.348625ms)
+  ✔ picks closest venue when overlapping outer zones (0.098542ms)
+  ✔ uses outer when outside inner but inside outer (0.071459ms)
+  ✔ uses halo when outside outer but inside halo limit (0.083916ms)
+✔ computePresenceFromGps zone selection (2.430375ms)
+▶ computePresenceFromGps state machine
+  ✔ stays inner_pending before INNER_CONFIRM_MS (0.105291ms)
+  ✔ becomes inner_confirmed at INNER_CONFIRM_MS (0.063375ms)
+  ✔ resets to outside when leaving inner zone (0.06375ms)
+✔ computePresenceFromGps state machine (0.333458ms)
+▶ haloLimitM
+  ✔ uses explicit halo_radius_m when set (0.627209ms)
+  ✔ falls back to max(round(outer*1.35), outer+40) (0.0855ms)
+✔ haloLimitM (2.054833ms)
+ℹ tests 24
+ℹ suites 10
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 157.540541
+[main 61f02fb] Fix Phase 2F native profile hydration columns
+ Committer: Victor Oyeneye <gleeshshiest@Victors-MacBook-Air.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly:
+
+    git config --global user.name "Your Name"
+    git config --global user.email you@example.com
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 14 files changed, 513 insertions(+), 94 deletions(-)
+ create mode 100644 apps/mobile/src/components/ProfileAvatar.tsx
+ create mode 100644 apps/mobile/src/components/ProfileDetailRow.tsx
+ create mode 100644 apps/mobile/src/hooks/useMyProfile.ts
+ create mode 100644 apps/mobile/src/lib/fetchMyProfile.ts
+ create mode 100644 apps/mobile/src/lib/profileDisplay.ts
+ create mode 100644 apps/mobile/src/types/profile.ts
+Enumerating objects: 43, done.
+Counting objects: 100% (43/43), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (24/24), done.
+Writing objects: 100% (26/26), 11.51 KiB | 5.75 MiB/s, done.
+Total 26 (delta 10), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (10/10), completed with 10 local objects.
+To https://github.com/humanosdev/afterhours.git
+   6e13ee6..61f02fb  main -> main
+(base) gleeshshiest@Victors-MacBook-Air intencity % 

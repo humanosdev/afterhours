@@ -1,10 +1,24 @@
-# Intencity mobile (Phase 2F — read-only profile)
+# Intencity mobile (Phase 2G — nav plan; 2F profile read)
 
 Expo native app — **phased read-only scaffold** (Phase 2E tabs + Phase 2F profile read). **Not** the production app and **not** the source of truth for product UX.
 
-**Web/PWA** (`apps/web`) defines final navigation (hub, **map**, create, chat, profile; search integrated in surfaces). Native’s current Home / Search / Activity / Profile tabs are **temporary migration placeholders** — they will converge toward web parity, not drive independent IA. See [docs/NATIVE_ARCHITECTURE.md](../../docs/NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
+**Web/PWA** (`apps/web`) defines final navigation. Native’s current **Home / Search / Activity / Profile** tabs are **temporary Phase 2E placeholders only**.
 
-Map, venues, stories, chat, and presence remain on web/PWA until later phases.
+## Navigation roadmap (Phase 2G → 2H)
+
+| | |
+|---|---|
+| **Today (2E scaffold)** | Home · Search · Activity · Profile |
+| **Target (web parity)** | **Hub** · **Map** · **Create** · **Chat** · **Profile** |
+| **Search** | Integrated into surfaces/overlays on web — **not** a permanent bottom tab; native Search tab will be removed or demoted in 2H |
+| **Phase 2G** | Docs/planning only — no route changes in this phase |
+| **Phase 2H (next code phase)** | Replace tab shell with web-parity labels; **placeholder** Map / Create / Chat screens — no Mapbox, no GPS, no new Supabase reads |
+
+**Do not implement yet (2G; still true for 2H shell):** map engine, live GPS, `user_presence`, background location, presence timing changes, independent native IA redesign.
+
+See [docs/NATIVE_ARCHITECTURE.md](../../docs/NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical) and [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md#phase-2g--web-parity-native-navigation-plan-).
+
+Map, venues, stories, chat data, and presence remain on web/PWA until later migration phases.
 
 Does not write `user_presence`, read presence, or use location.
 
@@ -137,15 +151,17 @@ Root `.gitignore` ignores all `node_modules/` and `.expo/`. Prefer **`npm instal
 
 Phase 2B–2F works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
 
-## Current boundaries (post–2F)
+## Current boundaries (post–2F; 2G planning)
 
 | Allowed | Not allowed without new phase plan |
 |---------|-------------------------------------|
 | Auth UI polish | `expo-location`, background GPS |
 | Sign in / sign out | `user_presence` reads or writes |
 | Read own `profiles` row | Other Supabase table reads |
-| Tab shell + placeholder Home/Search/Activity | Map, live hub/chat/stories data |
-| Shared smoke on Home | Profile edit / avatar upload on native |
-| | Push, geofencing |
+| Tab shell + placeholder Home/Search/Activity | Mapbox, map engine, live map |
+| Shared smoke on Home | Live hub/chat/stories/messages data |
+| **Phase 2H (future):** web-parity tab **placeholders** only | GPS, geofencing, presence writes |
+| | Profile edit / avatar upload on native |
+| | Push |
 
 **Web** remains the only **physical presence** writer. See [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md) and [docs/PRESENCE_OWNERSHIP.md](../../docs/PRESENCE_OWNERSHIP.md).
