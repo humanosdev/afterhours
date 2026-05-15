@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -17,7 +17,7 @@ import { acceptedFriendIdsExcludingBlocks } from "@/lib/pairBlockStatus";
 import { venueAccentRgba } from "@/lib/venueCategoryAccent";
 import { venueHeatHexFromActivity } from "@/lib/venueHeatColors";
 import { fetchViewedStoryIds, STORY_VIEWED_EVENT } from "@/lib/storyViews";
-import { fetchShareInteractionStatsByStoryId } from "@/lib/storyFeedInteractions";
+import { fetchHubShareFeedCardStates, type HubShareFeedCardState } from "@/lib/storyFeedInteractions";
 import { createNotification } from "@/lib/notifications";
 import { withTimeout } from "@/lib/withTimeout";
 import {
@@ -26,7 +26,10 @@ import {
   APP_PAGE_TOP_PADDING_CLASS,
   APP_TAB_PAGE_ROOT_CLASS,
 } from "@/lib/appShellLayout";
-import { ChevronRight } from "lucide-react";
+import { openShareCommentsSheet } from "@/lib/shareCommentsSheet";
+import { isStoryRowShareFlag } from "@/lib/storyRowShare";
+import { isMomentStillActive } from "@/lib/momentWindow";
+import { ChevronRight, Search } from "lucide-react";
 
 /* ---------------- TYPES ---------------- */
 
@@ -76,6 +79,7 @@ type ShareItem = {
   user_id: string;
   image_url: string;
   created_at: string;
+  share_hidden?: boolean;
   username?: string | null;
   avatar_url?: string | null;
 };
@@ -113,9 +117,7 @@ export default function HubPage() {
   const [myStoryFallback, setMyStoryFallback] = useState<string>("AH");
   const [unreadCount, setUnreadCount] = useState(0);
   const [friendShares, setFriendShares] = useState<ShareItem[]>([]);
-  const [shareStatsById, setShareStatsById] = useState<
-    Record<string, { likesCount: number; commentsCount: number; liked: boolean }>
-  >({});
+  const [shareStatsById, setShareStatsById] = useState<Record<string, HubShareFeedCardState>>({});
   const [venuesReady, setVenuesReady] = useState(false);
   const [storiesReady, setStoriesReady] = useState(false);
   const [sharesReady, setSharesReady] = useState(false);
@@ -280,11 +282,14 @@ export default function HubPage() {
     return () => clearInterval(id);
   }, []);
 
+  const friendsRealtimeKey = useMemo(() => friends.slice().sort().join(","), [friends]);
+
   /* ---------------- DATA ---------------- */
 
   useEffect(() => {
     let mounted = true;
     let presenceInterval: number | null = null;
+    let venuesDebounce: number | null = null;
 
     const loadVenuesOnce = async () => {
       const res = await withTimeout(
@@ -295,6 +300,14 @@ export default function HubPage() {
       if (!mounted) return;
       setVenues((res.data as any[]) || []);
       setVenuesReady(true);
+    };
+
+    const scheduleVenuesReload = () => {
+      if (venuesDebounce != null) window.clearTimeout(venuesDebounce);
+      venuesDebounce = window.setTimeout(() => {
+        venuesDebounce = null;
+        void loadVenuesOnce();
+      }, 150);
     };
 
     const loadPresence = async () => {
@@ -334,190 +347,239 @@ export default function HubPage() {
       },
     });
 
-    presenceInterval = window.setInterval(loadPresence, 25_000);
+    const venuesChannel = supabase
+      .channel("hub-venues-rt")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "venues" },
+        () => {
+          scheduleVenuesReload();
+        }
+      )
+      .subscribe();
+
+    presenceInterval = window.setInterval(loadPresence, 45_000);
 
     return () => {
       mounted = false;
       unsub();
       if (presenceInterval) clearInterval(presenceInterval);
+      if (venuesDebounce != null) window.clearTimeout(venuesDebounce);
+      void supabase.removeChannel(venuesChannel);
     };
   }, []);
 
-  /* ---------------- STORIES FIX ---------------- */
+  const loadHubStories = useCallback(async () => {
+    if (!meId) {
+      setStories([]);
+      setStoriesReady(false);
+      return;
+    }
+    const allowedIds = Array.from(new Set([meId, ...friends]));
+    if (!allowedIds.length) {
+      setStories([]);
+      setStoriesReady(true);
+      return;
+    }
 
-  useEffect(() => {
-    const loadStories = async () => {
-      if (!meId) {
-        setStories([]);
-        setStoriesReady(false);
-        return;
-      }
-      const allowedIds = Array.from(new Set([meId, ...friends]));
-      if (!allowedIds.length) {
-        setStories([]);
-        setStoriesReady(true);
-        return;
-      }
+    const preferred = await withTimeout(
+      supabase
+        .from("stories")
+        .select("id, user_id, image_url, created_at, expires_at, is_share")
+        .in("user_id", allowedIds)
+        .order("created_at", { ascending: false })
+        .limit(200)
+        .then((r) => r),
+      14_000,
+      { data: [], error: null } as any
+    );
+    const fallback = preferred.error
+      ? await withTimeout(
+          supabase
+            .from("stories")
+            .select("id, user_id, image_url, created_at, expires_at")
+            .in("user_id", allowedIds)
+            .order("created_at", { ascending: false })
+            .limit(200)
+            .then((r) => r),
+          12_000,
+          { data: [], error: null } as any
+        )
+      : null;
+    const data = preferred.data ?? fallback?.data ?? [];
+    const error = preferred.error && fallback?.error ? fallback.error : null;
+    if (error) {
+      console.error("stories fetch error:", error);
+      setStories([]);
+      setStoriesReady(true);
+      return;
+    }
 
-      const preferred = await withTimeout(
-        supabase
-          .from("stories")
-          .select("id, user_id, image_url, created_at, expires_at, is_share")
-          .in("user_id", allowedIds)
-          .limit(200)
-          .then((r) => r),
-        14_000,
+    const rows = (data ?? []) as any[];
+    const userIds = Array.from(new Set(rows.map((s) => s.user_id).filter(Boolean))) as string[];
+    const profileById: Record<string, { username: string | null; avatar_url: string | null }> = {};
+
+    if (userIds.length) {
+      const { data: profileRows } = await withTimeout(
+        supabase.from("profiles").select("id, username, avatar_url").in("id", userIds).then((r) => r),
+        8000,
         { data: [], error: null } as any
       );
-      const fallback = preferred.error
-        ? await withTimeout(
-            supabase
-              .from("stories")
-              .select("id, user_id, image_url, created_at, expires_at")
-              .in("user_id", allowedIds)
-              .limit(200)
-              .then((r) => r),
-            12_000,
-            { data: [], error: null } as any
-          )
-        : null;
-      const data = preferred.data ?? fallback?.data ?? [];
-      const error = preferred.error && fallback?.error ? fallback.error : null;
-      if (error) {
-        console.error("stories fetch error:", error);
-        setStoriesReady(true);
-        return;
-      }
+      (profileRows ?? []).forEach((p: any) => {
+        profileById[p.id] = {
+          username: p.username ?? null,
+          avatar_url: p.avatar_url ?? null,
+        };
+      });
+    }
 
-      const rows = (data ?? []) as any[];
-      const userIds = Array.from(
-        new Set(rows.map((s) => s.user_id).filter(Boolean))
-      ) as string[];
-      const profileById: Record<string, { username: string | null; avatar_url: string | null }> = {};
+    const nowMs = Date.now();
+    const cleaned: Story[] = rows
+      .map((s) => {
+        const mediaUrl = s.media_url ?? s.image_url ?? "";
+        return {
+          id: s.id,
+          user_id: s.user_id,
+          image_url: mediaUrl,
+          media_url: mediaUrl,
+          created_at: s.created_at,
+          expires_at: s.expires_at ?? null,
+          is_share: isStoryRowShareFlag(s.is_share),
+          username: profileById[s.user_id]?.username ?? null,
+          avatar_url: profileById[s.user_id]?.avatar_url ?? null,
+        };
+      })
+      .filter((s) => !s.is_share)
+      .filter((s) => !!s.media_url)
+      .filter((s) => isMomentStillActive(s.created_at, s.expires_at, nowMs))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      if (userIds.length) {
-        const { data: profileRows } = await withTimeout(
-          supabase.from("profiles").select("id, username, avatar_url").in("id", userIds).then((r) => r),
-          8000,
-          { data: [], error: null } as any
-        );
-        (profileRows ?? []).forEach((p: any) => {
-          profileById[p.id] = {
-            username: p.username ?? null,
-            avatar_url: p.avatar_url ?? null,
-          };
-        });
-      }
-
-      const nowMs = Date.now();
-      const cleaned: Story[] = rows
-        .map((s) => {
-          const mediaUrl = s.media_url ?? s.image_url ?? "";
-          return {
-            id: s.id,
-            user_id: s.user_id,
-            image_url: mediaUrl,
-            media_url: mediaUrl,
-            created_at: s.created_at,
-            expires_at: s.expires_at ?? null,
-            is_share: !!s.is_share,
-            username: profileById[s.user_id]?.username ?? null,
-            avatar_url: profileById[s.user_id]?.avatar_url ?? null,
-          };
-        })
-        .filter((s) => !s.is_share)
-        .filter((s) => !!s.media_url)
-        .filter((s) => {
-          const createdMs = new Date(s.created_at).getTime();
-          if (!Number.isFinite(createdMs)) return false;
-          const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
-          const expiresMs = s.expires_at
-            ? new Date(s.expires_at).getTime()
-            : fallbackExpiresMs;
-          return Number.isFinite(expiresMs) && expiresMs > nowMs;
-        });
-
-      setStories(cleaned);
-      setStoriesReady(true);
-    };
-
-    loadStories();
-    const onStoryPosted = () => loadStories();
-    window.addEventListener("story-posted", onStoryPosted);
-    return () => window.removeEventListener("story-posted", onStoryPosted);
+    setStories(cleaned);
+    setStoriesReady(true);
   }, [friends, meId]);
 
-  useEffect(() => {
+  const loadHubFriendShares = useCallback(async () => {
     if (!meId) {
       setFriendShares([]);
       setSharesReady(true);
       return;
     }
-    let mounted = true;
-    const loadFriendShares = async () => {
-      const feedUserIds = Array.from(new Set([meId, ...friends]));
-      const preferred = await withTimeout(
-        supabase
-          .from("stories")
-          .select("id, user_id, image_url, created_at, is_share, share_visible, share_hidden")
-          .in("user_id", feedUserIds)
-          .eq("is_share", true)
-          .eq("share_visible", true)
-          .eq("share_hidden", false)
-          .order("created_at", { ascending: false })
-          .limit(120)
-          .then((r) => r),
-        12_000,
+    const feedUserIds = Array.from(new Set([meId, ...friends]));
+    const preferred = await withTimeout(
+      supabase
+        .from("stories")
+        .select("id, user_id, image_url, created_at, is_share, share_visible, share_hidden")
+        .in("user_id", feedUserIds)
+        .eq("is_share", true)
+        .eq("share_hidden", false)
+        .order("created_at", { ascending: false })
+        .limit(120)
+        .then((r) => r),
+      12_000,
+      { data: [], error: null } as any
+    );
+
+    if (preferred.error) {
+      setFriendShares([]);
+      setSharesReady(true);
+      return;
+    }
+    const shareRows = (preferred.data ?? []) as any[];
+    const ownerIds = Array.from(new Set(shareRows.map((row) => row.user_id).filter(Boolean))) as string[];
+    let ownerById: Record<string, { username: string | null; avatar_url: string | null }> = {};
+    if (ownerIds.length) {
+      const { data: profileRows } = await withTimeout(
+        supabase.from("profiles").select("id, username, avatar_url").in("id", ownerIds).then((r) => r),
+        8000,
         { data: [], error: null } as any
       );
-
-      if (preferred.error) {
-        if (mounted) {
-          setFriendShares([]);
-          setSharesReady(true);
-        }
-        return;
-      }
-      if (!mounted) return;
-      const shareRows = (preferred.data ?? []) as any[];
-      const ownerIds = Array.from(new Set(shareRows.map((row) => row.user_id).filter(Boolean))) as string[];
-      let ownerById: Record<string, { username: string | null; avatar_url: string | null }> = {};
-      if (ownerIds.length) {
-        const { data: profileRows } = await withTimeout(
-          supabase.from("profiles").select("id, username, avatar_url").in("id", ownerIds).then((r) => r),
-          8000,
-          { data: [], error: null } as any
-        );
-        (profileRows ?? []).forEach((p: any) => {
-          ownerById[p.id] = {
-            username: p.username ?? null,
-            avatar_url: p.avatar_url ?? null,
-          };
-        });
-      }
-      if (!mounted) return;
-      setFriendShares(
-        shareRows
-          .map((row) => ({
-            id: row.id as string,
-            user_id: row.user_id as string,
-            image_url: (row.image_url ?? "") as string,
-            created_at: row.created_at as string,
-            username: ownerById[row.user_id]?.username ?? null,
-            avatar_url: ownerById[row.user_id]?.avatar_url ?? null,
-          }))
-          .filter((row) => !!row.image_url)
-      );
-      setSharesReady(true);
-    };
-    loadFriendShares();
-    const onStoryPosted = () => loadFriendShares();
-    window.addEventListener("story-posted", onStoryPosted);
-    return () => {
-      mounted = false;
-      window.removeEventListener("story-posted", onStoryPosted);
-    };
+      (profileRows ?? []).forEach((p: any) => {
+        ownerById[p.id] = {
+          username: p.username ?? null,
+          avatar_url: p.avatar_url ?? null,
+        };
+      });
+    }
+    setFriendShares(
+      shareRows
+        .filter((row) => row.share_visible !== false)
+        .map((row) => ({
+          id: row.id as string,
+          user_id: row.user_id as string,
+          image_url: (row.image_url ?? "") as string,
+          created_at: row.created_at as string,
+          share_hidden: !!row.share_hidden,
+          username: ownerById[row.user_id]?.username ?? null,
+          avatar_url: ownerById[row.user_id]?.avatar_url ?? null,
+        }))
+        .filter((row) => !!row.image_url)
+    );
+    setSharesReady(true);
   }, [friends, meId]);
+
+  useEffect(() => {
+    void loadHubStories();
+    const onStoryPosted = () => void loadHubStories();
+    window.addEventListener("story-posted", onStoryPosted);
+    return () => window.removeEventListener("story-posted", onStoryPosted);
+  }, [loadHubStories]);
+
+  useEffect(() => {
+    void loadHubFriendShares();
+    const onStoryPosted = () => void loadHubFriendShares();
+    window.addEventListener("story-posted", onStoryPosted);
+    return () => window.removeEventListener("story-posted", onStoryPosted);
+  }, [loadHubFriendShares]);
+
+  useEffect(() => {
+    if (!meId) return;
+    const allowed = new Set<string>([meId, ...friends]);
+    let bounce: number | null = null;
+    const bumpFeed = () => {
+      if (bounce != null) window.clearTimeout(bounce);
+      bounce = window.setTimeout(() => {
+        bounce = null;
+        void loadHubStories();
+        void loadHubFriendShares();
+      }, 120);
+    };
+
+    const ch = supabase
+      .channel(`hub-stories-feed-rt:${meId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "stories" },
+        (payload) => {
+          const row = payload.new as { user_id?: string } | null;
+          if (!row?.user_id || !allowed.has(row.user_id)) return;
+          bumpFeed();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "stories" },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as { user_id?: string } | null;
+          if (!row?.user_id || !allowed.has(row.user_id)) return;
+          bumpFeed();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "stories" },
+        (payload) => {
+          const row = payload.old as { user_id?: string } | null;
+          if (!row?.user_id || !allowed.has(row.user_id)) return;
+          bumpFeed();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (bounce != null) window.clearTimeout(bounce);
+      void supabase.removeChannel(ch);
+    };
+  }, [meId, friendsRealtimeKey, loadHubStories, loadHubFriendShares]);
 
   useEffect(() => {
     let cancelled = false;
@@ -527,49 +589,27 @@ export default function HubPage() {
       return;
     }
     (async () => {
-      const stats = await fetchShareInteractionStatsByStoryId(supabase, ids, meId);
+      const stats = await fetchHubShareFeedCardStates(supabase, ids, meId, friends);
       if (!cancelled) setShareStatsById(stats);
     })();
     return () => {
       cancelled = true;
     };
-  }, [friendShares, meId]);
+  }, [friendShares, meId, friends]);
 
   useEffect(() => {
     const onThreadUpdated = (e: Event) => {
-      const d = (e as CustomEvent<{ storyId?: string; deltaComments?: number }>).detail;
-      if (!d?.storyId) return;
-      const deltaComments = d.deltaComments;
-      if (typeof deltaComments !== "number" || !Number.isFinite(deltaComments)) return;
-      setShareStatsById((p) => {
-        const c = p[d.storyId!];
-        if (!c) return p;
-        return {
-          ...p,
-          [d.storyId!]: {
-            ...c,
-            commentsCount: Math.max(0, c.commentsCount + deltaComments),
-          },
-        };
+      const d = (e as CustomEvent<{ storyId?: string }>).detail;
+      if (!d?.storyId || !meId) return;
+      void fetchHubShareFeedCardStates(supabase, [d.storyId], meId, friends).then((patch) => {
+        setShareStatsById((p) => ({ ...p, ...patch }));
       });
     };
     const onLikesUpdated = (e: Event) => {
-      const d = (e as CustomEvent<{ storyId?: string; deltaLikes?: number; likedByViewer?: boolean }>).detail;
-      if (!d?.storyId) return;
-      const deltaLikes = d.deltaLikes;
-      if (typeof deltaLikes !== "number" || !Number.isFinite(deltaLikes)) return;
-      setShareStatsById((p) => {
-        const c = p[d.storyId!];
-        if (!c) return p;
-        return {
-          ...p,
-          [d.storyId!]: {
-            ...c,
-            likesCount: Math.max(0, c.likesCount + deltaLikes),
-            liked: typeof d.likedByViewer === "boolean" ? d.likedByViewer : c.liked,
-            commentsCount: c.commentsCount,
-          },
-        };
+      const d = (e as CustomEvent<{ storyId?: string }>).detail;
+      if (!d?.storyId || !meId) return;
+      void fetchHubShareFeedCardStates(supabase, [d.storyId], meId, friends).then((patch) => {
+        setShareStatsById((p) => ({ ...p, ...patch }));
       });
     };
     window.addEventListener("ah-share-threads-updated", onThreadUpdated);
@@ -578,7 +618,7 @@ export default function HubPage() {
       window.removeEventListener("ah-share-threads-updated", onThreadUpdated);
       window.removeEventListener("ah-share-likes-updated", onLikesUpdated);
     };
-  }, []);
+  }, [meId, friends]);
 
   const onlineFriends = useMemo(
     () =>
@@ -611,13 +651,7 @@ export default function HubPage() {
   const hasActiveStoryMedia = (story: Story | undefined) => {
     if (!story) return false;
     if (!story.media_url) return false;
-    const createdMs = new Date(story.created_at).getTime();
-    if (!Number.isFinite(createdMs)) return false;
-    const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
-    const expiresMs = story.expires_at
-      ? new Date(story.expires_at).getTime()
-      : fallbackExpiresMs;
-    return Number.isFinite(expiresMs) && expiresMs > Date.now();
+    return isMomentStillActive(story.created_at, story.expires_at);
   };
 
   const validGroupedStories = useMemo(
@@ -625,10 +659,13 @@ export default function HubPage() {
       groupedStories
         .map((group) => ({
           ...group,
-          stories: group.stories.filter((story) => hasActiveStoryMedia(story)),
+          stories: group.stories
+            .filter((story) => hasActiveStoryMedia(story))
+            .slice()
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
         }))
         .filter((group) => group.stories.length > 0),
-    [groupedStories]
+    [groupedStories, presenceClock]
   );
   const myStoryGroup = useMemo(
     () => validGroupedStories.find((g) => g.user_id === meId) ?? null,
@@ -674,38 +711,11 @@ export default function HubPage() {
   const friendStoryHasUnseen = (user: StoryGroup) =>
     user.stories.some((s) => hasActiveStoryMedia(s) && !viewedStoryIds[s.id]);
 
-  const canRenderStoryMedia = (url: string) =>
-    new Promise<boolean>((resolve) => {
-      if (!url) {
-        resolve(false);
-        return;
-      }
-      const img = document.createElement("img");
-      let settled = false;
-      const finish = (ok: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(ok);
-      };
-      const timer = window.setTimeout(() => finish(false), 2500);
-      img.onload = () => {
-        window.clearTimeout(timer);
-        finish(true);
-      };
-      img.onerror = () => {
-        window.clearTimeout(timer);
-        finish(false);
-      };
-      img.src = url;
-    });
-
-  const openStoryViewerForUser = async (userId: string) => {
+  const openStoryViewerForUser = (userId: string) => {
     const group = validGroupedStories.find((g) => g.user_id === userId);
     if (!group) return;
     const firstStory = group.stories?.[0];
     if (!hasActiveStoryMedia(firstStory)) return;
-    const okToRender = await canRenderStoryMedia(firstStory.media_url);
-    if (!okToRender) return;
     setActiveViewerGroup({
       user_id: group.user_id,
       username: group.username,
@@ -716,13 +726,12 @@ export default function HubPage() {
         media_url: s.media_url,
         created_at: s.created_at,
         expires_at: s.expires_at,
+        is_share: isStoryRowShareFlag(s.is_share),
       })),
     });
   };
   const hasMyActiveStory = !!myStoryGroup?.stories?.some((s) => hasActiveStoryMedia(s));
-
-  const myStoriesHaveUnseen =
-    hasMyActiveStory &&
+  const myStoryHasUnseen =
     !!myStoryGroup?.stories?.some((s) => hasActiveStoryMedia(s) && !viewedStoryIds[s.id]);
 
   const hubVenueStrip = useMemo(() => {
@@ -777,38 +786,70 @@ export default function HubPage() {
     if (cur.liked) {
       const { error } = await supabase.from("story_likes").delete().eq("story_id", shareId).eq("user_id", meId);
       if (error) return;
-      setShareStatsById((p) => {
-        const c = p[shareId];
-        if (!c) return p;
-        return {
-          ...p,
-          [shareId]: { ...c, liked: false, likesCount: Math.max(0, c.likesCount - 1) },
-        };
-      });
+    } else {
+      const { error } = await supabase.from("story_likes").insert({ story_id: shareId, user_id: meId });
+      if (error) return;
+      if (ownerUserId !== meId) {
+        await createNotification({
+          recipientId: ownerUserId,
+          actorId: meId,
+          type: "story_like",
+          storyId: shareId,
+          dedupeKey: `story_like:${shareId}:${meId}`,
+          pushTitle: "Your post got a new like",
+          pushBody: "A friend liked your post.",
+          route: `/moments/${shareId}`,
+        });
+      }
+    }
+    const patch = await fetchHubShareFeedCardStates(supabase, [shareId], meId, friends);
+    setShareStatsById((p) => ({ ...p, ...patch }));
+  };
+
+  const deleteHubShare = async (shareId: string, ownerUserId: string) => {
+    if (!meId || ownerUserId !== meId) return;
+    const confirmed = window.confirm("Delete this share? This can’t be undone.");
+    if (!confirmed) return;
+    const { error } = await supabase.from("stories").delete().eq("id", shareId).eq("user_id", meId);
+    if (error) {
+      console.error("stories delete:", error);
+      alert(error.message ? `Could not delete: ${error.message}` : "Could not delete. Try again.");
       return;
     }
-    const { error } = await supabase.from("story_likes").insert({ story_id: shareId, user_id: meId });
-    if (error) return;
+    setFriendShares((prev) => prev.filter((s) => s.id !== shareId));
     setShareStatsById((p) => {
-      const c = p[shareId];
-      if (!c) return p;
-      return {
-        ...p,
-        [shareId]: { ...c, liked: true, likesCount: c.likesCount + 1 },
-      };
+      const next = { ...p };
+      delete next[shareId];
+      return next;
     });
-    if (ownerUserId !== meId) {
-      await createNotification({
-        recipientId: ownerUserId,
-        actorId: meId,
-        type: "story_like",
-        storyId: shareId,
-        dedupeKey: `story_like:${shareId}:${meId}`,
-        pushTitle: "Your post got a new like",
-        pushBody: "A friend liked your post.",
-        route: `/moments/${shareId}`,
-      });
+    window.dispatchEvent(new Event("story-posted"));
+  };
+
+  const toggleHubShareHide = async (shareId: string, ownerUserId: string, currentlyHidden: boolean) => {
+    if (!meId || ownerUserId !== meId) return;
+    const next = !currentlyHidden;
+    const { error } = await supabase
+      .from("stories")
+      .update({ share_hidden: next })
+      .eq("id", shareId)
+      .eq("user_id", meId);
+    if (error) {
+      alert("Could not update hidden status.");
+      return;
     }
+    if (next) {
+      setFriendShares((prev) => prev.filter((s) => s.id !== shareId));
+      setShareStatsById((p) => {
+        const out = { ...p };
+        delete out[shareId];
+        return out;
+      });
+    } else {
+      setFriendShares((prev) =>
+        prev.map((s) => (s.id === shareId ? { ...s, share_hidden: next } : s))
+      );
+    }
+    window.dispatchEvent(new Event("story-posted"));
   };
 
   const feedReady =
@@ -923,6 +964,18 @@ export default function HubPage() {
         </div>
       </header>
 
+      <div className="pb-3">
+        <button
+          type="button"
+          onClick={() => router.push("/search")}
+          className="ah-glass-control ah-glass-control-interactive flex h-[50px] w-full items-center gap-3 rounded-full px-4 text-left transition active:scale-[0.99]"
+          aria-label="Open search and discovery"
+        >
+          <Search className="shrink-0 text-white/42" size={18} strokeWidth={2} aria-hidden />
+          <span className="truncate text-[15px] text-white/42">Search friends, places, venues...</span>
+        </button>
+      </div>
+
       {!feedReady ? (
         <HubFeedSkeleton />
       ) : (
@@ -940,28 +993,16 @@ export default function HubPage() {
           {/* YOUR MOMENT */}
           <button
             type="button"
-            onClick={async () => {
+            onClick={() => {
               if (hasMyActiveStory && myStoryGroup) {
-                const firstStory = myStoryGroup.stories[0];
-                if (hasActiveStoryMedia(firstStory)) {
-                  const okToRender = await canRenderStoryMedia(firstStory.media_url);
-                  if (okToRender) {
-                    openStoryViewerForUser(myStoryGroup.user_id);
-                    return;
-                  }
-                }
-                window.dispatchEvent(
-                  new CustomEvent("open-create-composer", {
-                    detail: { mode: "both", tab: "moments" },
-                  })
-                );
-              } else {
-                window.dispatchEvent(
-                  new CustomEvent("open-create-composer", {
-                    detail: { mode: "both", tab: "moments" },
-                  })
-                );
+                openStoryViewerForUser(myStoryGroup.user_id);
+                return;
               }
+              window.dispatchEvent(
+                new CustomEvent("open-create-composer", {
+                  detail: { mode: "both", tab: "moments" },
+                })
+              );
             }}
             className="flex w-[84px] shrink-0 flex-col items-center"
           >
@@ -971,7 +1012,7 @@ export default function HubPage() {
                 alt="your moment"
                 fallbackText={myStoryFallback}
                 size="storyLg"
-                active={myStoriesHaveUnseen}
+                active={myStoryHasUnseen}
               />
               {!hasMyActiveStory ? (
                 <div className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border-2 border-primary bg-accent-violet text-text-primary shadow-[0_0_14px_rgba(59,102,255,0.58)]">
@@ -986,12 +1027,8 @@ export default function HubPage() {
           {friendStoryGroups.map((user) => (
             <button
               key={user.user_id}
-              onClick={async () => {
+              onClick={() => {
                 if (!user.stories.some((s) => hasActiveStoryMedia(s))) return;
-                const firstStory = user.stories[0];
-                if (!hasActiveStoryMedia(firstStory)) return;
-                const okToRender = await canRenderStoryMedia(firstStory.media_url);
-                if (!okToRender) return;
                 openStoryViewerForUser(user.user_id);
               }}
               className="flex w-[84px] shrink-0 flex-col items-center text-left"
@@ -1167,9 +1204,11 @@ export default function HubPage() {
                 likesCount: 0,
                 commentsCount: 0,
                 liked: false,
+                likedByLine: null,
+                commentPreviews: [],
               };
               const openPost = () => router.push(`/moments/${encodeURIComponent(share.id)}`);
-              const openComments = () => router.push(`/moments/${encodeURIComponent(share.id)}#comments`);
+              const openComments = () => openShareCommentsSheet(share.id);
               const openProfile = () => {
                 if (share.user_id === meId) {
                   router.push("/profile");
@@ -1193,13 +1232,18 @@ export default function HubPage() {
                     avatar: share.avatar,
                   }}
                   meId={meId}
+                  shareHidden={!!share.share_hidden}
                   likesCount={stats.likesCount}
                   commentsCount={stats.commentsCount}
                   liked={stats.liked}
+                  likedByLine={stats.likedByLine}
+                  commentPreviews={stats.commentPreviews}
                   onToggleLike={() => void toggleHubShareLike(share.id, share.user_id)}
                   onOpenPost={openPost}
                   onOpenComments={openComments}
                   onOpenProfile={openProfile}
+                  onToggleHideFromGrid={() => void toggleHubShareHide(share.id, share.user_id, !!share.share_hidden)}
+                  onDeleteShare={() => void deleteHubShare(share.id, share.user_id)}
                 />
               );
             })}

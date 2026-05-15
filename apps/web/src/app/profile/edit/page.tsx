@@ -477,7 +477,7 @@ useEffect(() => {
         <textarea
           value={bio}
           onChange={(e) => setBio(e.target.value)}
-          placeholder="Say something about yourself"
+          placeholder="Short bio (optional)"
           maxLength={160}
           rows={4}
           className="w-full rounded-xl bg-primary/40 border border-white/10 p-3 outline-none resize-none"

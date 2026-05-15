@@ -6,8 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import BottomNav from "./BottomNav";
 import InitialAppSplash from "./InitialAppSplash";
 import StoryCameraModal from "./StoryCameraModal";
+import ShareCommentsBottomSheet from "./ShareCommentsBottomSheet";
 import { ClientAuthProvider } from "@/contexts/ClientAuthContext";
 import { matchesAuthGatePath } from "@/lib/authGatePaths";
+import { OPEN_SHARE_COMMENTS_EVENT, type OpenShareCommentsDetail } from "@/lib/shareCommentsSheet";
 import { geolocationFailureMessage, LOCATION_INSECURE_CONTEXT, PRESENCE_SAVE_FAILED } from "@/lib/geolocationMessages";
 import { isValidCoordinatePair } from "@/lib/presence";
 import { supabase } from "@/lib/supabaseClient";
@@ -114,6 +116,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mapVenueSheetOpen, setMapVenueSheetOpen] = useState(false);
   /** Fullscreen story viewer — hide portaled tab bar so it does not stack over the viewer. */
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
+  const [shareCommentsStoryId, setShareCommentsStoryId] = useState<string | null>(null);
   const [gestureRefreshing, setGestureRefreshing] = useState(false);
   /** Pull-to-refresh: damped offset (px) + progress for top chrome indicator. */
   const [pullTopUi, setPullTopUi] = useState<{ displayPx: number; progress: number; snap: boolean } | null>(null);
@@ -162,6 +165,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     "/forgot-password",
     "/reset-password",
     "/onboarding",
+    "/search",
     "/settings",
     "/notifications",
     "/live-places",
@@ -195,7 +199,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/profile/friends") ||
     pathname.startsWith("/u/") ||
     pathname === "/settings" ||
-    pathname.startsWith("/settings/");
+    pathname.startsWith("/settings/") ||
+    pathname === "/search";
 
   useEffect(() => {
     const onMapVenueSheetVisibility = (event: Event) => {
@@ -222,6 +227,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("ah-story-camera-visibility", {
+        detail: { open: createOpen || storyOpen || !!shareCommentsStoryId },
+      })
+    );
+  }, [createOpen, storyOpen, shareCommentsStoryId]);
+
+  useEffect(() => {
     const openHandler = () => {
       setComposerKind("moments");
       setStoryOpen(true);
@@ -235,9 +249,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("open-story-camera", openHandler);
     window.addEventListener("open-create-composer", openCreateHandler as EventListener);
+    const openComments = (event: Event) => {
+      const d = (event as CustomEvent<OpenShareCommentsDetail>).detail;
+      if (!d?.storyId || typeof d.storyId !== "string") return;
+      setShareCommentsStoryId(d.storyId);
+    };
+    window.addEventListener(OPEN_SHARE_COMMENTS_EVENT, openComments as EventListener);
     return () => {
       window.removeEventListener("open-story-camera", openHandler);
       window.removeEventListener("open-create-composer", openCreateHandler as EventListener);
+      window.removeEventListener(OPEN_SHARE_COMMENTS_EVENT, openComments as EventListener);
     };
   }, []);
 
@@ -917,12 +938,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         mode={composerKind}
         onClose={() => setStoryOpen(false)}
       />
+      <ShareCommentsBottomSheet storyId={shareCommentsStoryId} onClose={() => setShareCommentsStoryId(null)} />
       {/* Portaled to #ah-bottom-nav-root (display:contents; nav z-[10150]). */}
       {bottomNavHost &&
       showMainTabNav &&
       !(pathname === "/map" && mapVenueSheetOpen) &&
       !storyOpen &&
-      !storyViewerOpen
+      !storyViewerOpen &&
+      !shareCommentsStoryId
         ? createPortal(
             <BottomNav
               onOpenStories={() => {

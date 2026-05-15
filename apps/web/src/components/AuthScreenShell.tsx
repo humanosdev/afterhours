@@ -19,7 +19,7 @@ function baseClass(marketing: boolean, marketingScroll: boolean) {
 export function AuthScreenShell({
   children,
   centered,
-  /** Login/signup: centered column (`max-w-xl` so full lockup + tagline stay readable). */
+  /** Login/signup: centered column (`max-w-2xl` so full lockup + tagline can scale up). */
   marketing,
   /** Long marketing pages (e.g. home landing): scroll naturally without vertical lock. */
   marketingScroll,
@@ -35,7 +35,7 @@ export function AuthScreenShell({
   if (marketing && marketingScroll) {
     return (
       <div className={`${baseClass(true, true)} relative ${className}`.trim()}>
-        <div className="relative z-[1] mx-auto flex w-full max-w-xl flex-col py-1">{children}</div>
+        <div className="relative z-[1] mx-auto flex w-full max-w-2xl flex-col py-1">{children}</div>
       </div>
     );
   }
@@ -43,7 +43,7 @@ export function AuthScreenShell({
   if (marketingScroll) {
     return (
       <div className={`${baseClass(false, true)} relative ${className}`.trim()}>
-        <div className="relative z-[1] mx-auto flex w-full max-w-xl flex-col py-1">{children}</div>
+        <div className="relative z-[1] mx-auto flex w-full max-w-2xl flex-col py-1">{children}</div>
       </div>
     );
   }
@@ -56,7 +56,7 @@ export function AuthScreenShell({
         {/*
           `my-auto` avoids flex-1 + justify-center recalculating when fonts/content settle (reduces tiny vertical nudge).
         */}
-        <div className="relative z-[1] my-auto flex w-full max-w-xl flex-col py-1">{children}</div>
+        <div className="relative z-[1] my-auto flex w-full max-w-2xl flex-col py-1">{children}</div>
       </div>
     );
   }

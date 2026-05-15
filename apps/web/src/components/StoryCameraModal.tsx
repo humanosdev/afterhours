@@ -318,7 +318,7 @@ export default function StoryCameraModal({
             share_visible: true,
             share_hidden: false,
           }
-        : { ...basePayload, media_url: imageUrl }
+        : { ...basePayload, media_url: imageUrl, is_share: false }
     );
     insertError = firstAttempt.error;
 
@@ -331,7 +331,7 @@ export default function StoryCameraModal({
               share_visible: true,
               share_hidden: false,
             }
-          : basePayload
+          : { ...basePayload, is_share: false }
       );
       insertError = secondAttempt.error;
     }

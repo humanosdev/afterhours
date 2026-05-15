@@ -165,6 +165,7 @@ export default function NewSharePage() {
           media_url: imageUrl,
           created_at: new Date().toISOString(),
           expires_at: null,
+          is_share: true,
         });
         if (fallbackInsert.error) {
           setError("Could not create share post.");

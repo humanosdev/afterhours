@@ -105,11 +105,14 @@ function heatHexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-/** Heat-tinted ring + bloom so the pill reads lively without a flat color wash. */
-function checkpointBarHeatShadowStyle(activity: number): { boxShadow: string } {
+/** Heat-tinted ring + bloom so the pill reads lively without a flat color wash. Stronger on light map so it mirrors night visibility. */
+function checkpointBarHeatShadowStyle(activity: number, dayMode: boolean): { boxShadow: string } {
   const heat = venueCombinedActivityToHeatHex(activity);
+  const edge = dayMode ? 0.34 : 0.24;
+  const glow = dayMode ? 0.44 : 0.32;
+  const drop = dayMode ? 0.22 : 0.14;
   return {
-    boxShadow: `0 0 0 1px ${heatHexToRgba(heat, 0.24)}, 0 0 18px ${heatHexToRgba(heat, 0.32)}, 0 12px 40px ${heatHexToRgba(heat, 0.14)}`,
+    boxShadow: `0 0 0 1px ${heatHexToRgba(heat, edge)}, 0 0 22px ${heatHexToRgba(heat, glow)}, 0 12px 40px ${heatHexToRgba(heat, drop)}`,
   };
 }
 
@@ -124,18 +127,56 @@ function checkpointBarHeatPulseTier(activity: number): "off" | "soft" | "strong"
   return "off";
 }
 
-/** Extra bloom behind controls; opacity is animated in CSS (see `ah-checkpoint-ring-pulse-*`). */
-function checkpointBarPulseOverlayStyle(activity: number): { boxShadow: string } | undefined {
+/** Extra bloom behind controls; opacity is animated in CSS (see `ah-checkpoint-ring-pulse-*`). Boost on day map. */
+function checkpointBarPulseOverlayStyle(activity: number, dayMode: boolean): { boxShadow: string } | undefined {
   const tier = checkpointBarHeatPulseTier(activity);
   if (tier === "off") return undefined;
   const heat = venueCombinedActivityToHeatHex(activity);
   if (tier === "strong") {
     return {
-      boxShadow: `0 0 14px ${heatHexToRgba(heat, 0.34)}, 0 0 32px ${heatHexToRgba(heat, 0.2)}`,
+      boxShadow: dayMode
+        ? `0 0 26px ${heatHexToRgba(heat, 0.58)}, 0 0 54px ${heatHexToRgba(heat, 0.36)}`
+        : `0 0 14px ${heatHexToRgba(heat, 0.34)}, 0 0 32px ${heatHexToRgba(heat, 0.2)}`,
     };
   }
   return {
-    boxShadow: `0 0 12px ${heatHexToRgba(heat, 0.22)}, 0 0 26px ${heatHexToRgba(heat, 0.12)}`,
+    boxShadow: dayMode
+      ? `0 0 20px ${heatHexToRgba(heat, 0.46)}, 0 0 42px ${heatHexToRgba(heat, 0.28)}`
+      : `0 0 12px ${heatHexToRgba(heat, 0.22)}, 0 0 26px ${heatHexToRgba(heat, 0.12)}`,
+  };
+}
+
+/** Venue bottom sheet: neutral depth + heat rim so day mode matches checkpoint energy. */
+function venueSheetStackShadowStyle(activity: number, dayMode: boolean): { boxShadow: string } {
+  const heat = venueCombinedActivityToHeatHex(activity);
+  if (dayMode) {
+    return {
+      boxShadow: [
+        "0 -36px 100px rgba(15,20,29,0.1)",
+        "0 -4px 52px rgba(59,102,255,0.07)",
+        `0 -14px 60px ${heatHexToRgba(heat, 0.24)}`,
+        `0 -2px 44px ${heatHexToRgba(heat, 0.16)}`,
+      ].join(", "),
+    };
+  }
+  return {
+    boxShadow: [
+      "0 -44px 120px rgba(0,0,0,0.72)",
+      `0 -16px 64px ${heatHexToRgba(heat, 0.34)}`,
+      `0 -4px 56px ${heatHexToRgba(heat, 0.2)}`,
+      `0 0 0 1px ${heatHexToRgba(heat, 0.12)}`,
+    ].join(", "),
+  };
+}
+
+/** Top-edge pulse ring on venue sheet — heat keyed like map layers (not fixed violet). */
+function venueSheetInnerRimStyle(activity: number, dayMode: boolean): { borderColor: string; boxShadow: string } {
+  const heat = venueCombinedActivityToHeatHex(activity);
+  return {
+    borderColor: heatHexToRgba(heat, dayMode ? 0.34 : 0.3),
+    boxShadow: dayMode
+      ? `0 -16px 52px ${heatHexToRgba(heat, 0.22)}, 0 0 0 1px ${heatHexToRgba(heat, 0.12)}, 0 0 48px ${heatHexToRgba(heat, 0.16)}`
+      : `0 -18px 58px ${heatHexToRgba(heat, 0.3)}, 0 0 0 1px ${heatHexToRgba(heat, 0.14)}, 0 0 56px ${heatHexToRgba(heat, 0.22)}`,
   };
 }
 
@@ -586,6 +627,17 @@ function MapPageContent() {
     if (typeof document === "undefined") return;
     setCheckpointPortalEl(document.body);
   }, []);
+
+  const [storyCameraOrComposerOpen, setStoryCameraOrComposerOpen] = useState(false);
+  useEffect(() => {
+    const onVis = (e: Event) => {
+      const d = (e as CustomEvent<{ open?: boolean }>).detail;
+      setStoryCameraOrComposerOpen(!!d?.open);
+    };
+    window.addEventListener("ah-story-camera-visibility", onVis as EventListener);
+    return () => window.removeEventListener("ah-story-camera-visibility", onVis as EventListener);
+  }, []);
+
   const map = useRef<mapboxgl.Map | null>(null);
   const hasRunInitialPresence = useRef(false);
   const hasCenteredToUser = useRef(false);
@@ -738,6 +790,7 @@ type MapPanelMode = "categories" | "friends";
 const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
 const [panelMode, setPanelMode] = useState<MapPanelMode>("categories");
 const [mapZoom, setMapZoom] = useState(14);
+
 /** Category accent palette (brand-aligned). */
 /** Filter-chip accent for “All” (not the default venue glyph color on markers). */
 const MAP_PIN_ALL = "#3B66FF";
@@ -1550,6 +1603,18 @@ const selectedVenuePeople = useMemo(() => {
   }
   return getVenuePeople(selectedVenue.id);
 }, [selectedVenue, presence, hiddenIds, meId, friendsById, usernamesById, venues, presenceGhostById, presenceUiTick]);
+
+const selectedVenueActivity = useMemo(() => {
+  if (!selectedVenue) return 0;
+  const { redTotal, greenTotal } = getCountsForVenue(
+    selectedVenue.id,
+    presence,
+    friendsById,
+    venues,
+    meId
+  );
+  return (redTotal ?? 0) + (greenTotal ?? 0);
+}, [selectedVenue, presence, friendsById, venues, meId]);
 
 const currentUserCoords = useMemo(() => {
   if (you && isValidCoordinatePair(you.lat, you.lng)) {
@@ -3336,7 +3401,7 @@ useEffect(() => {
           </button>
         </div>
 
-        {panelMode === "friends" ? (
+        {panelMode === "friends" && !storyCameraOrComposerOpen ? (
           <aside className="w-[112px] min-h-[160px] max-h-[min(42vh,280px)] self-end overflow-y-auto rounded-xl border border-white/[0.08] bg-[#121824ee] p-1.5 backdrop-blur-xl">
           <div className="space-y-1.5">
             {rightSidebarFriends.map((f) => {
@@ -3402,13 +3467,23 @@ useEffect(() => {
         {ghostToggle}
       </div>
       ) : null}
-      {mapReady && !selectedVenue && checkpointPortalEl
+      {mapReady && !selectedVenue && checkpointPortalEl && !storyCameraOrComposerOpen
         ? createPortal(
             <div
-              className="pointer-events-auto fixed left-1/2 z-[10156] flex w-[min(92vw,460px)] max-w-[460px] -translate-x-1/2 items-center justify-between gap-2 rounded-2xl border border-white/15 bg-primary/60 px-2.5 py-1.5 backdrop-blur relative"
+              className={`pointer-events-auto fixed left-1/2 z-[10156] flex w-[min(92vw,460px)] max-w-[460px] -translate-x-1/2 items-center justify-between gap-2 rounded-2xl px-2.5 py-1.5 backdrop-blur relative ${
+                mapDayMode
+                  ? "border border-black/14 bg-white/78 shadow-[0_8px_30px_rgba(15,20,29,0.1)]"
+                  : "border border-white/15 bg-primary/60"
+              }`}
               style={{
                 bottom: `calc(env(safe-area-inset-bottom, 0px) + ${MAP_NAV_CLEARANCE_PX}px)`,
-                ...(activeCheckpoint ? checkpointBarHeatShadowStyle(activeCheckpoint.activity) : { boxShadow: "0 8px 28px rgba(0,0,0,0.22)" }),
+                ...(activeCheckpoint
+                  ? checkpointBarHeatShadowStyle(activeCheckpoint.activity, mapDayMode)
+                  : {
+                      boxShadow: mapDayMode
+                        ? "0 10px 32px rgba(15,20,29,0.12)"
+                        : "0 8px 28px rgba(0,0,0,0.22)",
+                    }),
               }}
             >
               {activeCheckpoint && checkpointRingPulseTier !== "off" ? (
@@ -3419,16 +3494,25 @@ useEffect(() => {
                       ? "ah-checkpoint-ring-pulse-strong pointer-events-none absolute inset-0 z-0 rounded-2xl"
                       : "ah-checkpoint-ring-pulse-soft pointer-events-none absolute inset-0 z-0 rounded-2xl"
                   }
-                  style={checkpointBarPulseOverlayStyle(activeCheckpoint.activity)}
+                  style={checkpointBarPulseOverlayStyle(activeCheckpoint.activity, mapDayMode)}
                 />
               ) : null}
               <button
                 type="button"
                 onClick={goToPrevCheckpoint}
-                className="relative z-[1] grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-white active:bg-white/10"
+                className={`relative z-[1] grid h-11 w-11 shrink-0 place-items-center rounded-full border active:bg-white/10 ${
+                  mapDayMode
+                    ? "border-black/12 bg-white/80 text-[#0b0f14] active:bg-white/92"
+                    : "border-white/15 bg-white/5 text-white active:bg-white/10"
+                }`}
                 aria-label="Previous checkpoint"
               >
-                <ChevronLeft size={28} strokeWidth={2.5} className="text-white/95" aria-hidden />
+                <ChevronLeft
+                  size={28}
+                  strokeWidth={2.5}
+                  className={mapDayMode ? "text-[#0b0f14]/92" : "text-white/95"}
+                  aria-hidden
+                />
               </button>
               <button
                 type="button"
@@ -3443,7 +3527,9 @@ useEffect(() => {
                   setAutoTourPausedUntil(until);
                   setSelectedVenueId(activeCheckpoint.id);
                 }}
-                className="relative z-[1] min-w-0 flex-1 truncate px-2 text-center text-sm font-medium text-white/90"
+                className={`relative z-[1] min-w-0 flex-1 truncate px-2 text-center text-sm font-medium ${
+                  mapDayMode ? "text-[#0b0f14]/90" : "text-white/90"
+                }`}
                 aria-label="Open active checkpoint"
               >
                 {activeCheckpoint ? (
@@ -3455,10 +3541,19 @@ useEffect(() => {
               <button
                 type="button"
                 onClick={goToNextCheckpoint}
-                className="relative z-[1] grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-white active:bg-white/10"
+                className={`relative z-[1] grid h-11 w-11 shrink-0 place-items-center rounded-full border active:bg-white/10 ${
+                  mapDayMode
+                    ? "border-black/12 bg-white/80 text-[#0b0f14] active:bg-white/92"
+                    : "border-white/15 bg-white/5 text-white active:bg-white/10"
+                }`}
                 aria-label="Next checkpoint"
               >
-                <ChevronRight size={28} strokeWidth={2.5} className="text-white/95" aria-hidden />
+                <ChevronRight
+                  size={28}
+                  strokeWidth={2.5}
+                  className={mapDayMode ? "text-[#0b0f14]/92" : "text-white/95"}
+                  aria-hidden
+                />
               </button>
             </div>,
             checkpointPortalEl
@@ -3468,14 +3563,14 @@ useEffect(() => {
         <section
           className={`absolute inset-x-0 bottom-0 z-[10090] flex h-[74svh] max-h-[760px] flex-col overflow-hidden rounded-t-[1.75rem] backdrop-blur-2xl md:h-[70svh] ${
             mapDayMode
-              ? "border-t border-black/[0.06] bg-gradient-to-b from-white/[0.98] via-[#f4f6fa]/[0.99] to-[#e8ecf4] text-[#0b0f14] shadow-[0_-36px_100px_rgba(15,20,29,0.12)]"
-              : "border-t border-white/[0.04] bg-gradient-to-b from-[#141a24]/[0.95] via-[#0e1219]/[0.97] to-[#080b10]/[0.99] text-white shadow-[0_-44px_120px_rgba(0,0,0,0.72)]"
+              ? "border-t border-black/[0.08] bg-gradient-to-b from-white/[0.98] via-[#f4f6fa]/[0.99] to-[#e8ecf4] text-[#0b0f14]"
+              : "border-t border-white/[0.04] bg-gradient-to-b from-[#141a24]/[0.95] via-[#0e1219]/[0.97] to-[#080b10]/[0.99] text-white"
           }`}
+          style={venueSheetStackShadowStyle(selectedVenueActivity, mapDayMode)}
         >
           <div
-            className={`pointer-events-none absolute inset-0 z-[1] rounded-t-[1.75rem] border shadow-[0_-12px_48px_rgba(59,102,255,0.12)] ah-premium-surface-pulse ${
-              mapDayMode ? "border-accent-violet/18" : "border-accent-violet/28"
-            }`}
+            className="pointer-events-none absolute inset-0 z-[1] rounded-t-[1.75rem] border ah-premium-surface-pulse"
+            style={venueSheetInnerRimStyle(selectedVenueActivity, mapDayMode)}
             aria-hidden
           />
           <div className="relative z-[2] flex min-h-[40px] shrink-0 touch-none items-center justify-center px-4 pb-2 pt-1"
@@ -3885,18 +3980,22 @@ useEffect(() => {
             <button
               type="button"
               onClick={() => {
-                router.push(`/venue-activity?venueId=${encodeURIComponent(selectedVenue.id)}`);
+                router.push(
+                  `/venue-activity?venueId=${encodeURIComponent(selectedVenue.id)}&mapTone=${mapDayMode ? "day" : "night"}`
+                );
               }}
-              className={`mt-6 flex w-full items-center justify-center gap-2.5 rounded-2xl py-3.5 text-[15px] font-bold tracking-tight transition active:scale-[0.99] ${
+              className={`mt-6 flex w-full items-center justify-center gap-2.5 rounded-2xl border py-3.5 text-[15px] font-bold tracking-tight transition active:scale-[0.99] ${
                 mapDayMode
-                  ? "bg-[#0f141d] text-white shadow-[0_12px_40px_rgba(15,20,29,0.28)] hover:bg-black"
-                  : "bg-gradient-to-r from-accent-violet-active via-accent-violet to-[#3558d4] text-white shadow-[0_0_44px_rgba(59,102,255,0.38)] hover:brightness-110"
+                  ? "border-black/10 bg-gradient-to-b from-white via-[#f7f8fb] to-[#eef1f6] text-[#0b0f14] hover:brightness-[1.02]"
+                  : "border-transparent bg-gradient-to-r from-accent-violet-active via-accent-violet to-[#3558d4] text-white shadow-[0_0_44px_rgba(59,102,255,0.38)] hover:brightness-110"
               }`}
+              style={mapDayMode ? checkpointBarHeatShadowStyle(selectedVenueActivity, true) : undefined}
             >
               <Sparkles
                 size={18}
                 strokeWidth={2.2}
-                className={mapDayMode ? "text-accent-violet-active" : "text-white/95"}
+                className={mapDayMode ? "shrink-0" : "shrink-0 text-white/95"}
+                style={mapDayMode ? { color: venueCombinedActivityToHeatHex(selectedVenueActivity) } : undefined}
                 aria-hidden
               />
               Check the scene

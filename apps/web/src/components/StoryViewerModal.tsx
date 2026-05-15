@@ -5,9 +5,11 @@ import { supabase } from "@/lib/supabaseClient";
 import { Avatar } from "@/components/ui";
 import { formatRelativeTime } from "@/lib/time";
 import { useRouter } from "next/navigation";
-import { Heart, Images, MessageCircle, MoreHorizontal, X } from "lucide-react";
+import { openShareCommentsSheet } from "@/lib/shareCommentsSheet";
+import { Heart, MessageCircle, MoreHorizontal, X } from "lucide-react";
 import { createNotification } from "@/lib/notifications";
 import { fetchProfilesForStoryCommenters } from "@/lib/storyCommentProfiles";
+import { fetchLikedByFriendsLineForStory } from "@/lib/storyFeedInteractions";
 import { recordStoryView } from "@/lib/storyViews";
 
 export type StoryViewerStory = {
@@ -57,7 +59,7 @@ export default function StoryViewerModal({
   const [likesCount, setLikesCount] = useState(0);
   const [liked, setLiked] = useState(false);
   const [comments, setComments] = useState<ViewerComment[]>([]);
-  const [commentText, setCommentText] = useState("");
+  const [likedByLine, setLikedByLine] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [myProfile, setMyProfile] = useState<{ username: string | null; avatar_url: string | null } | null>(null);
@@ -78,7 +80,6 @@ export default function StoryViewerModal({
     const maxIdx = Math.max(0, len - 1);
     setStoryIndex(Math.min(Math.max(0, initialIndex), maxIdx));
     setProgress(0);
-    setCommentText("");
     setMenuOpen(false);
   }, [open, initialIndex, group?.user_id, group?.stories?.length]);
 
@@ -143,8 +144,9 @@ export default function StoryViewerModal({
 
   useEffect(() => {
     if (!open || !currentUserId || !activeStory?.id || activeIsShare) return;
+    /** Include own stories so hub/profile “seen” rings match friends (RLS allows self). */
     void recordStoryView(supabase, currentUserId, activeStory.id);
-  }, [open, currentUserId, activeStory?.id, activeIsShare]);
+  }, [open, currentUserId, activeStory?.id, activeIsShare, activeStory?.user_id]);
 
   useEffect(() => {
     if (!open || !activeStory) return;
@@ -181,6 +183,10 @@ export default function StoryViewerModal({
       setLikesCount(count ?? 0);
       setLiked(!!likedRes?.data);
 
+      if (!activeIsShare) {
+        if (mounted) setLikedByLine(null);
+      }
+
       const commentRows = (commentsRes?.data ?? []) as any[];
       const ids = Array.from(new Set(commentRows.map((c) => c.user_id).filter(Boolean)));
       const profileById =
@@ -199,6 +205,12 @@ export default function StoryViewerModal({
           avatar_url: profileById[c.user_id]?.avatar_url ?? null,
         }))
       );
+      if (activeIsShare && currentUserId) {
+        const line = await fetchLikedByFriendsLineForStory(supabase, activeStory.id, currentUserId);
+        if (mounted) setLikedByLine(line);
+      } else if (mounted) {
+        setLikedByLine(null);
+      }
       setLoadingMeta(false);
     };
     loadMeta();
@@ -222,6 +234,13 @@ export default function StoryViewerModal({
       }
       setLiked(false);
       setLikesCount((c) => Math.max(0, c - 1));
+      if (activeIsShare) {
+        window.dispatchEvent(new CustomEvent("ah-share-likes-updated", { detail: { storyId: activeStory.id } }));
+      }
+      if (activeIsShare && currentUserId) {
+        const line = await fetchLikedByFriendsLineForStory(supabase, activeStory.id, currentUserId);
+        setLikedByLine(line);
+      }
       return;
     }
     const { error } = await supabase.from("story_likes").insert({
@@ -235,6 +254,9 @@ export default function StoryViewerModal({
     }
     setLiked(true);
     setLikesCount((c) => c + 1);
+    if (activeIsShare) {
+      window.dispatchEvent(new CustomEvent("ah-share-likes-updated", { detail: { storyId: activeStory.id } }));
+    }
     if (activeStory.user_id !== currentUserId) {
       await createNotification({
         recipientId: activeStory.user_id,
@@ -247,75 +269,17 @@ export default function StoryViewerModal({
         route: `/moments/${activeStory.id}`,
       });
     }
-  };
-
-  const submitComment = async () => {
-    if (!activeStory || !currentUserId || !activeIsShare) return;
-    const text = commentText.trim();
-    if (!text) return;
-    const { data: inserted, error } = await supabase
-      .from("story_comments")
-      .insert({
-        story_id: activeStory.id,
-        user_id: currentUserId,
-        content: text,
-      })
-      .select("id")
-      .single();
-    if (error || !inserted?.id) {
-      if (error) console.error(error);
-      alert("Action failed");
-      return;
+    if (activeIsShare && currentUserId) {
+      const line = await fetchLikedByFriendsLineForStory(supabase, activeStory.id, currentUserId);
+      setLikedByLine(line);
     }
-    const now = new Date().toISOString();
-    setComments((prev) => [
-      ...prev,
-      {
-        id: inserted.id as string,
-        story_id: activeStory.id,
-        user_id: currentUserId,
-        content: text,
-        created_at: now,
-        username: myProfile?.username ?? null,
-        avatar_url: (myProfile?.avatar_url ?? "").trim() || null,
-      },
-    ]);
-    setCommentText("");
-    if (activeStory.user_id !== currentUserId) {
-      await createNotification({
-        recipientId: activeStory.user_id,
-        actorId: currentUserId,
-        type: "story_comment",
-        storyId: activeStory.id,
-        messagePreview: text.slice(0, 140),
-        pushTitle: `${myProfile?.username ?? "A friend"} commented`,
-        pushBody: text.slice(0, 120),
-        route: `/moments/${activeStory.id}`,
-      });
-    }
-  };
-
-  const deleteComment = async (comment: ViewerComment) => {
-    if (!activeStory || !currentUserId || !activeIsShare) return;
-    const canDelete =
-      comment.user_id === currentUserId || activeStory.user_id === currentUserId;
-    if (!canDelete) return;
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this comment? This can’t be undone."
-    );
-    if (!confirmed) return;
-    const { error } = await supabase.from("story_comments").delete().eq("id", comment.id);
-    if (error) {
-      console.error(error);
-      alert("Action failed");
-      return;
-    }
-    setComments((prev) => prev.filter((c) => c.id !== comment.id));
   };
 
   const deleteStory = async () => {
     if (!activeStory || !currentUserId || activeStory.user_id !== currentUserId) return;
-    const confirmed = window.confirm("Delete this Moment? This can’t be undone.");
+    const confirmed = window.confirm(
+      activeIsShare ? "Delete this share? This can’t be undone." : "Delete this moment? This can’t be undone."
+    );
     if (!confirmed) return;
     const { error } = await supabase
       .from("stories")
@@ -324,7 +288,7 @@ export default function StoryViewerModal({
       .eq("user_id", currentUserId);
     if (error) {
       console.error(error);
-      alert("Action failed");
+      alert(error.message ? `Could not delete: ${error.message}` : "Could not delete. Try again.");
       return;
     }
     onStoryDeleted?.(activeStory.id);
@@ -334,8 +298,8 @@ export default function StoryViewerModal({
 
   const canOpen = useMemo(() => {
     if (!open || !activeStory) return false;
-    return !!activeStory.media_url;
-  }, [open, activeStory?.id]);
+    return !!String(activeStory.media_url ?? "").trim();
+  }, [open, activeStory?.id, activeStory?.media_url]);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("ah-story-viewer-visibility", { detail: { open: canOpen } }));
@@ -479,80 +443,65 @@ export default function StoryViewerModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto flex w-full max-w-lg items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={toggleLike}
-            className="flex items-center gap-2 rounded-full py-2 pl-1 pr-3 text-left transition active:scale-[0.98]"
-            aria-label={liked ? "Unlike" : "Like"}
-          >
-            <Heart
-              size={28}
-              strokeWidth={1.75}
-              className={liked ? "fill-red-500 text-red-500" : "text-white"}
-              aria-hidden
-            />
-            <span className="text-[14px] font-semibold tabular-nums text-white/90">{likesCount}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleLike}
+              className="flex items-center gap-2 rounded-full py-2 pl-1 pr-2 text-left transition active:scale-[0.98]"
+              aria-label={liked ? "Unlike" : "Like"}
+            >
+              <Heart
+                size={28}
+                strokeWidth={1.75}
+                className={liked ? "fill-red-500 text-red-500" : "text-white"}
+                aria-hidden
+              />
+              <span className="text-[14px] font-semibold tabular-nums text-white/90">{likesCount}</span>
+            </button>
+          </div>
           {activeIsShare ? (
-            <div className="ah-glass-control flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wide text-white/90">
-              <Images size={16} strokeWidth={2.1} className="text-white/80" aria-hidden />
-              <span>Share</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!activeStory) return;
+                openShareCommentsSheet(activeStory.id);
+              }}
+              className="flex items-center gap-1.5 rounded-full py-2 pl-1 pr-2 text-white transition active:scale-[0.98]"
+              aria-label="Open comments"
+            >
+              <MessageCircle size={26} strokeWidth={1.75} aria-hidden />
+              {comments.length > 0 ? (
+                <span className="text-[13px] font-semibold tabular-nums text-white/90">{comments.length}</span>
+              ) : null}
+            </button>
           ) : null}
         </div>
 
+        {activeIsShare && likedByLine ? (
+          <p className="mx-auto mt-2 max-w-lg px-1 text-[12px] leading-snug text-white/55">{likedByLine}</p>
+        ) : null}
+
         {activeIsShare ? (
           <div className="mx-auto mt-3 max-w-lg space-y-2">
-            <div className="flex items-center gap-1.5 text-[12px] font-medium text-white/40">
-              <MessageCircle size={18} strokeWidth={1.85} className="text-white/55" aria-hidden />
-              <span>Replies</span>
-            </div>
-            <div className="scrollbar-none max-h-[30vh] space-y-2 overflow-y-auto rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2">
-              {comments.map((c) => {
-                const canDelete = !!currentUserId && (c.user_id === currentUserId || activeStory.user_id === currentUserId);
-                return (
-                  <div key={c.id} className="flex items-start gap-2.5 py-1 text-[13px]">
-                    <Avatar src={(c.avatar_url ?? "").trim() || null} fallbackText={c.username ?? "u"} size="xs" className="shrink-0" />
-                    <div className="min-w-0 flex-1 leading-snug">
-                      <span className="font-semibold text-white">{c.username ?? "user"}</span>
-                      <span className="text-white/55"> </span>
-                      <span className="text-white/88">{c.content}</span>
-                    </div>
-                    {canDelete ? (
-                      <button
-                        type="button"
-                        onClick={() => void deleteComment(c)}
-                        className="shrink-0 text-[11px] font-medium text-white/40 hover:text-red-300"
-                        aria-label={
-                          c.user_id === currentUserId ? "Delete your comment" : "Remove comment from your share"
-                        }
-                      >
-                        Remove
-                      </button>
-                    ) : null}
+            <div className="scrollbar-none max-h-[28vh] space-y-2 overflow-y-auto rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2">
+              {comments.map((c) => (
+                <div key={c.id} className="flex items-start gap-2.5 py-1 text-[13px]">
+                  <Avatar
+                    src={(c.avatar_url ?? "").trim() || null}
+                    fallbackText={c.username ?? "u"}
+                    size="xs"
+                    className="shrink-0"
+                  />
+                  <div className="min-w-0 flex-1 leading-snug">
+                    <span className="font-semibold text-white">{c.username ?? "user"}</span>
+                    <span className="text-white/55"> </span>
+                    <span className="text-white/88">{c.content}</span>
                   </div>
-                );
-              })}
+                </div>
+              ))}
               {!loadingMeta && comments.length === 0 ? (
-                <div className="py-2 text-center text-[12px] text-white/40">Be first to reply</div>
+                <div className="py-2 text-center text-[12px] text-white/40">No comments yet</div>
               ) : null}
-            </div>
-
-            <div className="ah-glass-control flex items-center gap-2 rounded-full px-1 py-1 pl-3">
-              <input
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Message…"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[14px] text-white outline-none placeholder:text-white/35"
-              />
-              <button
-                type="button"
-                onClick={submitComment}
-                disabled={!commentText.trim()}
-                className="shrink-0 rounded-full bg-accent-violet px-4 py-2 text-[13px] font-semibold text-white transition disabled:opacity-40"
-              >
-                Send
-              </button>
             </div>
           </div>
         ) : null}

@@ -2,6 +2,58 @@ import type { NotificationType } from "../../types/notifications";
 import { supabase } from "@/lib/supabaseClient";
 import { acceptedFriendIdsExcludingBlocks } from "@/lib/pairBlockStatus";
 
+/** Stored in `notifications.message_preview` for friend-request types when profile RLS hides the actor. */
+export type FriendRequestNotificationPreview = {
+  display_name?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
+};
+
+export function encodeFriendRequestNotificationPreview(
+  p: FriendRequestNotificationPreview
+): string | null {
+  const payload = {
+    dn: p.display_name?.trim() || null,
+    un: p.username?.trim() || null,
+    av: p.avatar_url?.trim() || null,
+  };
+  if (!payload.dn && !payload.un && !payload.av) return null;
+  return JSON.stringify(payload);
+}
+
+export function decodeFriendRequestNotificationPreview(
+  raw: string | null | undefined
+): FriendRequestNotificationPreview {
+  if (!raw?.trim()) return {};
+  try {
+    const o = JSON.parse(raw) as { dn?: unknown; un?: unknown; av?: unknown };
+    return {
+      display_name: typeof o.dn === "string" ? o.dn : null,
+      username: typeof o.un === "string" ? o.un : null,
+      avatar_url: typeof o.av === "string" ? o.av : null,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Requester/recipient always reads their own row (not subject to addressee RLS). */
+export async function fetchProfileForFriendRequestNotification(
+  userId: string
+): Promise<FriendRequestNotificationPreview> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("username, display_name, avatar_url")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!data) return {};
+  return {
+    username: data.username ?? null,
+    display_name: data.display_name ?? null,
+    avatar_url: data.avatar_url ?? null,
+  };
+}
+
 type PreferenceRow = {
   user_id: string;
   push_enabled: boolean | null;
@@ -79,7 +131,10 @@ export async function createNotification(params: {
   const { error: insertError } = await supabase.from("notifications").insert(insertPayload);
   // Dedupe: unique index on dedupe_key — skip quietly (no duplicate push).
   if (insertError?.code === "23505") return;
-  if (insertError) return;
+  if (insertError) {
+    console.warn("createNotification insert failed:", insertError.code, insertError.message);
+    return;
+  }
 
   if ((prefs?.push_enabled ?? true) === false) return;
 

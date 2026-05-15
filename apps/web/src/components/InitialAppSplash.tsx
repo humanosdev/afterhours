@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { BrandedSplashLogo } from "@/components/BrandedSplashLogo";
-import { INTENCITY_BRAND_LOCKUP_PATH } from "@/lib/brandAssets";
+import { INTENCITY_BRAND_LOCKUP_SRC } from "@/lib/brandAssets";
 import { AH_SPLASH_SESSION_KEY } from "@/lib/splashSession";
 
 /**
@@ -86,7 +86,7 @@ export default function InitialAppSplash({ isAuthed }: { isAuthed: boolean }) {
     const minMs = reduced ? MIN_MS_REDUCED : MIN_MS_DEFAULT;
 
     const preload = new window.Image();
-    preload.src = INTENCITY_BRAND_LOCKUP_PATH;
+    preload.src = INTENCITY_BRAND_LOCKUP_SRC;
 
     setPhase("on");
     /** Lock scroll on the splash layer only — avoids body scrollbar removal shifting centered art. */

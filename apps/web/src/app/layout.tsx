@@ -3,7 +3,7 @@ import AppShell from "@/components/AppShell";
 import { AuthRouteTransitionProvider } from "@/components/AuthRouteTransition";
 import { DEV_PURGE_SERVICE_WORKER_SCRIPT } from "@/lib/devPurgeServiceWorkerScript";
 import { IntencityBrandLockupImage } from "@/components/IntencityBrandLockupImage";
-import { INTENCITY_BRAND_LOCKUP_PATH } from "@/lib/brandAssets";
+import { INTENCITY_BRAND_LOCKUP_SRC } from "@/lib/brandAssets";
 import { PROD_CHUNK_HEAL_SCRIPT } from "@/lib/prodChunkHealScript";
 import "./globals.css";
 
@@ -52,7 +52,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         {/* Static favicon from public/ — avoid app/icon.png route (extra webpack chunks that desync in dev). */}
         <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
-        <link rel="preload" href={INTENCITY_BRAND_LOCKUP_PATH} as="image" />
+        <link rel="preload" href={INTENCITY_BRAND_LOCKUP_SRC} as="image" />
         {process.env.NODE_ENV === "development" ? (
           <>
             <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />

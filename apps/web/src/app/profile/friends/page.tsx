@@ -6,7 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import FriendListSkeleton from "@/components/skeletons/FriendListSkeleton";
 import { Avatar } from "@/components/ui";
-import { createNotification } from "@/lib/notifications";
+import {
+  createNotification,
+  decodeFriendRequestNotificationPreview,
+  encodeFriendRequestNotificationPreview,
+  fetchProfileForFriendRequestNotification,
+} from "@/lib/notifications";
 import {
   getFriendSocialActivitySubtitle,
   isFriendOnlineNow,
@@ -15,6 +20,8 @@ import {
 import { subscribeUserPresenceChanges } from "@/lib/userPresenceRealtime";
 import { navigateBack, SubpageBackButton } from "@/components/AppSubpageHeader";
 import { idsBlockedWithMe, getPairBlockStatus } from "@/lib/pairBlockStatus";
+import { profileHref } from "@/lib/profileRoutes";
+import { sendPendingFriendRequest } from "@/lib/sendPendingFriendRequest";
 import { APP_PAGE_TAIL_PADDING_CLASS } from "@/lib/appShellLayout";
 
 type ProfileLite = {
@@ -36,10 +43,6 @@ type FriendRequestRow = {
 type PresenceRow = { user_id: string; venue_id: string | null; updated_at: string; lat: number; lng: number };
 type VenueRow = { id: string; name: string };
 
-function normalizeUsername(v: string) {
-  return v.trim().replace(/^@/, "").toLowerCase();
-}
-
 function FriendsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,8 +53,6 @@ function FriendsPageContent() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [discoverResult, setDiscoverResult] = useState<ProfileLite | null>(null);
-  const [searching, setSearching] = useState(false);
   const [incoming, setIncoming] = useState<FriendRequestRow[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestRow[]>([]);
   const [friends, setFriends] = useState<ProfileLite[]>([]);
@@ -282,6 +283,41 @@ function FriendsPageContent() {
           is_private: row.is_private ?? false,
         };
       }
+      const incRequesterIds = Array.from(new Set(inc.map((r) => r.requester_id)));
+      const needSnap = incRequesterIds.filter((id) => {
+        const p = map[id];
+        return !p || (!p.display_name?.trim() && !p.username?.trim());
+      });
+      if (needSnap.length) {
+        const { data: notifRows } = await supabase
+          .from("notifications")
+          .select("actor_user_id, message_preview, created_at")
+          .eq("recipient_user_id", uid)
+          .eq("type", "friend_request_received")
+          .in("actor_user_id", needSnap)
+          .order("created_at", { ascending: false });
+        const snapByActor: Record<string, ReturnType<typeof decodeFriendRequestNotificationPreview>> = {};
+        for (const row of notifRows ?? []) {
+          const aid = (row as { actor_user_id: string }).actor_user_id;
+          if (snapByActor[aid]) continue;
+          snapByActor[aid] = decodeFriendRequestNotificationPreview(
+            (row as { message_preview: string | null }).message_preview
+          );
+        }
+        for (const rid of needSnap) {
+          const snap = snapByActor[rid];
+          if (!snap || (!snap.display_name?.trim() && !snap.username?.trim() && !snap.avatar_url?.trim())) continue;
+          const cur = map[rid];
+          map[rid] = {
+            id: rid,
+            username: cur?.username ?? snap.username ?? null,
+            display_name: cur?.display_name ?? snap.display_name ?? null,
+            avatar_url: cur?.avatar_url ?? snap.avatar_url ?? null,
+            is_private: cur?.is_private ?? false,
+            ghost_mode: cur?.ghost_mode ?? null,
+          };
+        }
+      }
       setNameById(map);
     } else {
       setNameById({});
@@ -330,65 +366,30 @@ function FriendsPageContent() {
   }
 
   useEffect(() => {
-    if (viewUsername) {
-      setDiscoverResult(null);
-      return;
-    }
-    const uid = meId;
-    if (!uid) return;
-    const q = normalizeUsername(search);
-    if (q.length < 2 || friends.some((f) => f.username?.toLowerCase() === q)) {
-      setDiscoverResult(null);
-      return;
-    }
-
-    let alive = true;
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      const { data, error } = await supabase.rpc("discover_profile_by_username", {
-        p_needle: q,
-      });
-      if (!alive) return;
-      setSearching(false);
-      if (error) {
-        setDiscoverResult(null);
-        return;
-      }
-      if (!data || typeof data !== "object") {
-        setDiscoverResult(null);
-        return;
-      }
-      const target = data as unknown as ProfileLite;
-      if (!target?.id || target.id === uid) {
-        setDiscoverResult(null);
-        return;
-      }
-      setDiscoverResult(target);
-    }, 220);
-
+    if (!meId || viewUsername) return;
+    const ch = supabase
+      .channel(`friends-page-fr:${meId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "friend_requests", filter: `addressee_id=eq.${meId}` },
+        () => {
+          void refreshAll(meId);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "friend_requests", filter: `requester_id=eq.${meId}` },
+        () => {
+          void refreshAll(meId);
+        }
+      )
+      .subscribe();
     return () => {
-      alive = false;
-      clearTimeout(timer);
+      void supabase.removeChannel(ch);
     };
-  }, [friends, meId, search, viewUsername]);
-
-  async function unblockDiscoveredUser(targetId: string) {
-    if (!meId) return;
-    const ok = window.confirm("Unblock this user? You’ll be able to find each other and send requests again.");
-    if (!ok) return;
-    const { error } = await supabase
-      .from("blocks")
-      .delete()
-      .eq("blocker_id", meId)
-      .eq("blocked_id", targetId);
-    if (error) {
-      setMsg("Could not unblock.");
-      return;
-    }
-    setDiscoverResult(null);
-    setMsg(null);
-    await refreshAll(meId);
-  }
+    // refreshAll is stable enough for this page; include meId only to avoid churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshAll is not useCallback-wrapped
+  }, [meId, viewUsername]);
 
   async function sendRequest(targetId: string) {
     if (!meId) return;
@@ -397,27 +398,30 @@ function FriendsPageContent() {
       setMsg("Resolve the block before sending a friend request.");
       return;
     }
-    const { error } = await supabase.from("friend_requests").insert({
-      requester_id: meId,
-      addressee_id: targetId,
-      status: "pending",
-    });
-    if (error) {
-      if (error.code === "23505") {
+    const result = await sendPendingFriendRequest(supabase, targetId);
+    if (!result.ok) {
+      if (result.code === "23505") {
         setMsg("Request already sent.");
-        setDiscoverResult(null);
         await refreshAll(meId);
         return;
       }
-      setMsg("Could not send request.");
+      if (result.code === "23514" || result.message.includes("friend_request_blocked")) {
+        setMsg("Resolve the block before sending a friend request.");
+        return;
+      }
+      if (result.message.includes("incoming_friend_request_exists")) {
+        setMsg("They already sent you a request — check incoming requests.");
+        await refreshAll(meId);
+        return;
+      }
+      if (result.message.includes("already_friends")) {
+        setMsg("You're already friends.");
+        await refreshAll(meId);
+        return;
+      }
+      setMsg(result.message || "Could not send request.");
       return;
     }
-    await createNotification({
-      recipientId: targetId,
-      actorId: meId,
-      type: "friend_request_received",
-    });
-    setDiscoverResult(null);
     await refreshAll(meId);
   }
 
@@ -428,25 +432,34 @@ function FriendsPageContent() {
       setMsg("Resolve the block before sending a friend request.");
       return;
     }
-    const { error } = await supabase.from("friend_requests").insert({
-      requester_id: meId,
-      addressee_id: viewerTarget.id,
-      status: "pending",
-    });
-    if (error) {
-      if (error.code === "23505") {
+    const result = await sendPendingFriendRequest(supabase, viewerTarget.id);
+    if (!result.ok) {
+      if (result.code === "23505") {
         setViewerRelationship("outgoing");
+        void refreshAll(meId);
         return;
       }
-      setMsg("Could not send request.");
+      if (result.code === "23514" || result.message.includes("friend_request_blocked")) {
+        setMsg("Resolve the block before sending a friend request.");
+        return;
+      }
+      if (result.message.includes("incoming_friend_request_exists")) {
+        setMsg("They already sent you a request — check incoming requests.");
+        setViewerRelationship("incoming");
+        void refreshAll(meId);
+        return;
+      }
+      if (result.message.includes("already_friends")) {
+        setMsg("You're already friends.");
+        setViewerRelationship("accepted");
+        void refreshAll(meId);
+        return;
+      }
+      setMsg(result.message || "Could not send request.");
       return;
     }
-    await createNotification({
-      recipientId: viewerTarget.id,
-      actorId: meId,
-      type: "friend_request_received",
-    });
     setViewerRelationship("outgoing");
+    void refreshAll(meId);
   }
 
   async function acceptRequest(requestId: string) {
@@ -462,18 +475,27 @@ function FriendsPageContent() {
     }
     await supabase.from("friend_requests").update({ status: "accepted" }).eq("id", requestId);
     if (req?.requester_id) {
+      const acceptedPreview = encodeFriendRequestNotificationPreview(
+        await fetchProfileForFriendRequestNotification(meId)
+      );
       await createNotification({
         recipientId: req.requester_id,
         actorId: meId,
         type: "friend_request_accepted",
+        messagePreview: acceptedPreview,
       });
     }
     await refreshAll(meId);
   }
 
   async function declineRequest(requestId: string) {
-    if (!meId) return;
-    await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
+    if (!meId || !requestId) return;
+    const { error } = await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
+    if (error) {
+      console.error(error);
+      setMsg("Could not update that request.");
+      return;
+    }
     await refreshAll(meId);
   }
 
@@ -484,7 +506,8 @@ function FriendsPageContent() {
   }
 
   const filteredFriends = useMemo(() => {
-    const q = normalizeUsername(search);
+    const raw = search.trim().toLowerCase();
+    const q = raw.replace(/^@/, "");
     if (!q) return friends;
     return friends.filter((f) => {
       const d = (f.display_name ?? "").toLowerCase();
@@ -548,56 +571,20 @@ function FriendsPageContent() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={viewerTarget ? "Search their friends" : "Search friends or username"}
-            className="w-full rounded-xl border border-white/10 bg-[#101015] px-3 py-2.5 text-sm outline-none focus:border-white/20"
+            placeholder={viewerTarget ? "Search their friends" : "Search your friends"}
+            className="ah-glass-control w-full rounded-xl px-3 py-2.5 text-sm outline-none focus-visible:border-accent-violet/35"
           />
         </div>
         ) : null}
-        {!viewerTarget && searching ? <div className="mt-2 text-xs text-white/45">Searching...</div> : null}
-        {!viewerTarget && discoverResult ? (
-          <div className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2">
+        {!viewerTarget ? (
+          <div className="mt-2 flex justify-end">
             <button
-              onClick={() => discoverResult.username && router.push(`/u/${encodeURIComponent(discoverResult.username)}`)}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              type="button"
+              onClick={() => router.push("/search")}
+              className="text-[13px] font-semibold text-accent-violet-active transition active:opacity-80"
             >
-              <Avatar src={discoverResult.avatar_url?.trim() || null} fallbackText={discoverResult.display_name || discoverResult.username} size="sm" className="shrink-0" />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{discoverResult.display_name || discoverResult.username}</div>
-                <div className="truncate text-xs text-white/45">
-                  @{discoverResult.username}
-                  {discoverResult.is_private ? " · Private" : ""}
-                </div>
-                {discoverResult.block_relation === "you_blocked_them" ? (
-                  <div className="mt-0.5 text-xs font-medium text-amber-200/80">You blocked this user</div>
-                ) : discoverResult.block_relation === "they_blocked_you" ? (
-                  <div className="mt-0.5 text-xs font-medium text-amber-200/80">This user blocked you</div>
-                ) : null}
-              </div>
+              Find new friends
             </button>
-            {discoverResult.block_relation === "you_blocked_them" ? (
-              <button
-                type="button"
-                onClick={() => unblockDiscoveredUser(discoverResult.id)}
-                className="shrink-0 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                Unblock
-              </button>
-            ) : discoverResult.block_relation === "they_blocked_you" ? (
-              <button
-                type="button"
-                onClick={() =>
-                  discoverResult.username &&
-                  router.push(`/u/${encodeURIComponent(discoverResult.username)}`)
-                }
-                className="shrink-0 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                View profile
-              </button>
-            ) : (
-              <button onClick={() => sendRequest(discoverResult.id)} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black">
-                Add
-              </button>
-            )}
           </div>
         ) : null}
         {viewerTarget && !viewerCanSeeFriends ? (
@@ -661,14 +648,20 @@ function FriendsPageContent() {
             <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/50">Friend requests</div>
             {incoming.map((r) => {
               const person = nameById[r.requester_id];
-              const label = person?.display_name || person?.username || "Unknown";
+              const label = person?.display_name || person?.username || "Someone";
               return (
                 <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                  <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{label}</div>
-                    <div className="truncate text-xs text-white/45">@{person?.username || "unknown"}</div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push(profileHref(person?.username, r.requester_id))}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                  >
+                    <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{label}</div>
+                      <div className="truncate text-xs text-white/45">{person?.username ? `@${person.username}` : ""}</div>
+                    </div>
+                  </button>
                   <button onClick={() => acceptRequest(r.id)} className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-black">Accept</button>
                   <button onClick={() => declineRequest(r.id)} className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-white/80">Decline</button>
                 </div>
@@ -676,14 +669,20 @@ function FriendsPageContent() {
             })}
             {outgoing.map((r) => {
               const person = nameById[r.addressee_id];
-              const label = person?.display_name || person?.username || "Unknown";
+              const label = person?.display_name || person?.username || "Someone";
               return (
                 <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                  <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{label}</div>
-                    <div className="truncate text-xs text-white/45">Request sent</div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push(profileHref(person?.username, r.addressee_id))}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                  >
+                    <Avatar src={person?.avatar_url?.trim() || null} fallbackText={label} size="sm" className="shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{label}</div>
+                      <div className="truncate text-xs text-white/45">Request sent</div>
+                    </div>
+                  </button>
                   <button onClick={() => cancelRequest(r.id)} className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-white/80">Cancel</button>
                 </div>
               );

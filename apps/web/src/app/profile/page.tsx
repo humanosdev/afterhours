@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
@@ -21,6 +21,8 @@ import {
 } from "@/lib/appShellLayout";
 import { Menu, Plus } from "lucide-react";
 import StoryViewerModal, { type StoryViewerGroup, type StoryViewerStory } from "@/components/StoryViewerModal";
+import { isStoryRowShareFlag } from "@/lib/storyRowShare";
+import { isMomentStillActive } from "@/lib/momentWindow";
 import { fetchViewedStoryIds, STORY_VIEWED_EVENT } from "@/lib/storyViews";
 
 export default function ProfilePage() {
@@ -39,7 +41,7 @@ export default function ProfilePage() {
   const [presenceClock, setPresenceClock] = useState(0);
   const [momentsCount, setMomentsCount] = useState(0);
   const [myStoryViewerStories, setMyStoryViewerStories] = useState<StoryViewerStory[]>([]);
-  const [viewedStoryIds, setViewedStoryIds] = useState<Record<string, boolean>>({});
+  const [viewedMyMomentIds, setViewedMyMomentIds] = useState<Record<string, boolean>>({});
   const [activeViewerGroup, setActiveViewerGroup] = useState<StoryViewerGroup | null>(null);
   const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
   const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
@@ -113,98 +115,158 @@ export default function ProfilePage() {
     end();
   }, [loading, end]);
 
+  const loadCountsAndPlaces = useCallback(async () => {
+    if (!userId) return;
+
+    const [friendIds, momentsCountRes, momentsRowsRes, presenceRes] = await Promise.all([
+      acceptedFriendIdsExcludingBlocks(supabase, userId),
+      supabase
+        .from("stories")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("is_share", true),
+      supabase
+        .from("stories")
+        .select("id, image_url, created_at, expires_at, venue_id, is_share")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(300),
+      supabase
+        .from("user_presence")
+        .select("venue_id, updated_at")
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+
+    setFriendCount(friendIds.length);
+    setMomentsCount(momentsCountRes.count ?? 0);
+
+    let momentRows: any[] = momentsRowsRes.data ?? [];
+    if (momentsRowsRes.error) {
+      console.warn("profile stories fetch:", momentsRowsRes.error.message ?? momentsRowsRes.error);
+      const fb = await supabase
+        .from("stories")
+        .select("id, image_url, created_at, expires_at, is_share")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(300);
+      momentRows = fb.data ?? [];
+      if (fb.error) console.error("profile stories fallback fetch:", fb.error);
+    }
+
+    const now = Date.now();
+    const activeMoments = momentRows.filter((m: any) => {
+      if (isStoryRowShareFlag(m?.is_share)) return false;
+      const media = String(m?.image_url ?? m?.media_url ?? "").trim();
+      if (!media) return false;
+      return isMomentStillActive(m.created_at, m.expires_at ?? null, now);
+    });
+    const viewerStories: StoryViewerStory[] = activeMoments.map((m: any) => ({
+      id: m.id,
+      user_id: userId,
+      media_url: String(m.image_url ?? m.media_url ?? "").trim(),
+      created_at: m.created_at,
+      expires_at: m.expires_at ?? null,
+    }));
+    setMyStoryViewerStories(viewerStories);
+    setPresenceUpdatedAt(presenceRes.data?.updated_at ?? null);
+
+    const historyByVenue = new Map<string, number>();
+    for (const row of momentRows) {
+      const venueId = (row as any)?.venue_id as string | null | undefined;
+      if (!venueId) continue;
+      const ts = new Date((row as any)?.created_at).getTime();
+      const prev = historyByVenue.get(venueId) ?? 0;
+      if (Number.isFinite(ts) && ts > prev) historyByVenue.set(venueId, ts);
+    }
+
+    if (!historyByVenue.size) {
+      setPlaces([]);
+    } else {
+      const ids = Array.from(historyByVenue.keys());
+      const { data: venueRows } = await supabase.from("venues").select("id, name, category").in("id", ids);
+      const sorted = (venueRows ?? [])
+        .slice()
+        .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
+      setPlaces(sorted as any);
+    }
+  }, [userId]);
+
   useEffect(() => {
     if (!userId) return;
 
-    const loadCountsAndPlaces = async () => {
-      const [friendIds, momentsCountRes, momentsRowsRes, presenceRes] = await Promise.all([
-        acceptedFriendIdsExcludingBlocks(supabase, userId),
-        supabase
-          .from("stories")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId)
-          .eq("is_share", true),
-        supabase
-          .from("stories")
-          .select("id, image_url, created_at, expires_at, venue_id, is_share")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(300),
-        supabase
-          .from("user_presence")
-          .select("venue_id, updated_at")
-          .eq("user_id", userId)
-          .maybeSingle(),
-      ]);
-
-      setFriendCount(friendIds.length);
-      setMomentsCount(momentsCountRes.count ?? 0);
-      const now = Date.now();
-      const activeMoments = (momentsRowsRes.data ?? []).filter((m: any) => {
-        if (m?.is_share) return false;
-        const media = String(m?.image_url ?? m?.media_url ?? "").trim();
-        if (!media) return false;
-        const createdMs = new Date(m.created_at).getTime();
-        if (!Number.isFinite(createdMs)) return false;
-        const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
-        const expiresMs = m.expires_at ? new Date(m.expires_at).getTime() : fallbackExpiresMs;
-        return Number.isFinite(expiresMs) && expiresMs > now;
-      });
-      const viewerStories: StoryViewerStory[] = activeMoments.map((m: any) => ({
-        id: m.id,
-        user_id: userId,
-        media_url: String(m.image_url ?? m.media_url ?? "").trim(),
-        created_at: m.created_at,
-        expires_at: m.expires_at ?? null,
-      }));
-      setMyStoryViewerStories(viewerStories);
-      setPresenceUpdatedAt(presenceRes.data?.updated_at ?? null);
-
-      // Stable visited-venues list: dedupe from all story venue_ids only (no live presence).
-      const historyByVenue = new Map<string, number>();
-      for (const row of momentsRowsRes.data ?? []) {
-        const venueId = (row as any)?.venue_id as string | null | undefined;
-        if (!venueId) continue;
-        const ts = new Date((row as any)?.created_at).getTime();
-        const prev = historyByVenue.get(venueId) ?? 0;
-        if (Number.isFinite(ts) && ts > prev) historyByVenue.set(venueId, ts);
-      }
-
-      if (!historyByVenue.size) {
-        setPlaces([]);
-      } else {
-        const ids = Array.from(historyByVenue.keys());
-        const { data: venueRows } = await supabase
-          .from("venues")
-          .select("id, name, category")
-          .in("id", ids);
-        const sorted = (venueRows ?? [])
-          .slice()
-          .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
-        setPlaces(sorted as any);
-      }
-    };
-
-    loadCountsAndPlaces();
-    const onStoryPosted = () => loadCountsAndPlaces();
+    void loadCountsAndPlaces();
+    const onStoryPosted = () => void loadCountsAndPlaces();
     window.addEventListener("story-posted", onStoryPosted);
     const bumpFriendCount = () => {
       void acceptedFriendIdsExcludingBlocks(supabase, userId).then((ids) => setFriendCount(ids.length));
     };
     window.addEventListener("friends-updated", bumpFriendCount);
     window.addEventListener("friend-removed", bumpFriendCount);
-    const interval = window.setInterval(loadCountsAndPlaces, 15000);
+    const interval = window.setInterval(() => void loadCountsAndPlaces(), 120_000);
+
+    const storiesChannel = supabase
+      .channel(`profile-own-stories-rt:${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "stories", filter: `user_id=eq.${userId}` },
+        () => void loadCountsAndPlaces()
+      )
+      .subscribe();
+
     return () => {
       window.removeEventListener("story-posted", onStoryPosted);
       window.removeEventListener("friends-updated", bumpFriendCount);
       window.removeEventListener("friend-removed", bumpFriendCount);
       window.clearInterval(interval);
+      void supabase.removeChannel(storiesChannel);
     };
-  }, [userId]);
+  }, [userId, loadCountsAndPlaces]);
 
   useEffect(() => {
     const id = window.setInterval(() => setPresenceClock((n) => n + 1), 15_000);
     return () => clearInterval(id);
+  }, []);
+
+  const liveMomentStories = useMemo(
+    () => myStoryViewerStories.filter((s) => isMomentStillActive(s.created_at, s.expires_at)),
+    [myStoryViewerStories, presenceClock]
+  );
+
+  const myMomentIdsKey = useMemo(
+    () => liveMomentStories.map((s) => s.id).sort().join(","),
+    [liveMomentStories]
+  );
+
+  useEffect(() => {
+    if (!userId || !myMomentIdsKey) {
+      setViewedMyMomentIds({});
+      return;
+    }
+    const ids = myMomentIdsKey.split(",").filter(Boolean);
+    let cancelled = false;
+    (async () => {
+      const viewed = await fetchViewedStoryIds(supabase, userId, ids);
+      if (cancelled) return;
+      const next: Record<string, boolean> = {};
+      for (const id of ids) {
+        if (viewed.has(id)) next[id] = true;
+      }
+      setViewedMyMomentIds(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, myMomentIdsKey]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<{ storyId?: string }>).detail?.storyId;
+      if (!id || typeof id !== "string") return;
+      setViewedMyMomentIds((p) => (p[id] ? p : { ...p, [id]: true }));
+    };
+    window.addEventListener(STORY_VIEWED_EVENT, handler);
+    return () => window.removeEventListener(STORY_VIEWED_EVENT, handler);
   }, []);
 
   useEffect(() => {
@@ -248,51 +310,11 @@ export default function ProfilePage() {
     })();
   }, [userId, myGhostMode, presenceClock]);
 
-  const myStoryIdsKey = useMemo(
-    () =>
-      myStoryViewerStories
-        .map((s) => s.id)
-        .sort()
-        .join(","),
-    [myStoryViewerStories]
-  );
-
-  useEffect(() => {
-    if (!userId || !myStoryIdsKey) {
-      setViewedStoryIds({});
-      return;
-    }
-    const ids = myStoryIdsKey.split(",").filter(Boolean);
-    let cancelled = false;
-    (async () => {
-      const viewed = await fetchViewedStoryIds(supabase, userId, ids);
-      if (cancelled) return;
-      const next: Record<string, boolean> = {};
-      for (const id of ids) {
-        if (viewed.has(id)) next[id] = true;
-      }
-      setViewedStoryIds(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, myStoryIdsKey]);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const id = (e as CustomEvent<{ storyId?: string }>).detail?.storyId;
-      if (!id || typeof id !== "string") return;
-      setViewedStoryIds((p) => (p[id] ? p : { ...p, [id]: true }));
-    };
-    window.addEventListener(STORY_VIEWED_EVENT, handler);
-    return () => window.removeEventListener(STORY_VIEWED_EVENT, handler);
-  }, []);
-
   const nameToShow = displayName || username || "You";
   const nameUnderAvatar = displayName?.trim() || username || "You";
-  const hasLiveMoment = myStoryViewerStories.length > 0;
+  const hasLiveMoment = liveMomentStories.length > 0;
   const storyRingActive =
-    hasLiveMoment && myStoryViewerStories.some((s) => !viewedStoryIds[s.id]);
+    hasLiveMoment && liveMomentStories.some((s) => !viewedMyMomentIds[s.id]);
   const activeLabel =
     venueText === "Ghost mode on"
       ? "Ghost mode on"
@@ -306,12 +328,12 @@ export default function ProfilePage() {
               ? "Not at a venue"
               : "Last active recently";
   const openMomentsTab = () => {
-    if (myStoryViewerStories.length > 0 && userId) {
+    if (liveMomentStories.length > 0 && userId) {
       setActiveViewerGroup({
         user_id: userId,
         username,
         avatar_url: avatarUrl,
-        stories: myStoryViewerStories,
+        stories: liveMomentStories,
       });
       return;
     }
@@ -336,7 +358,7 @@ export default function ProfilePage() {
           <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
             <div className="min-w-0 flex-1">
               <h1 className="text-[17px] font-bold tracking-tight">Profile</h1>
-              <p className="mt-0.5 truncate text-[14px] font-semibold text-white/45">
+              <p className="mt-0.5 break-words text-[14px] font-semibold text-white/45">
                 @{username ?? "user"}
               </p>
               {profileError ? (
@@ -449,7 +471,7 @@ export default function ProfilePage() {
                   <span>{activeLabel}</span>
                 </div>
               </div>
-              <p className="col-start-1 row-start-2 mt-2.5 min-w-0 w-full text-left text-[0.9375rem] font-semibold leading-snug tracking-tight text-white line-clamp-2">
+              <p className="col-start-1 row-start-2 mt-2.5 min-w-0 w-full text-left text-[0.9375rem] font-semibold leading-snug tracking-tight text-white break-words">
                 {nameUnderAvatar}
               </p>
               {bio?.trim() ? (
@@ -458,7 +480,7 @@ export default function ProfilePage() {
                 </p>
               ) : (
                 <p className="col-span-2 row-start-3 mt-4 min-w-0 text-[14px] text-white/38">
-                  Add a line so people know your vibe.
+                  No bio yet.
                 </p>
               )}
             </div>
@@ -481,7 +503,7 @@ export default function ProfilePage() {
                   }
                   if (shareUrl) await navigator.clipboard.writeText(shareUrl);
                 }}
-                className="h-11 rounded-[10px] border border-white/[0.12] bg-white/[0.05] text-[15px] font-semibold text-white/92 transition hover:bg-white/[0.08]"
+                className="ah-glass-control ah-glass-control-interactive h-11 rounded-[10px] text-[15px] font-semibold text-white/92 transition"
               >
                 Share profile
               </button>

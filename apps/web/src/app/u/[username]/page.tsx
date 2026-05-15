@@ -8,13 +8,15 @@ import { Avatar, StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
 import ProfilePageSkeleton from "@/components/skeletons/ProfilePageSkeleton";
 import StoryViewerModal, { type StoryViewerGroup, type StoryViewerStory } from "@/components/StoryViewerModal";
-import { createNotification } from "@/lib/notifications";
 import { getFriendProfileStatusLabel, getFriendProfileVenueHeadline } from "@/lib/presence";
 import { subscribeUserPresenceChanges } from "@/lib/userPresenceRealtime";
 import { navigateBack, SubpageBackButton } from "@/components/AppSubpageHeader";
-import { getPairBlockStatus } from "@/lib/pairBlockStatus";
+import { getPairBlockStatus, type PairBlockStatus } from "@/lib/pairBlockStatus";
+import { BLOCK_OR_PRIVATE_COPY } from "@/lib/blockAndPrivateCopy";
 import { formatVenueCategoryLabel } from "@/lib/venueCategoryLabel";
 import { fetchViewedStoryIds, STORY_VIEWED_EVENT } from "@/lib/storyViews";
+import { isStoryRowShareFlag } from "@/lib/storyRowShare";
+import { isMomentStillActive } from "@/lib/momentWindow";
 import {
   APP_CONTENT_MAX_CLASS,
   APP_PAGE_TAIL_PADDING_CLASS,
@@ -23,6 +25,8 @@ import {
   emitPrimarySurfaceReady,
 } from "@/lib/appShellLayout";
 import { Plus } from "lucide-react";
+import { confirmAndBlockUser } from "@/lib/blockUserAction";
+import { sendPendingFriendRequest } from "@/lib/sendPendingFriendRequest";
 
 async function unfriendUser(me: string, them: string) {
   const { error, count } = await supabase
@@ -46,51 +50,6 @@ async function unfriendUser(me: string, them: string) {
   );
   window.dispatchEvent(new Event("friends-updated"));
 
-}
-
-async function blockUser(me: string, them: string) {
-  if (me === them) return;
-
-  const { data: existing } = await supabase
-    .from("blocks")
-    .select("id")
-    .eq("blocker_id", me)
-    .eq("blocked_id", them)
-    .maybeSingle();
-
-  if (existing) return;
-
-  await supabase
-    .from("friend_requests")
-    .delete()
-    .eq("status", "accepted")
-    .or(
-      `and(requester_id.eq.${me},addressee_id.eq.${them}),and(requester_id.eq.${them},addressee_id.eq.${me})`
-    );
-
-  await supabase
-    .from("friend_requests")
-    .delete()
-    .eq("status", "pending")
-    .or(
-      `and(requester_id.eq.${me},addressee_id.eq.${them}),and(requester_id.eq.${them},addressee_id.eq.${me})`
-    );
-
-  const { error } = await supabase.from("blocks").insert({
-    blocker_id: me,
-    blocked_id: them,
-    created_at: new Date().toISOString(),
-  });
-
-  if (error) {
-    console.error("Block failed:", error);
-    return;
-  }
-
-  window.dispatchEvent(
-    new CustomEvent("friend-removed", { detail: { userId: them } })
-  );
-  window.dispatchEvent(new Event("friends-updated"));
 }
 
 async function unblockUser(me: string, them: string) {
@@ -171,7 +130,7 @@ export default function UserProfile() {
   const [me, setMe] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isBlocked, setIsBlocked] = useState(false);
+  const [pairBlock, setPairBlock] = useState<PairBlockStatus>("none");
   const [isFriend, setIsFriend] = useState(false);
   const [presenceUpdatedAt, setPresenceUpdatedAt] = useState<string | null>(null);
   const [theirVenueName, setTheirVenueName] = useState<string | null>(null);
@@ -218,24 +177,42 @@ export default function UserProfile() {
       Array.isArray(username) ? (username[0] ?? "") : username
     ).trim();
 
+    let cancelled = false;
+
     (async () => {
       const { data, error } = await supabase.rpc("get_profile_for_viewer", {
         p_username: un,
       });
 
       if (error || data === null || data === undefined) {
-        router.replace("/404");
+        if (!cancelled) router.replace("/404");
         return;
       }
 
       const row = profileFromRpc(data);
       if (!row) {
-        router.replace("/404");
+        if (!cancelled) router.replace("/404");
         return;
       }
+      if (cancelled) return;
       setProfile(row);
-      setLoading(false);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id && row.id !== user.id) {
+        const st = await getPairBlockStatus(supabase, user.id, row.id);
+        if (!cancelled) setPairBlock(st);
+      } else if (!cancelled) {
+        setPairBlock("none");
+      }
+
+      if (!cancelled) setLoading(false);
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [username, router]);
 
   useEffect(() => {
@@ -248,6 +225,13 @@ export default function UserProfile() {
     })();
   }, []);
 
+  /** Avoid stale friendship UI when navigating between profiles before the relationship effect resolves. */
+  useEffect(() => {
+    if (!profile?.id) return;
+    setIsFriend(false);
+    setRequestStatus("none");
+  }, [profile?.id]);
+
   useEffect(() => {
     if (!profile?.id || !me) return;
     if (profile.profile_inactive) {
@@ -258,9 +242,8 @@ export default function UserProfile() {
       return;
     }
     const isOwn = me === profile.id;
-    const blockRel = profile.block_relation;
-    const isBlockRestricted =
-      !isOwn && (blockRel === "they_blocked_you" || blockRel === "you_blocked_them");
+    const mergedBlock = pairBlock;
+    const isBlockRestricted = !isOwn && mergedBlock !== "none";
     if (isBlockRestricted) {
       setActiveMomentsCount(0);
       setMomentsCount(0);
@@ -286,18 +269,14 @@ export default function UserProfile() {
 
       const now = Date.now();
       const activeMoments = (rows ?? []).filter((m: any) => {
-        if (m?.is_share) return false;
+        if (isStoryRowShareFlag(m?.is_share)) return false;
         const media = String(m?.image_url ?? m?.media_url ?? "").trim();
         if (!media) return false;
-        const createdMs = new Date(m.created_at).getTime();
-        if (!Number.isFinite(createdMs)) return false;
-        const fallbackExpiresMs = createdMs + 24 * 60 * 60 * 1000;
-        const expiresMs = m.expires_at ? new Date(m.expires_at).getTime() : fallbackExpiresMs;
-        return Number.isFinite(expiresMs) && expiresMs > now;
+        return isMomentStillActive(m.created_at, m.expires_at ?? null, now);
       });
 
       setActiveMomentsCount(activeMoments.length);
-      setMomentsCount((rows ?? []).filter((m: any) => !!m?.is_share).length);
+      setMomentsCount((rows ?? []).filter((m: any) => isStoryRowShareFlag(m?.is_share)).length);
       setLatestActiveMomentId((activeMoments[0] as any)?.id ?? null);
       setLatestMomentOwnerId(profile.id);
       const viewerStories: StoryViewerStory[] = activeMoments
@@ -324,7 +303,7 @@ export default function UserProfile() {
       window.removeEventListener("story-posted", onStoryPosted);
       window.clearInterval(interval);
     };
-  }, [profile?.id, profile?.is_private, profile?.block_relation, profile?.profile_inactive, me, isFriend]);
+  }, [profile?.id, profile?.is_private, profile?.profile_inactive, me, isFriend, pairBlock]);
 
   const theirMomentIdsKey = useMemo(
     () => theirMomentViewerStories.map((s) => s.id).sort().join(","),
@@ -404,14 +383,16 @@ export default function UserProfile() {
         setRequestStatus("none");
         setTheirVenueName(null);
         setPresenceUpdatedAt(null);
-        setIsBlocked(false);
+        setPairBlock("none");
         return;
       }
-      const pairBlock = await getPairBlockStatus(supabase, me, them);
+      const pairStatus = await getPairBlockStatus(supabase, me, them);
       if (cancelled) return;
 
-      if (pairBlock !== "none") {
-        setIsBlocked(pairBlock === "you_blocked_them");
+      const merged = pairStatus;
+
+      if (merged !== "none") {
+        setPairBlock(merged);
         setTheirVenueName(null);
         setPresenceUpdatedAt(null);
         setIsFriend(false);
@@ -419,7 +400,7 @@ export default function UserProfile() {
         return;
       }
 
-      setIsBlocked(false);
+      setPairBlock("none");
 
       // Determine friendship + pending request from friend_requests
       const { data: relRows } = await supabase
@@ -488,7 +469,7 @@ export default function UserProfile() {
     return () => {
       cancelled = true;
     };
-  }, [me, profile?.id, profile?.block_relation, profile?.ghost_mode, profile?.profile_inactive, relationshipEpoch]);
+  }, [me, profile?.id, profile?.ghost_mode, profile?.profile_inactive, relationshipEpoch]);
 
   useEffect(() => {
     if (!me || !profile) return;
@@ -531,8 +512,8 @@ export default function UserProfile() {
       return;
     }
 
-    const br = profile.block_relation;
-    if (br === "they_blocked_you" || br === "you_blocked_them") {
+    const mergedBlock = pairBlock;
+    if (mergedBlock !== "none") {
       setMutualPreview([]);
       setMutualTotal(0);
       setMutualLoadDone(true);
@@ -574,7 +555,7 @@ export default function UserProfile() {
     return () => {
       cancelled = true;
     };
-  }, [me, profile?.id, profile?.block_relation, profile?.profile_inactive]);
+  }, [me, profile?.id, profile?.profile_inactive, pairBlock]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -582,8 +563,8 @@ export default function UserProfile() {
       setPlaces([]);
       return;
     }
-    const blockRel = profile.block_relation;
-    if (blockRel === "they_blocked_you" || blockRel === "you_blocked_them") {
+    const mergedBlock = pairBlock;
+    if (mergedBlock !== "none") {
       setPlaces([]);
       return;
     }
@@ -625,7 +606,7 @@ export default function UserProfile() {
         .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
       setPlaces(sorted as any);
     })();
-  }, [profile?.id, profile?.is_private, profile?.block_relation, profile?.profile_inactive, me, isFriend]);
+  }, [profile?.id, profile?.is_private, profile?.profile_inactive, me, isFriend, pairBlock]);
 
   const friendVenueLine = useMemo(() => {
     if (!profile) return "Not at a venue";
@@ -664,6 +645,7 @@ export default function UserProfile() {
 
   const them = profile.id;
   const isOwnProfile = !!me && me === them;
+  const mergedPairBlock = pairBlock;
   const isInactiveShell = !!profile.profile_inactive && !isOwnProfile;
   const profileName = isInactiveShell
     ? "User"
@@ -671,14 +653,9 @@ export default function UserProfile() {
   const nameUnderAvatar = isInactiveShell ? "User" : profile.display_name?.trim() || profile.username;
   const profileAvatar = profile.avatar_url?.trim() ? profile.avatar_url : null;
   const isPrivate = !!profile.is_private;
-  const blockRel: Profile["block_relation"] =
-    profile.block_relation === "they_blocked_you" || profile.block_relation === "you_blocked_them"
-      ? profile.block_relation
-      : isBlocked && !isOwnProfile
-        ? "you_blocked_them"
-        : null;
-  const isBlockRestricted =
-    !isOwnProfile && (blockRel === "they_blocked_you" || blockRel === "you_blocked_them");
+  const effectiveBlockRel: Profile["block_relation"] =
+    !isOwnProfile && mergedPairBlock !== "none" ? (mergedPairBlock as Profile["block_relation"]) : null;
+  const isBlockRestricted = !isOwnProfile && mergedPairBlock !== "none";
   const canViewPrivateProfile = isOwnProfile || isFriend;
   const shouldHidePrivateProfile =
     !isInactiveShell && (isBlockRestricted || (isPrivate && !canViewPrivateProfile));
@@ -691,10 +668,11 @@ export default function UserProfile() {
     !isBlockRestricted &&
     !isInactiveShell;
   const hasLiveMoment = activeMomentsCount > 0 && latestMomentOwnerId === profile.id;
-  const profileStoryRingActive =
-    hasLiveMoment &&
-    theirMomentViewerStories.length > 0 &&
-    theirMomentViewerStories.some((s) => !viewedMomentIds[s.id]);
+  const profileStoryRingActive = isOwnProfile
+    ? hasLiveMoment && theirMomentViewerStories.length > 0
+    : hasLiveMoment &&
+      theirMomentViewerStories.length > 0 &&
+      theirMomentViewerStories.some((s) => !viewedMomentIds[s.id]);
   const openFriendsViewer = () => {
     if (!profile?.username) return;
     if (shouldHidePrivateProfile || isInactiveShell) return;
@@ -721,31 +699,51 @@ export default function UserProfile() {
   };
 
   async function sendFriendRequestFromProfile() {
-    if (!me || !them || requesting || isFriend || requestStatus !== "none") return;
-    const pairBlock = await getPairBlockStatus(supabase, me, them);
-    if (pairBlock !== "none") return;
+    if (!me || !them || requesting || isFriend) return;
+    if (requestStatus === "incoming") {
+      alert("This person already sent you a friend request. Open Friends or Notifications to respond.");
+      return;
+    }
+    const tableStatus = await getPairBlockStatus(supabase, me, them);
+    if (tableStatus !== "none") {
+      alert(
+        tableStatus === "you_blocked_them"
+          ? "Unblock this user before sending a friend request."
+          : "You can’t send a request while this person has you blocked."
+      );
+      return;
+    }
     setRequesting(true);
-    const { error } = await supabase.from("friend_requests").insert({
-      requester_id: me,
-      addressee_id: them,
-      status: "pending",
-    });
+    const result = await sendPendingFriendRequest(supabase, them);
     setRequesting(false);
-    if (error) {
-      if (error.code === "23505") {
+    if (!result.ok) {
+      if (result.code === "23505") {
         setRequestStatus("outgoing");
         return;
       }
-      console.error("Could not send request:", error);
-      alert("Could not send friend request");
+      if (result.code === "23514" || result.message.includes("friend_request_blocked")) {
+        alert("Unblock this user before sending a friend request.");
+        return;
+      }
+      if (result.message.includes("incoming_friend_request_exists")) {
+        alert("They already sent you a request — respond from Friends or Notifications.");
+        setRequestStatus("incoming");
+        window.dispatchEvent(new Event("friends-updated"));
+        return;
+      }
+      if (result.message.includes("already_friends")) {
+        setIsFriend(true);
+        setRequestStatus("none");
+        window.dispatchEvent(new Event("friends-updated"));
+        return;
+      }
+      alert(
+        result.message ? `Could not send friend request: ${result.message}` : "Could not send friend request"
+      );
       return;
     }
-    await createNotification({
-      recipientId: them,
-      actorId: me,
-      type: "friend_request_received",
-    });
     setRequestStatus("outgoing");
+    window.dispatchEvent(new Event("friends-updated"));
   }
 
   return (
@@ -755,10 +753,12 @@ export default function UserProfile() {
       <div className="mx-auto flex w-full min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain">
         <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start gap-x-1 border-b border-white/[0.08] pb-3 pt-0.5">
           <SubpageBackButton onBack={goBackSafe} ariaLabel="Go back" />
-          <div className="flex min-w-0 items-center justify-center gap-2 px-1">
+          <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1">
             <h1 className="shrink-0 text-[17px] font-bold tracking-tight">Profile</h1>
             {!isInactiveShell ? (
-              <span className="truncate text-[14px] font-semibold text-white/45">@{profile.username}</span>
+              <span className="max-w-full break-words text-center text-[14px] font-semibold text-white/45">
+                @{profile.username}
+              </span>
             ) : null}
           </div>
           <div className="relative flex justify-end">
@@ -778,7 +778,7 @@ export default function UserProfile() {
                 className="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-[12px] border border-white/[0.1] bg-zinc-900/95 backdrop-blur"
                 onClick={(e) => e.stopPropagation()}
               >
-                {isBlocked ? (
+                {mergedPairBlock === "you_blocked_them" ? (
                   <button
                     type="button"
                     onClick={async () => {
@@ -786,8 +786,21 @@ export default function UserProfile() {
                       const ok = window.confirm("Unblock this user?");
                       if (!ok) return;
                       await unblockUser(me, them);
-                      setIsBlocked(false);
+                      setPairBlock("none");
+                      const un = decodeURIComponent(
+                        Array.isArray(username) ? (username[0] ?? "") : (username ?? "")
+                      ).trim();
+                      if (un) {
+                        const { data } = await supabase.rpc("get_profile_for_viewer", {
+                          p_username: un,
+                        });
+                        if (data && typeof data === "object") {
+                          const next = profileFromRpc(data);
+                          if (next) setProfile(next);
+                        }
+                      }
                       setMenuOpen(false);
+                      window.dispatchEvent(new Event("friends-updated"));
                     }}
                     className="w-full px-4 py-2.5 text-left text-[14px] hover:bg-white/[0.06]"
                   >
@@ -811,10 +824,9 @@ export default function UserProfile() {
                       type="button"
                       onClick={async () => {
                         if (!me || !them) return;
-                        const ok = window.confirm("Are you sure you want to block this user?");
+                        const ok = await confirmAndBlockUser(supabase, me, them);
                         if (!ok) return;
-                        await blockUser(me, them);
-                        setIsBlocked(true);
+                        setPairBlock("you_blocked_them");
                         setIsFriend(false);
                         setMenuOpen(false);
                         const un = decodeURIComponent(
@@ -902,21 +914,25 @@ export default function UserProfile() {
                     <span>{activeLabel}</span>
                   </div>
                 ) : null
-              ) : isBlockRestricted && blockRel === "they_blocked_you" ? (
+              ) : effectiveBlockRel === "they_blocked_you" ? (
                 <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium text-amber-200/85 ring-1 ring-white/[0.08] sm:text-[12px]">
-                  This user has blocked you — messaging disabled
+                  {BLOCK_OR_PRIVATE_COPY.theyBlockedYouStrip}
                 </p>
-              ) : isBlockRestricted && blockRel === "you_blocked_them" ? (
+              ) : effectiveBlockRel === "you_blocked_them" ? (
                 <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium text-white/55 ring-1 ring-white/[0.08] sm:text-[12px]">
-                  You blocked this user
+                  {BLOCK_OR_PRIVATE_COPY.youBlockedThemStrip}
+                </p>
+              ) : isPrivate && !canViewPrivateProfile ? (
+                <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium text-white/45 ring-1 ring-white/[0.08] sm:text-[12px]">
+                  {BLOCK_OR_PRIVATE_COPY.privateStrip}
                 </p>
               ) : (
                 <p className="w-full rounded-full bg-white/[0.06] px-2.5 py-1 text-center text-[11px] font-medium text-white/45 ring-1 ring-white/[0.08] sm:text-[12px]">
-                  Private account
+                  Profile restricted
                 </p>
               )}
             </div>
-            <p className="col-start-1 row-start-2 mt-2.5 min-w-0 w-full text-left text-[0.9375rem] font-semibold leading-snug tracking-tight text-white line-clamp-2">
+            <p className="col-start-1 row-start-2 mt-2.5 min-w-0 w-full text-left text-[0.9375rem] font-semibold leading-snug tracking-tight text-white break-words">
               {nameUnderAvatar}
             </p>
             {!shouldHidePrivateProfile && !isInactiveShell ? (
@@ -1003,7 +1019,7 @@ export default function UserProfile() {
                       }
                       if (shareUrl) await navigator.clipboard.writeText(shareUrl);
                     }}
-                    className="h-11 rounded-[10px] border border-white/[0.12] bg-white/[0.05] text-[15px] font-semibold text-white/92 transition hover:bg-white/[0.08]"
+                    className="ah-glass-control ah-glass-control-interactive h-11 rounded-[10px] text-[15px] font-semibold text-white/92 transition"
                   >
                     Share profile
                   </button>
@@ -1032,18 +1048,18 @@ export default function UserProfile() {
 
         {shouldHidePrivateProfile ? (
           <div className="mt-6 border-y border-white/[0.08] py-8 text-center">
-            {isBlockRestricted && blockRel === "they_blocked_you" ? (
+            {effectiveBlockRel === "they_blocked_you" ? (
               <>
-                <p className="text-[15px] font-semibold text-white">This user has blocked you</p>
+                <p className="text-[15px] font-semibold text-white">{BLOCK_OR_PRIVATE_COPY.theyBlockedYouTitle}</p>
                 <p className="mt-1.5 px-4 text-[13px] leading-relaxed text-white/48">
-                  You can&apos;t view their profile or send messages. They can unblock you at any time.
+                  {BLOCK_OR_PRIVATE_COPY.theyBlockedYouBody}
                 </p>
               </>
-            ) : isBlockRestricted && blockRel === "you_blocked_them" ? (
+            ) : effectiveBlockRel === "you_blocked_them" ? (
               <>
-                <p className="text-[15px] font-semibold text-white">You blocked this user</p>
+                <p className="text-[15px] font-semibold text-white">{BLOCK_OR_PRIVATE_COPY.youBlockedThemTitle}</p>
                 <p className="mt-1.5 px-4 text-[13px] leading-relaxed text-white/48">
-                  Unblock to send a friend request or view shared content again.
+                  {BLOCK_OR_PRIVATE_COPY.youBlockedThemBody}
                 </p>
                 {!isOwnProfile && me ? (
                   <button
@@ -1052,7 +1068,7 @@ export default function UserProfile() {
                       const ok = window.confirm("Unblock this user?");
                       if (!ok || !me) return;
                       await unblockUser(me, them);
-                      setIsBlocked(false);
+                      setPairBlock("none");
                       const { data } = await supabase.rpc("get_profile_for_viewer", {
                         p_username: profile.username,
                       });
@@ -1067,11 +1083,11 @@ export default function UserProfile() {
                   </button>
                 ) : null}
               </>
-            ) : (
+            ) : isPrivate && !canViewPrivateProfile ? (
               <>
-                <p className="text-[15px] font-semibold text-white">This account is private</p>
+                <p className="text-[15px] font-semibold text-white">{BLOCK_OR_PRIVATE_COPY.privateTitle}</p>
                 <p className="mt-1.5 px-4 text-[13px] leading-relaxed text-white/48">
-                  You need to be friends to view photos, moments, and more.
+                  {BLOCK_OR_PRIVATE_COPY.privateBody}
                 </p>
                 {requestStatus === "outgoing" ? (
                   <p className="mt-4 text-[13px] text-white/42">Request sent</p>
@@ -1094,6 +1110,8 @@ export default function UserProfile() {
                   </button>
                 ) : null}
               </>
+            ) : (
+              <p className="px-4 text-[13px] leading-relaxed text-white/48">This profile isn&apos;t available to you.</p>
             )}
           </div>
         ) : null}
@@ -1155,6 +1173,7 @@ export default function UserProfile() {
                       userId={profile.id}
                       viewerId={me}
                       mode="shares"
+                      fetchEnabled={!shouldHidePrivateProfile}
                       emptyLabel="No shares yet"
                       emptySubtitle="Shares appear here when they choose to show them."
                     />
@@ -1173,6 +1192,7 @@ export default function UserProfile() {
                       userId={profile.id}
                       viewerId={me}
                       mode="archive"
+                      fetchEnabled={!shouldHidePrivateProfile}
                       emptyLabel="No archived moments available"
                       emptySubtitle="Archive is only available to the account owner."
                     />

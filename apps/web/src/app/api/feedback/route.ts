@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 type FeedbackBody = {
   category: "feature" | "bug" | "general";
   message: string;
+  subject: string;
 };
 
 function getSupabase(req: NextRequest, res: NextResponse) {
@@ -30,14 +31,22 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
   const supabase = getSupabase(req, res);
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
   const body = (await req.json()) as FeedbackBody;
   const category = body?.category ?? "general";
   const message = body?.message?.trim() ?? "";
+  const subjectLine = typeof body?.subject === "string" ? body.subject.trim() : "";
 
+  if (!subjectLine || subjectLine.length < 3) {
+    return NextResponse.json({ ok: false, error: "subject_too_short" }, { status: 400 });
+  }
+  if (subjectLine.length > 140) {
+    return NextResponse.json({ ok: false, error: "subject_too_long" }, { status: 400 });
+  }
   if (!message || message.length < 8) {
     return NextResponse.json({ ok: false, error: "message_too_short" }, { status: 400 });
   }
@@ -52,13 +61,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "feedback_email_not_configured" }, { status: 500 });
   }
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name, username")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const displayName =
+    typeof profile?.display_name === "string" && profile.display_name.trim()
+      ? profile.display_name.trim()
+      : "(not set)";
+  const username =
+    typeof profile?.username === "string" && profile.username.trim()
+      ? profile.username.trim()
+      : "(not set)";
+
   const userAgent = req.headers.get("user-agent") ?? "unknown";
-  const submittedBy = session.user.email ?? session.user.id;
-  const subject = `[Intencity feedback] ${category}`;
+  const loginEmail = user.email ?? "(no email on account)";
+  const subject = `[Intencity feedback] [${category}] ${subjectLine}`;
   const text = [
-    `Submitted by: ${submittedBy}`,
-    `User ID: ${session.user.id}`,
+    `Auth user ID: ${user.id}`,
+    `Display name: ${displayName}`,
+    `Username: ${username}`,
+    `Login email: ${loginEmail}`,
     `Category: ${category}`,
+    `Subject: ${subjectLine}`,
     "",
     message,
     "",
@@ -83,7 +110,17 @@ export async function POST(req: NextRequest) {
   if (!sendRes.ok) {
     const raw = await sendRes.text();
     console.error("Feedback email send failed:", raw);
-    return NextResponse.json({ ok: false, error: "email_send_failed" }, { status: 500 });
+    let error: "email_send_failed" | "email_from_domain_not_verified" = "email_send_failed";
+    try {
+      const parsed = JSON.parse(raw) as { message?: string };
+      const msg = typeof parsed?.message === "string" ? parsed.message : "";
+      if (sendRes.status === 403 && /not verified|verify your domain/i.test(msg)) {
+        error = "email_from_domain_not_verified";
+      }
+    } catch {
+      /* ignore non-JSON body */
+    }
+    return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

@@ -28,6 +28,8 @@ export type NotificationRow = {
 export type NotificationWithMeta = NotificationRow & {
   actor_username?: string | null;
   actor_display_name?: string | null;
+  /** Resolved headline when actor is blocked / has blocked you (notifications page). */
+  actor_label?: string | null;
   actor_avatar_url?: string | null;
   venue_name?: string | null;
   /** Synthetic grouped row: underlying notification ids */

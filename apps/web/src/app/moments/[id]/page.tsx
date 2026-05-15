@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Heart, MoreHorizontal } from "lucide-react";
+import { Heart, MessageCircle, MoreHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { Avatar } from "@/components/ui";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -12,10 +12,14 @@ import { formatRelativeTime } from "@/lib/time";
 import { createNotification } from "@/lib/notifications";
 import { fetchProfilesForStoryCommenters } from "@/lib/storyCommentProfiles";
 import { recordStoryView } from "@/lib/storyViews";
+import { viewerCanSeeOwnerPosts } from "@/lib/pairBlockStatus";
+import { BLOCK_OR_PRIVATE_COPY } from "@/lib/blockAndPrivateCopy";
+import { fetchLikedByFriendsLineForStory } from "@/lib/storyFeedInteractions";
 import {
   APP_CONTENT_MAX_CLASS,
   APP_PAGE_TAIL_PADDING_CLASS,
 } from "@/lib/appShellLayout";
+import { openShareCommentsSheet } from "@/lib/shareCommentsSheet";
 
 type ViewerComment = {
   id: string;
@@ -49,10 +53,17 @@ export default function MomentDetailPage() {
   const [likesCount, setLikesCount] = useState(0);
   const [liked, setLiked] = useState(false);
   const [comments, setComments] = useState<ViewerComment[]>([]);
-  const [commentText, setCommentText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [momentHydrated, setMomentHydrated] = useState(false);
-  const commentsSectionRef = useRef<HTMLDivElement | null>(null);
+  const [likedByLine, setLikedByLine] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id || typeof window === "undefined") return;
+    if (window.location.hash !== "#comments") return;
+    openShareCommentsSheet(id);
+    const path = window.location.pathname + window.location.search;
+    window.history.replaceState(null, "", path);
+  }, [id]);
 
   useEffect(() => {
     setMoment(null);
@@ -109,17 +120,54 @@ export default function MomentDetailPage() {
               }
             : null)) as any;
         if (!m) return;
+
+        const viewerId = user?.id ?? null;
+        const ownerId = m.user_id as string;
+        const isShare = !!m.is_share;
+        const shareVisible = !!m.share_visible;
+
+        if (archiveView && viewerId !== ownerId) {
+          if (!cancelled) {
+            setMoment(null);
+            setOwner(null);
+          }
+          return;
+        }
+
+        const canSeeOwner = await viewerCanSeeOwnerPosts(supabase, viewerId, ownerId);
+        if (!canSeeOwner) {
+          if (!cancelled) {
+            setMoment(null);
+            setOwner(null);
+          }
+          return;
+        }
+
+        const shareHidden = !!m.share_hidden;
+        if (
+          isShare &&
+          !archiveView &&
+          viewerId !== ownerId &&
+          (shareHidden || !shareVisible)
+        ) {
+          if (!cancelled) {
+            setMoment(null);
+            setOwner(null);
+          }
+          return;
+        }
+
         setMoment({
           id: m.id,
-          user_id: m.user_id,
+          user_id: ownerId,
           media_url: m.image_url,
           created_at: m.created_at,
-          is_share: !!m.is_share,
-          share_visible: !!m.share_visible,
-          share_hidden: !!m.share_hidden,
+          is_share: isShare,
+          share_visible: shareVisible,
+          share_hidden: shareHidden,
         });
 
-        if (user?.id) {
+        if (user?.id && user.id !== ownerId) {
           void recordStoryView(supabase, user.id, m.id);
         }
 
@@ -168,15 +216,19 @@ export default function MomentDetailPage() {
     };
   }, [id, archiveView]);
 
-  useLayoutEffect(() => {
-    if (!momentHydrated || !moment?.is_share || archiveView) return;
-    if (typeof window === "undefined") return;
-    if (window.location.hash !== "#comments") return;
-    const t = window.setTimeout(() => {
-      commentsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
-    return () => window.clearTimeout(t);
-  }, [momentHydrated, moment?.id, moment?.is_share, archiveView]);
+  useEffect(() => {
+    if (!moment?.is_share || !meId) {
+      setLikedByLine(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchLikedByFriendsLineForStory(supabase, moment.id, meId).then((line) => {
+      if (!cancelled) setLikedByLine(line);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [moment?.id, moment?.is_share, meId]);
 
   const relativeTime = useMemo(() => {
     if (!moment?.created_at) return "";
@@ -196,6 +248,10 @@ export default function MomentDetailPage() {
             detail: { storyId: moment.id, deltaLikes: -1, likedByViewer: false },
           })
         );
+      }
+      if (moment.is_share) {
+        const line = await fetchLikedByFriendsLineForStory(supabase, moment.id, meId);
+        setLikedByLine(line);
       }
       return;
     }
@@ -222,67 +278,15 @@ export default function MomentDetailPage() {
         route: `/moments/${moment.id}`,
       });
     }
+    if (moment.is_share) {
+      const line = await fetchLikedByFriendsLineForStory(supabase, moment.id, meId);
+      setLikedByLine(line);
+    }
   };
 
-  const deleteComment = async (comment: ViewerComment) => {
-    if (!moment || !meId || !moment.is_share || archiveView) return;
-    const canDelete = comment.user_id === meId || moment.user_id === meId;
-    if (!canDelete) return;
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this comment? This can’t be undone."
-    );
-    if (!confirmed) return;
-    const { error } = await supabase.from("story_comments").delete().eq("id", comment.id);
-    if (error) {
-      alert("Could not delete comment.");
-      return;
-    }
-    setComments((prev) => prev.filter((c) => c.id !== comment.id));
-    window.dispatchEvent(
-      new CustomEvent("ah-share-threads-updated", { detail: { storyId: moment.id, deltaComments: -1 } })
-    );
-  };
-
-  const sendComment = async () => {
-    if (!moment || !meId || !moment.is_share) return;
-    const text = commentText.trim();
-    if (!text) return;
-    const { data: inserted, error } = await supabase
-      .from("story_comments")
-      .insert({
-        story_id: moment.id,
-        user_id: meId,
-        content: text,
-      })
-      .select("id")
-      .single();
-    if (error || !inserted?.id) return;
-    setComments((prev) => [
-      ...prev,
-      {
-        id: inserted.id as string,
-        user_id: meId,
-        content: text,
-        username: myProfile?.username ?? "you",
-        avatar_url: myProfile?.avatar_url ?? null,
-      },
-    ]);
-    setCommentText("");
-    window.dispatchEvent(
-      new CustomEvent("ah-share-threads-updated", { detail: { storyId: moment.id, deltaComments: 1 } })
-    );
-    if (moment.user_id !== meId) {
-      await createNotification({
-        recipientId: moment.user_id,
-        actorId: meId,
-        type: "story_comment",
-        storyId: moment.id,
-        messagePreview: text.slice(0, 140),
-        pushTitle: "New comment on your post",
-        pushBody: text.slice(0, 120),
-        route: `/moments/${moment.id}`,
-      });
-    }
+  const openCommentsPage = () => {
+    if (!id) return;
+    openShareCommentsSheet(id);
   };
 
   const deleteMoment = async () => {
@@ -293,31 +297,19 @@ export default function MomentDetailPage() {
         : "Delete this moment? This can’t be undone."
     );
     if (!confirmed) return;
+    setMenuOpen(false);
     const { error } = await supabase
       .from("stories")
       .delete()
       .eq("id", moment.id)
       .eq("user_id", meId);
-    if (error) return;
-    window.dispatchEvent(new Event("story-posted"));
-    navigateBack(router, "/hub");
-  };
-
-  const toggleShareVisibility = async () => {
-    if (!moment || !meId || moment.user_id !== meId || !moment.is_share) return;
-    const next = !moment.share_visible;
-    const { error } = await supabase
-      .from("stories")
-      .update({ share_visible: next })
-      .eq("id", moment.id)
-      .eq("user_id", meId);
     if (error) {
-      alert("Could not update share visibility.");
+      console.error("stories delete:", error);
+      alert(error.message ? `Could not delete: ${error.message}` : "Could not delete. Try again.");
       return;
     }
-    setMoment((prev) => (prev ? { ...prev, share_visible: next } : prev));
     window.dispatchEvent(new Event("story-posted"));
-    setMenuOpen(false);
+    navigateBack(router, "/hub");
   };
 
   const toggleHideShare = async () => {
@@ -350,7 +342,10 @@ export default function MomentDetailPage() {
               <SubpageBackButton onBack={goMomentBack} />
             </div>
             <div className="grid h-[70vh] place-items-center px-4 text-center text-sm text-white/60">
-              This Moment isn&apos;t available or was removed.
+              <p className="text-[15px] font-semibold text-white/88">{BLOCK_OR_PRIVATE_COPY.postUnavailableTitle}</p>
+              <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-white/48">
+                {BLOCK_OR_PRIVATE_COPY.postUnavailableBody}
+              </p>
             </div>
           </>
         ) : (
@@ -408,14 +403,7 @@ export default function MomentDetailPage() {
                         <>
                           <button
                             type="button"
-                            onClick={toggleShareVisibility}
-                            className="block w-full px-3 py-2.5 text-left text-[13px] text-white/90 hover:bg-white/[0.06]"
-                          >
-                            {moment.share_visible ? "Hide from others" : "Show to others"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={toggleHideShare}
+                            onClick={() => void toggleHideShare()}
                             className="block w-full px-3 py-2.5 text-left text-[13px] text-white/90 hover:bg-white/[0.06]"
                           >
                             {moment.share_hidden ? "Unhide from grid" : "Hide from grid"}
@@ -449,76 +437,60 @@ export default function MomentDetailPage() {
               </div>
 
               <div className={`space-y-3 px-4 ${APP_PAGE_TAIL_PADDING_CLASS}`}>
-                <button
-                  type="button"
-                  onClick={toggleLike}
-                  className="flex items-center gap-2 rounded-full py-1.5 text-left transition active:scale-[0.98]"
-                >
-                  <Heart
-                    size={26}
-                    strokeWidth={1.75}
-                    className={liked ? "fill-red-500 text-red-500" : "text-white/90"}
-                    aria-hidden
-                  />
-                  <span className="text-[15px] font-semibold tabular-nums text-white/90">{likesCount}</span>
-                </button>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={toggleLike}
+                      className="flex items-center gap-2 rounded-full py-1.5 text-left transition active:scale-[0.98]"
+                    >
+                      <Heart
+                        size={26}
+                        strokeWidth={1.75}
+                        className={liked ? "fill-red-500 text-red-500" : "text-white/90"}
+                        aria-hidden
+                      />
+                      <span className="text-[15px] font-semibold tabular-nums text-white/90">{likesCount}</span>
+                    </button>
+                  </div>
+                  {!archiveView && moment.is_share ? (
+                    <button
+                      type="button"
+                      onClick={openCommentsPage}
+                      className="flex items-center gap-1.5 rounded-full py-1.5 pl-1 pr-2 text-white/90 transition active:scale-[0.98]"
+                      aria-label="Open comments"
+                    >
+                      <MessageCircle size={26} strokeWidth={1.75} aria-hidden />
+                      {comments.length > 0 ? (
+                        <span className="text-[14px] font-semibold tabular-nums">{comments.length}</span>
+                      ) : null}
+                    </button>
+                  ) : null}
+                </div>
+                {!archiveView && moment.is_share && likedByLine ? (
+                  <p className="text-[12px] leading-snug text-white/55">{likedByLine}</p>
+                ) : null}
                 {!archiveView && moment.is_share ? (
-                  <div
-                    id="share-comments"
-                    ref={commentsSectionRef}
-                    className="scroll-mt-6 space-y-3"
-                  >
+                  <div className="space-y-2">
                     <div className="scrollbar-none max-h-52 space-y-2 overflow-y-auto rounded-2xl bg-white/[0.03] px-3 py-2.5">
                       {comments.length ? (
-                        comments.map((c) => {
-                          const canDelete =
-                            !!meId && (c.user_id === meId || moment.user_id === meId);
-                          return (
-                            <div key={c.id} className="flex items-start gap-2 text-xs text-white/85">
-                              <Avatar
-                                src={(c.avatar_url ?? "").trim() || null}
-                                fallbackText={c.username ?? "u"}
-                                size="xs"
-                                className="shrink-0"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <p className="font-semibold">{c.username ?? "user"}</p>
-                                <p className="break-words">{c.content}</p>
-                              </div>
-                              {canDelete ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void deleteComment(c)}
-                                  className="shrink-0 self-start pt-0.5 text-[11px] font-medium text-white/45 hover:text-red-300"
-                                  aria-label={
-                                    c.user_id === meId ? "Delete your comment" : "Remove comment from your share"
-                                  }
-                                >
-                                  Remove
-                                </button>
-                              ) : null}
+                        comments.map((c) => (
+                          <div key={c.id} className="flex items-start gap-2 text-xs text-white/85">
+                            <Avatar
+                              src={(c.avatar_url ?? "").trim() || null}
+                              fallbackText={c.username ?? "u"}
+                              size="xs"
+                              className="shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold">{c.username ?? "user"}</p>
+                              <p className="break-words">{c.content}</p>
                             </div>
-                          );
-                        })
+                          </div>
+                        ))
                       ) : (
                         <div className="text-xs text-white/50">No comments yet</div>
                       )}
-                    </div>
-
-                    <div className="ah-glass-control flex items-center gap-2 rounded-full px-1 py-1 pl-3">
-                      <input
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        placeholder="Add a comment…"
-                        className="min-w-0 flex-1 bg-transparent py-2.5 text-[14px] text-white outline-none placeholder:text-white/35"
-                      />
-                      <button
-                        type="button"
-                        onClick={sendComment}
-                        className="shrink-0 rounded-full bg-accent-violet px-4 py-2.5 text-[13px] font-semibold text-white"
-                      >
-                        Send
-                      </button>
                     </div>
                   </div>
                 ) : null}

@@ -45,7 +45,7 @@ export default function ProfilePageSkeleton() {
         </div>
 
         <div className="mt-4">
-          <SkeletonGrid columns={3} count={9} gapClass="gap-1" cellClass="aspect-square rounded-lg" />
+          <SkeletonGrid columns={3} count={9} gapClass="gap-1" cellClass="aspect-square rounded-none" />
         </div>
       </div>
     </div>

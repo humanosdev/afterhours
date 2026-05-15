@@ -54,6 +54,7 @@ export default function SettingsPage() {
   const [privateAccount, setPrivateAccount] = useState(false);
   const [privacyLoading, setPrivacyLoading] = useState(true);
   const [feedbackCategory, setFeedbackCategory] = useState<"feature" | "bug" | "general">("feature");
+  const [feedbackSubject, setFeedbackSubject] = useState("");
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
@@ -166,7 +167,16 @@ export default function SettingsPage() {
   };
 
   const submitFeedback = async () => {
+    const subject = feedbackSubject.trim();
     const text = feedbackText.trim();
+    if (subject.length < 3) {
+      setFeedbackMsg("Please add a short subject (at least a few words).");
+      return;
+    }
+    if (subject.length > 140) {
+      setFeedbackMsg("Subject is too long. Keep it under 140 characters.");
+      return;
+    }
     if (text.length < 8) {
       setFeedbackMsg("Please write at least a short description.");
       return;
@@ -178,6 +188,7 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         category: feedbackCategory,
+        subject,
         message: text,
       }),
     });
@@ -188,9 +199,20 @@ export default function SettingsPage() {
         setFeedbackMsg("Feedback email is not configured on the server yet.");
         return;
       }
+      if (payload?.error === "subject_too_short" || payload?.error === "subject_too_long") {
+        setFeedbackMsg("Please adjust the subject length and try again.");
+        return;
+      }
+      if (payload?.error === "email_from_domain_not_verified") {
+        setFeedbackMsg(
+          "Email could not send: the “from” domain is not verified in Resend. Verify getintencity.com at resend.com/domains, or for local testing set FEEDBACK_FROM_EMAIL to onboarding@resend.dev (Resend’s test sender)."
+        );
+        return;
+      }
       setFeedbackMsg("Could not send feedback right now. Please try again.");
       return;
     }
+    setFeedbackSubject("");
     setFeedbackText("");
     setFeedbackCategory("feature");
     setFeedbackMsg("Thanks — feedback sent.");
@@ -209,6 +231,58 @@ export default function SettingsPage() {
       />
 
       <div className="mt-5 space-y-5">
+        <section>
+          <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Feedback</div>
+          <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3">
+            <div className="font-medium">Suggest a feature or report an issue</div>
+            <div className="mt-1 text-xs text-white/50">
+              We route this to {appConfig.supportEmail}.
+            </div>
+            <div className="mt-3 flex gap-2">
+              {(["feature", "bug", "general"] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setFeedbackCategory(opt)}
+                  className={`rounded-full border px-3 py-1 text-xs ${
+                    feedbackCategory === opt
+                      ? "border-white/40 bg-white/15 text-white"
+                      : "border-white/10 bg-transparent text-white/70"
+                  }`}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <label className="mt-3 block">
+              <span className="text-xs text-white/50">Subject</span>
+              <input
+                type="text"
+                value={feedbackSubject}
+                onChange={(e) => setFeedbackSubject(e.target.value)}
+                placeholder="One line summary"
+                maxLength={140}
+                className="mt-1 w-full rounded-xl border border-white/10 bg-primary/30 px-3 py-2 text-sm outline-none focus:border-white/20"
+              />
+            </label>
+            <textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="What should we add or improve?"
+              className="mt-3 h-28 w-full resize-none rounded-xl border border-white/10 bg-primary/30 p-3 text-sm outline-none focus:border-white/20"
+            />
+            {feedbackMsg ? <div className="mt-2 text-xs text-white/70">{feedbackMsg}</div> : null}
+            <button
+              type="button"
+              onClick={submitFeedback}
+              disabled={feedbackSending}
+              className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
+            >
+              {feedbackSending ? "Sending..." : "Send feedback"}
+            </button>
+          </div>
+        </section>
+
         <section>
           <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Map</div>
           <button
@@ -260,6 +334,25 @@ export default function SettingsPage() {
             </div>
           </button>
         </section>
+
+        {sections.map((section) => (
+          <section key={section.title}>
+            <div className="text-xs tracking-wide uppercase text-white/50 mb-2">{section.title}</div>
+            <div className="space-y-2">
+              {section.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="block rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-3 transition-colors hover:bg-white/[0.07]"
+                >
+                  <div className="font-medium">{item.label}</div>
+                  <div className="text-xs text-white/50 mt-1">{item.desc}</div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ))}
+
         <section>
           <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Account status</div>
           {accountMsg ? (
@@ -315,64 +408,6 @@ export default function SettingsPage() {
             )}
           </div>
         </section>
-        <section>
-          <div className="text-xs tracking-wide uppercase text-white/50 mb-2">Feedback</div>
-          <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3">
-            <div className="font-medium">Suggest a feature or report an issue</div>
-            <div className="mt-1 text-xs text-white/50">
-              We route this to {appConfig.supportEmail}.
-            </div>
-            <div className="mt-3 flex gap-2">
-              {(["feature", "bug", "general"] as const).map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => setFeedbackCategory(opt)}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    feedbackCategory === opt
-                      ? "border-white/40 bg-white/15 text-white"
-                      : "border-white/10 bg-transparent text-white/70"
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={feedbackText}
-              onChange={(e) => setFeedbackText(e.target.value)}
-              placeholder="What should we add or improve?"
-              className="mt-3 h-28 w-full resize-none rounded-xl border border-white/10 bg-primary/30 p-3 text-sm outline-none focus:border-white/20"
-            />
-            {feedbackMsg ? <div className="mt-2 text-xs text-white/70">{feedbackMsg}</div> : null}
-            <button
-              type="button"
-              onClick={submitFeedback}
-              disabled={feedbackSending}
-              className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
-            >
-              {feedbackSending ? "Sending..." : "Send feedback"}
-            </button>
-          </div>
-        </section>
-
-        {sections.map((section) => (
-          <section key={section.title}>
-            <div className="text-xs tracking-wide uppercase text-white/50 mb-2">{section.title}</div>
-            <div className="space-y-2">
-              {section.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="block rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-3 transition-colors hover:bg-white/[0.07]"
-                >
-                  <div className="font-medium">{item.label}</div>
-                  <div className="text-xs text-white/50 mt-1">{item.desc}</div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ))}
       </div>
     </div>
     </div>

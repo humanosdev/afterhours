@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { isStoryRowShareFlag } from "@/lib/storyRowShare";
 import { SkeletonGrid } from "@/components/ui/Skeleton";
 
 type StoryRow = {
@@ -22,19 +23,22 @@ export default function ProfileStoriesGrid({
   mode = "shares",
   emptyLabel = "No moments yet",
   emptySubtitle,
+  fetchEnabled = true,
 }: {
   userId: string | null;
   viewerId?: string | null;
   mode?: "shares" | "archive";
   emptyLabel?: string;
   emptySubtitle?: string;
+  /** When false, skip network fetch (e.g. parent already decided the viewer must not see this grid). */
+  fetchEnabled?: boolean;
 }) {
   const router = useRouter();
   const [stories, setStories] = useState<StoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || !fetchEnabled) {
       setStories([]);
       setLoading(false);
       return;
@@ -83,7 +87,7 @@ export default function ProfileStoriesGrid({
       const now = Date.now();
       const rows = (rowsRaw as any[])
         .filter((s) => {
-          const isShare = !!s.is_share;
+          const isShare = isStoryRowShareFlag(s.is_share);
           const shareVisible = !!s.share_visible;
           const shareHidden = !!s.share_hidden;
           const createdAtMs = new Date(s.created_at ?? 0).getTime();
@@ -98,7 +102,7 @@ export default function ProfileStoriesGrid({
             return isExpiredMoment || (isShare && shareHidden);
           }
 
-          // mode: shares
+          // mode: shares (grid + hub: visibility is share_hidden; share_visible is legacy only)
           if (!isShare) return false;
           if (shareHidden) return false;
           if (isOwner) return true;
@@ -109,7 +113,7 @@ export default function ProfileStoriesGrid({
           media_url: (s.image_url ?? "") as string,
           created_at: (s.created_at ?? null) as string | null,
           expires_at: (s.expires_at ?? null) as string | null,
-          is_share: !!s.is_share,
+          is_share: isStoryRowShareFlag(s.is_share),
           share_visible: !!s.share_visible,
           share_hidden: !!s.share_hidden,
         }))
@@ -125,7 +129,7 @@ export default function ProfileStoriesGrid({
       mounted = false;
       window.removeEventListener("story-posted", onStoryPosted);
     };
-  }, [userId, viewerId, mode]);
+  }, [userId, viewerId, mode, fetchEnabled]);
 
   if (loading) {
     return (
@@ -134,7 +138,7 @@ export default function ProfileStoriesGrid({
           columns={3}
           count={9}
           gapClass="gap-0.5 sm:gap-1"
-          cellClass="aspect-square rounded-xl"
+          cellClass="aspect-square rounded-none"
         />
       </div>
     );
@@ -158,7 +162,7 @@ export default function ProfileStoriesGrid({
         <button
           key={story.id}
           type="button"
-          className="relative aspect-square w-full overflow-hidden rounded-xl bg-[#141820] transition active:scale-[0.98]"
+          className="relative aspect-square w-full overflow-hidden rounded-none bg-[#141820] transition active:scale-[0.98]"
           onClick={() =>
             router.push(
               `/moments/${encodeURIComponent(story.id)}${mode === "archive" ? "?view=archive" : ""}`

@@ -4,8 +4,10 @@
  *
  *   node scripts/process-splash-lockup.mjs path/to/export.png
  *
- * After running, update `src/lib/brandAssets.ts` width/height if they changed, and sync
- * `--ah-bg-primary` / Tailwind `primary` / manifest `theme_color` with `suggestedCanvasHex`.
+ * After running, update `src/lib/brandAssets.ts` width/height if they changed, and bump
+ * `INTENCITY_BRAND_LOCKUP_ASSET_VERSION` so browsers / PWAs fetch the new PNG.
+ * Flat matte pixels are rewritten to the canonical app canvas (`globals.css` `--ah-bg-primary-rgb`)
+ * so the bitmap matches `bg-primary` and does not show a “lighter box” behind the lockup.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -53,15 +55,48 @@ const hex =
     .map((v) => Math.round(v / n).toString(16).padStart(2, "0"))
     .join("");
 
+/** Must match `apps/web/src/app/globals.css` `--ah-bg-primary-rgb` (space-separated → RGB tuple). */
+const CANVAS_RGB = [10, 12, 24];
+/** Stem shadow in the “i” mark — do not flatten (same hull as `IntencityBrandLockupImage` pipeline). */
+const SHADOW_RGB = [10, 9, 14];
+const SHADOW_R = 3.05;
+
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+const shouldSnap = (r0, g0, b0) => {
+  const p = [r0, g0, b0];
+  if (dist(p, SHADOW_RGB) < SHADOW_R) return false;
+  const m = Math.max(r0, g0, b0);
+  const dC = dist(p, CANVAS_RGB);
+  if (m <= 45 && dC <= 10) return true;
+  if (m <= 24 && dC <= 14) return true;
+  return false;
+};
+
+const raw = Buffer.from(data);
+for (let i = 0; i < raw.length; i += 4) {
+  const r0 = raw[i];
+  const g0 = raw[i + 1];
+  const b0 = raw[i + 2];
+  if (!shouldSnap(r0, g0, b0)) continue;
+  raw[i] = CANVAS_RGB[0];
+  raw[i + 1] = CANVAS_RGB[1];
+  raw[i + 2] = CANVAS_RGB[2];
+}
+const normalized = await sharp(raw, { raw: { width: w, height: h, channels: 4 } })
+  .png({ compressionLevel: 9 })
+  .toBuffer();
+
 const out = path.join(process.cwd(), "public", "intencity-splash-lockup.png");
-await fs.writeFile(out, buf);
+await fs.writeFile(out, normalized);
 console.log(
   JSON.stringify(
     {
       wrote: out,
       width: meta.width,
       height: meta.height,
-      suggestedCanvasHex: hex,
+      cornerSampleHex: hex,
+      canvasRgbApplied: CANVAS_RGB.join(" "),
     },
     null,
     2

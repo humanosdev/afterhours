@@ -8,13 +8,19 @@ import { formatRelativeTime } from "@/lib/time";
 import type { NotificationWithMeta } from "../../../types/notifications";
 import NotificationListSkeleton from "@/components/skeletons/NotificationListSkeleton";
 import { AppSubpageHeader, navigateBack } from "@/components/AppSubpageHeader";
-import { getPairBlockStatus, idsBlockedWithMe } from "@/lib/pairBlockStatus";
+import { Trash2 } from "lucide-react";
+import {
+  decodeFriendRequestNotificationPreview,
+} from "@/lib/notifications";
+import { profileHref } from "@/lib/profileRoutes";
+import { getPairBlockStatus, getBlockDirections, idsBlockedWithMe } from "@/lib/pairBlockStatus";
 import {
   APP_CONTENT_MAX_CLASS,
   APP_PAGE_TAIL_PADDING_CLASS,
   APP_PAGE_TOP_PADDING_CLASS,
   APP_TAB_PAGE_ROOT_CLASS,
 } from "@/lib/appShellLayout";
+import { openShareCommentsSheet } from "@/lib/shareCommentsSheet";
 
 function relativeTime(iso: string) {
   return formatRelativeTime(iso, { nowLabel: "now" });
@@ -33,10 +39,17 @@ type RawNotification = {
   read: boolean;
 };
 
-async function enrichNotificationRows(rows: RawNotification[]): Promise<NotificationWithMeta[]> {
+async function enrichNotificationRows(rows: RawNotification[], meId: string): Promise<NotificationWithMeta[]> {
   if (rows.length === 0) return [];
   const actorIds = Array.from(new Set(rows.map((n) => n.actor_user_id).filter(Boolean)));
   const venueIds = Array.from(new Set(rows.map((n) => n.venue_id).filter(Boolean)));
+  const { theyBlockedMe, iBlockedThem } = await getBlockDirections(supabase, meId);
+
+  const actorLabelFor = (actorId: string, meta: { username: string | null; display_name: string | null }) => {
+    if (theyBlockedMe.has(actorId)) return "This user blocked you";
+    if (iBlockedThem.has(actorId)) return "Blocked user";
+    return meta.display_name?.trim() || meta.username?.trim() || "Someone";
+  };
 
   const actorById: Record<string, { username: string | null; display_name: string | null; avatar_url: string | null }> = {};
   const venueById: Record<string, string> = {};
@@ -61,14 +74,31 @@ async function enrichNotificationRows(rows: RawNotification[]): Promise<Notifica
     });
   }
 
-  return rows.map((n) => ({
-    ...n,
-    type: n.type as NotificationWithMeta["type"],
-    actor_username: actorById[n.actor_user_id]?.username ?? null,
-    actor_display_name: actorById[n.actor_user_id]?.display_name ?? null,
-    actor_avatar_url: actorById[n.actor_user_id]?.avatar_url ?? null,
-    venue_name: n.venue_id ? venueById[n.venue_id] ?? null : null,
-  }));
+  return rows.map((n) => {
+    const meta = actorById[n.actor_user_id] ?? { username: null, display_name: null, avatar_url: null };
+    const friendReqType = n.type === "friend_request_received" || n.type === "friend_request_accepted";
+    const snap = friendReqType ? decodeFriendRequestNotificationPreview(n.message_preview) : {};
+    const merged = {
+      username: meta.username ?? snap.username ?? null,
+      display_name: meta.display_name ?? snap.display_name ?? null,
+      avatar_url: meta.avatar_url ?? snap.avatar_url ?? null,
+    };
+    const actor_label = friendReqType
+      ? merged.display_name?.trim() || merged.username?.trim() || "Someone"
+      : actorLabelFor(n.actor_user_id, {
+          username: merged.username,
+          display_name: merged.display_name,
+        });
+    return {
+      ...n,
+      type: n.type as NotificationWithMeta["type"],
+      actor_username: merged.username,
+      actor_display_name: merged.display_name,
+      actor_avatar_url: merged.avatar_url ?? null,
+      actor_label,
+      venue_name: n.venue_id ? venueById[n.venue_id] ?? null : null,
+    };
+  });
 }
 
 function GroupedAvatarStack({
@@ -133,8 +163,75 @@ export default function NotificationsPage() {
       .neq("type", "message")
       .order("created_at", { ascending: false })
       .limit(200);
-    const enriched = await enrichNotificationRows((notificationRows ?? []) as RawNotification[]);
+    const enriched = await enrichNotificationRows((notificationRows ?? []) as RawNotification[], uid);
     setItems(enriched);
+  }, []);
+
+  const loadFriendRequestStrip = useCallback(async (uid: string) => {
+    const { data: pendingRows } = await supabase
+      .from("friend_requests")
+      .select("id, requester_id, created_at")
+      .eq("addressee_id", uid)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    const blockedIds = await idsBlockedWithMe(supabase, uid);
+    const visiblePending = (pendingRows ?? []).filter(
+      (r: { requester_id: string }) => !blockedIds.has(r.requester_id)
+    );
+    const requesterIds = Array.from(new Set(visiblePending.map((r: { requester_id: string }) => r.requester_id)));
+    const byId: Record<string, { username: string | null; display_name: string | null; avatar_url: string | null }> = {};
+    if (requesterIds.length) {
+      const { data: reqProfiles } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url")
+        .in("id", requesterIds);
+      (reqProfiles ?? []).forEach((p: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }) => {
+        byId[p.id] = {
+          username: p.username ?? null,
+          display_name: p.display_name ?? null,
+          avatar_url: p.avatar_url ?? null,
+        };
+      });
+    }
+    const needSnap = requesterIds.filter((id) => {
+      const p = byId[id];
+      return !p || (!p.display_name?.trim() && !p.username?.trim());
+    });
+    const snapFromNotif: Record<string, ReturnType<typeof decodeFriendRequestNotificationPreview>> = {};
+    if (needSnap.length) {
+      const { data: notifRows } = await supabase
+        .from("notifications")
+        .select("actor_user_id, message_preview, created_at")
+        .eq("recipient_user_id", uid)
+        .eq("type", "friend_request_received")
+        .in("actor_user_id", needSnap)
+        .order("created_at", { ascending: false });
+      for (const row of notifRows ?? []) {
+        const aid = (row as { actor_user_id: string }).actor_user_id;
+        if (snapFromNotif[aid]) continue;
+        snapFromNotif[aid] = decodeFriendRequestNotificationPreview(
+          (row as { message_preview: string | null }).message_preview
+        );
+      }
+    }
+    setFriendRequests(
+      visiblePending.map((r: { id: string; requester_id: string; created_at: string }) => {
+        const prof = byId[r.requester_id];
+        const snap = snapFromNotif[r.requester_id] ?? {};
+        const display_name =
+          prof?.display_name?.trim() || snap.display_name?.trim() || null;
+        const username = prof?.username ?? snap.username ?? null;
+        const avatar_url = prof?.avatar_url ?? snap.avatar_url ?? null;
+        return {
+          id: r.id,
+          requester_id: r.requester_id,
+          created_at: r.created_at,
+          username,
+          display_name,
+          avatar_url,
+        };
+      })
+    );
   }, []);
 
   useEffect(() => {
@@ -151,50 +248,37 @@ export default function NotificationsPage() {
       if (!mounted) return;
       setMeId(user.id);
       await loadNotifications(user.id);
-
-      const { data: pendingRows } = await supabase
-        .from("friend_requests")
-        .select("id, requester_id, created_at")
-        .eq("addressee_id", user.id)
-        .eq("status", "pending")
-        .order("created_at", { ascending: false });
-      const blockedIds = await idsBlockedWithMe(supabase, user.id);
-      const visiblePending = (pendingRows ?? []).filter(
-        (r: { requester_id: string }) => !blockedIds.has(r.requester_id)
-      );
-      const requesterIds = Array.from(new Set(visiblePending.map((r: { requester_id: string }) => r.requester_id)));
-      const byId: Record<string, { username: string | null; display_name: string | null; avatar_url: string | null }> = {};
-      if (requesterIds.length) {
-        const { data: reqProfiles } = await supabase
-          .from("profiles")
-          .select("id, username, display_name, avatar_url")
-          .in("id", requesterIds);
-        (reqProfiles ?? []).forEach((p: { id: string; username: string | null; display_name: string | null; avatar_url: string | null }) => {
-          byId[p.id] = {
-            username: p.username ?? null,
-            display_name: p.display_name ?? null,
-            avatar_url: p.avatar_url ?? null,
-          };
-        });
-      }
+      await loadFriendRequestStrip(user.id);
       if (!mounted) return;
-      setFriendRequests(
-        visiblePending.map((r: { id: string; requester_id: string; created_at: string }) => ({
-          id: r.id,
-          requester_id: r.requester_id,
-          created_at: r.created_at,
-          username: byId[r.requester_id]?.username ?? null,
-          display_name: byId[r.requester_id]?.display_name ?? null,
-          avatar_url: byId[r.requester_id]?.avatar_url ?? null,
-        }))
-      );
       setLoading(false);
     })();
 
     return () => {
       mounted = false;
     };
-  }, [router, loadNotifications]);
+  }, [router, loadNotifications, loadFriendRequestStrip]);
+
+  useEffect(() => {
+    if (!meId) return;
+    const channel = supabase
+      .channel(`notifications-friend-requests:${meId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "friend_requests",
+          filter: `addressee_id=eq.${meId}`,
+        },
+        () => {
+          void loadFriendRequestStrip(meId);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [meId, loadFriendRequestStrip]);
 
   useEffect(() => {
     if (!meId) return;
@@ -229,19 +313,20 @@ export default function NotificationsPage() {
           }
 
           if (ev === "INSERT") {
-            const [enriched] = await enrichNotificationRows([row as RawNotification]);
+            const [enriched] = await enrichNotificationRows([row as RawNotification], meId);
             setItems((prev) => {
               if (prev.some((x) => x.id === enriched.id)) return prev;
               return [enriched, ...prev].slice(0, 200);
             });
+            if (row.type === "friend_request_received") void loadFriendRequestStrip(meId);
           }
         }
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [meId]);
+  }, [meId, loadFriendRequestStrip]);
 
   const groupedItems = useMemo(() => {
     const bundleMap = new Map<string, NotificationWithMeta[]>();
@@ -275,7 +360,12 @@ export default function NotificationsPage() {
         const namesForHeadline = previewIds
           .map((id) => {
             const hit = arr.find((r) => r.actor_user_id === id);
-            return hit?.actor_display_name?.trim() || hit?.actor_username?.trim() || null;
+            return (
+              hit?.actor_label?.trim() ||
+              hit?.actor_display_name?.trim() ||
+              hit?.actor_username?.trim() ||
+              null
+            );
           })
           .filter(Boolean) as string[];
         const headline =
@@ -310,8 +400,13 @@ export default function NotificationsPage() {
         router.push(`/map?venueId=${encodeURIComponent(n.venue_id)}`);
         return;
       }
-      if ((n.type === "story_like" || n.type === "story_comment" || n.type === "friend_story") && n.story_id) {
-        router.push(`/moments/${n.story_id}`);
+      if (n.type === "story_comment" && n.story_id) {
+        router.push(`/moments/${encodeURIComponent(n.story_id)}`);
+        openShareCommentsSheet(n.story_id);
+        return;
+      }
+      if ((n.type === "story_like" || n.type === "friend_story") && n.story_id) {
+        router.push(`/moments/${encodeURIComponent(n.story_id)}`);
         return;
       }
       if (n.type === "friend_story") {
@@ -327,11 +422,11 @@ export default function NotificationsPage() {
         return;
       }
       if (n.type === "friend_request_accepted" && n.actor_user_id) {
-        if (n.actor_username) router.push(`/u/${n.actor_username}`);
-        else router.push(`/profile/${n.actor_user_id}`);
+        router.push(profileHref(n.actor_username, n.actor_user_id));
         return;
       }
-      if (n.type === "friend_request_received") {
+      if (n.type === "friend_request_received" && n.actor_user_id) {
+        router.push(profileHref(n.actor_username, n.actor_user_id));
         return;
       }
     },
@@ -356,6 +451,21 @@ export default function NotificationsPage() {
     [items, navigateForNotification]
   );
 
+  const deleteNotification = useCallback(
+    async (n: NotificationWithMeta) => {
+      if (!meId) return;
+      const ids =
+        n.grouped_row_ids && n.grouped_row_ids.length > 0 ? n.grouped_row_ids : [n.id];
+      const { error } = await supabase.from("notifications").delete().in("id", ids).eq("recipient_user_id", meId);
+      if (error) {
+        console.error(error);
+        return;
+      }
+      setItems((prev) => prev.filter((x) => !ids.includes(x.id)));
+    },
+    [meId]
+  );
+
   const activityList = useMemo(() => {
     if (loading) return <NotificationListSkeleton rows={10} />;
     if (!groupedItems.length) {
@@ -373,7 +483,7 @@ export default function NotificationsPage() {
       <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
         {groupedItems.map((n) => {
           const isGrouped = !!(n.grouped_row_ids && n.grouped_row_ids.length >= 3);
-          const actorName = n.actor_display_name || n.actor_username || "Someone";
+          const actorName = n.actor_label || n.actor_display_name || n.actor_username || "Someone";
           const message =
             n.type === "friend_online"
               ? `${actorName} went online`
@@ -400,69 +510,102 @@ export default function NotificationsPage() {
                               : `${n.venue_name ?? "A venue"} is heating up`;
 
           return (
-            <button
+            <div
               key={n.id}
-              type="button"
-              onClick={() => void markReadAndNavigate(n)}
-              className={`flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3 text-left last:border-b-0 ${
+              className={`flex w-full items-stretch border-b border-white/[0.06] last:border-b-0 ${
                 !n.read ? "bg-accent-violet/[0.06]" : "bg-transparent"
-              } transition hover:bg-white/[0.03]`}
+              }`}
             >
-              {isGrouped && n.group_preview_avatars ? (
-                <GroupedAvatarStack
-                  urls={n.group_preview_avatars}
-                  usernames={n.group_preview_usernames ?? []}
-                  totalCount={n.group_actor_count ?? n.group_preview_avatars.length}
-                />
-              ) : (
-                <div
-                  role="presentation"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (n.actor_username) router.push(`/u/${n.actor_username}`);
-                  }}
-                  className="shrink-0 cursor-pointer"
-                >
-                  <Avatar src={n.actor_avatar_url ?? null} fallbackText={actorName} size="sm" className="shrink-0" />
+              <button
+                type="button"
+                onClick={() => void markReadAndNavigate(n)}
+                className="flex min-w-0 flex-1 items-start gap-3 px-3 py-3 text-left transition hover:bg-white/[0.03]"
+              >
+                {isGrouped && n.group_preview_avatars ? (
+                  <GroupedAvatarStack
+                    urls={n.group_preview_avatars}
+                    usernames={n.group_preview_usernames ?? []}
+                    totalCount={n.group_actor_count ?? n.group_preview_avatars.length}
+                  />
+                ) : (
+                  <div
+                    role="presentation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (n.actor_user_id) router.push(profileHref(n.actor_username, n.actor_user_id));
+                    }}
+                    className="shrink-0 cursor-pointer"
+                  >
+                    <Avatar src={n.actor_avatar_url ?? null} fallbackText={actorName} size="sm" className="shrink-0" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-white/92">{actorName}</p>
+                  <p className="mt-0.5 text-[13px] leading-snug text-white/70">{message}</p>
+                  <p className="mt-1 text-[11px] text-white/42">{relativeTime(n.created_at)}</p>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-white/92">{actorName}</p>
-                <p className="mt-0.5 text-[13px] leading-snug text-white/70">{message}</p>
-                <p className="mt-1 text-[11px] text-white/42">{relativeTime(n.created_at)}</p>
-              </div>
-            </button>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void deleteNotification(n);
+                }}
+                className="shrink-0 self-center px-3 py-2 text-white/35 transition hover:text-red-300"
+                aria-label="Delete notification"
+              >
+                <Trash2 size={18} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
           );
         })}
       </div>
     );
-  }, [groupedItems, loading, markReadAndNavigate, router]);
+  }, [groupedItems, loading, markReadAndNavigate, router, deleteNotification]);
 
   async function acceptRequest(requestId: string) {
-    if (!meId) return;
+    if (!meId || !requestId) return;
     const req = friendRequests.find((r) => r.id === requestId);
     if (!req?.requester_id) return;
     const pair = await getPairBlockStatus(supabase, meId, req.requester_id);
     if (pair !== "none") {
       await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
-      setFriendRequests((prev) => prev.filter((r) => r.id !== requestId));
+      await loadFriendRequestStrip(meId);
       return;
     }
-    await supabase.from("friend_requests").update({ status: "accepted" }).eq("id", requestId);
-    setFriendRequests((prev) => prev.filter((r) => r.id !== requestId));
+    const { error } = await supabase.from("friend_requests").update({ status: "accepted" }).eq("id", requestId);
+    if (error) {
+      console.error(error);
+      await loadFriendRequestStrip(meId);
+      return;
+    }
     if (req?.requester_id) {
-      const { createNotification } = await import("@/lib/notifications");
+      const {
+        createNotification,
+        encodeFriendRequestNotificationPreview,
+        fetchProfileForFriendRequestNotification,
+      } = await import("@/lib/notifications");
+      const acceptedPreview = encodeFriendRequestNotificationPreview(
+        await fetchProfileForFriendRequestNotification(meId)
+      );
       await createNotification({
         recipientId: req.requester_id,
         actorId: meId,
         type: "friend_request_accepted",
+        messagePreview: acceptedPreview,
       });
     }
+    await loadFriendRequestStrip(meId);
   }
 
   async function denyRequest(requestId: string) {
-    await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
-    setFriendRequests((prev) => prev.filter((r) => r.id !== requestId));
+    if (!meId || !requestId) return;
+    const { error } = await supabase.from("friend_requests").update({ status: "declined" }).eq("id", requestId);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    await loadFriendRequestStrip(meId);
   }
 
   return (
@@ -504,17 +647,19 @@ export default function NotificationsPage() {
               <p className="px-1 py-1 text-[12px] text-white/42">No pending requests.</p>
             ) : (
               friendRequests.map((r) => {
-                const label = r.display_name || r.username || "User";
+                const label = r.display_name || r.username || "Someone";
                 return (
                   <div key={r.id} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-primary/30 px-2.5 py-2">
-                    <Avatar src={r.avatar_url} fallbackText={label} size="sm" />
                     <button
                       type="button"
-                      onClick={() => r.username && router.push(`/u/${r.username}`)}
-                      className="min-w-0 flex-1 text-left"
+                      onClick={() => router.push(profileHref(r.username, r.requester_id))}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                     >
-                      <p className="truncate text-sm font-semibold">{label}</p>
-                      <p className="truncate text-xs text-white/45">@{r.username ?? "user"}</p>
+                      <Avatar src={r.avatar_url} fallbackText={label} size="sm" className="shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{label}</p>
+                        <p className="truncate text-xs text-white/45">{r.username ? `@${r.username}` : ""}</p>
+                      </span>
                     </button>
                     <button
                       type="button"

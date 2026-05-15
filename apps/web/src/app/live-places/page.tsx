@@ -466,9 +466,13 @@ export default function LivePlacesPage() {
                       {hasActivity ? (
                         <button
                           type="button"
-                          onClick={() =>
-                            router.push(`/venue-activity?venueId=${encodeURIComponent(v.id)}`)
-                          }
+                          onClick={() => {
+                            const h = new Date().getHours();
+                            const mapTone = h >= 7 && h < 18 ? "day" : "night";
+                            router.push(
+                              `/venue-activity?venueId=${encodeURIComponent(v.id)}&mapTone=${mapTone}`
+                            );
+                          }}
                           className="flex flex-[1.15] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent-violet-active via-accent-violet to-[#3558d4] py-2 text-[12px] font-bold text-white shadow-[0_0_28px_rgba(59,102,255,0.32)] transition hover:brightness-110 active:scale-[0.99]"
                         >
                           <Sparkles size={15} strokeWidth={2.2} className="text-white/95" aria-hidden />

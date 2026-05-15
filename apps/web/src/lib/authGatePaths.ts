@@ -17,6 +17,7 @@ export const AUTH_GATE_PATH_PREFIXES = [
   "/u",
   "/venue-activity",
   "/stories",
+  "/search",
 ] as const;
 
 export function matchesAuthGatePath(pathname: string): boolean {
