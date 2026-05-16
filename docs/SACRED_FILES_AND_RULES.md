@@ -181,13 +181,13 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 ---
 
-## `apps/mobile` (post–2J plan)
+## `apps/mobile` (post–2K)
 
 | | |
 |---|---|
-| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H–2I shell, Phase 2F read-only own profile, `@intencity/shared` smoke on Hub, Metro monorepo config |
-| **Does not own** | `user_presence` (read/write), geolocation, live map data, hub/chat/stories **data** (until **2K–2O**), notifications delivery |
-| **Change when** | UI polish, own-profile read (2F), or an **approved** **2K+** phase per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) |
+| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H–2I shell, Phase 2F own profile, **Phase 2K** read-only `friend_requests` / `blocks` / friend `profiles`, `@intencity/shared` smoke on Hub, Metro monorepo config |
+| **Does not own** | `user_presence` (read/write), geolocation, live map **engine**, full hub feed / chat / stories **data** (until **2L+**), notifications delivery |
+| **Change when** | UI polish, or an **approved** **2L+** phase per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) |
 | **Avoid** | New `.from()` without named phase + audit (rule 9); `expo-location`, `user_presence` I/O, “quick map screen” without phase approval |
 | **Navigation** | Phase 2H Hub / Map / Create / Chat / Profile (placeholders); no fixed Search tab — web `BottomNav.tsx` is UX source of truth |
 
@@ -197,7 +197,7 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2J** = data ladder documented; next code is **2K** unless amended; **no** new `.from()` without named phase).
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2K** = friends reads shipped; next code **2L** unless amended; **no** new `.from()` tables without named phase).
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
 3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
 4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.

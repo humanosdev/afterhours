@@ -6,6 +6,7 @@ import { ProfileDetailRow } from "../../src/components/ProfileDetailRow";
 import { Screen } from "../../src/components/Screen";
 import { ShellCard } from "../../src/components/ShellCard";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
+import { useAcceptedFriends } from "../../src/hooks/useAcceptedFriends";
 import { useMyProfile } from "../../src/hooks/useMyProfile";
 import { profileAvatarLabel, profileDisplayName } from "../../src/lib/profileDisplay";
 import { useAuth } from "../../src/providers/AuthProvider";
@@ -14,6 +15,7 @@ import { colors } from "../../src/theme/colors";
 export default function ProfileTabScreen() {
   const { user, signOut } = useAuth();
   const { profile, loading, error: profileError } = useMyProfile(user?.id);
+  const { friends, loading: friendsLoading } = useAcceptedFriends(user?.id);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -69,7 +71,7 @@ export default function ProfileTabScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Text style={styles.statValue}>—</Text>
+            <Text style={styles.statValue}>{friendsLoading ? "…" : String(friends.length)}</Text>
             <Text style={styles.statLabel}>Friends</Text>
           </View>
           <View style={styles.statDivider} />

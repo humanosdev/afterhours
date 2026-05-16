@@ -2,11 +2,11 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Phase 2J complete** — read-only native data **plan + gates** (documentation only; **no** new `.from()` in code). **2I** visual shell unchanged in code. Next **code** phase when approved: **2K** (friends / social graph reads). **No** `user_presence` on native, no new table reads until a named sub-phase.
+**Current phase:** **Phase 2K complete** — read-only accepted friends (`friend_requests`, `blocks`, `profiles`) on Hub + Profile friend count. **No** `user_presence`, **no** writes. Next when approved: **2L** (venues).
 
 ---
 
-## Current mobile status (as of Phase 2J)
+## Current mobile status (as of Phase 2K)
 
 | Area | Status |
 |------|--------|
@@ -19,8 +19,8 @@
 | **Production presence authority** | ❌ **Mobile is not authoritative** — web/PWA only |
 | **`expo-location` / GPS** | ❌ Not installed |
 | **`user_presence` reads/writes** | ❌ None |
-| **Supabase table reads** | ✅ `profiles` only (current user, read-only) |
-| **Map / hub / chat / stories** | ❌ Shell placeholders only — **web/PWA has production UX** |
+| **Supabase table reads** | ✅ **`profiles`** (own row) + **`friend_requests`** + **`blocks`** (read-only accepted friends, Phase **2K**) |
+| **Map / hub / chat / stories** | Hub shows **real friend avatars** (2K); map/chat/stories data still **web/PWA** |
 
 **Production product today:** `apps/web` (PWA) — map, venues, stories/shares, chat, profile, friends, notifications, and **all** physical presence writes.
 
@@ -30,7 +30,7 @@
 
 | Web/PWA (production) | Native today (Phase 2H shell) |
 |----------------------|-------------------------------|
-| Hub feed (`/hub`) | **Hub** placeholder (+ shared smoke) |
+| Hub feed (`/hub`) | **Hub** — real **friends** rail (2K) + placeholders + shared smoke |
 | **Map** (primary core, `/map`) | **Map** placeholder — no Mapbox/GPS |
 | Create / share (center action) | **Create** placeholder — no camera/upload |
 | Chat (`/chat`) | **Chat** placeholder — no messages API |
@@ -57,14 +57,14 @@ Visual polish (floating/glass nav) and real map/chat data are **later** phases. 
 | **2H** | Native nav parity **shell** | **Complete** | Hub / Map / Create / Chat / Profile placeholders — **still read-only** |
 | **2I** | Visual parity **shell** | **Complete** | Floating/glass nav, tighter layout, product-like placeholders — **no data/presence changes** |
 | **2J** | Read-only data **plan + gates** | **Complete** | Documented ladder **2K–2O** + approved/forbidden table — **docs only**, no new Supabase reads in app |
-| **2K** | Friends / social graph | **Future** | Read-only friends (or equivalent) — **named phase + audit before `.from()`** |
+| **2K** | Friends / social graph | **Complete** | Read-only accepted friends — `friend_requests` + `blocks` + `profiles` (mirrors web `acceptedFriendIdsExcludingBlocks`) |
 | **2L** | Venues | **Future** | Read-only venues / discovery data |
 | **2M** | Hub feed / moments | **Future** | Read-only hub-style feed **if** RLS + product review say safe |
 | **2N** | Chat list | **Future** | Read-only chat threads / previews — no realtime until planned |
 | **2O** | Integrated search | **Future** | Read-only search queries (overlay UX; no fixed Search tab) |
 | **Post–2O** | Map / GPS / `user_presence` | **Future** | Mapbox, `expo-location`, presence read/write — **explicit approval + [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md)** only |
 
-**Renumbering note:** **2F** is the first Supabase product read (own `profiles` only). **2G–2I** are nav + visual shell only. **2J** locks the read-only data ladder and gates; **2K–2O** are the **only** sanctioned order for adding new read-only `.from()` calls (each phase = PR + grep audit). Do **not** skip ahead without updating this doc and `apps/mobile/README.md`.
+**Renumbering note:** **2F** first product read (own `profiles`). **2K** adds first **social graph** reads (`friend_requests`, `blocks`, `profiles` for friends). **2L–2O** continue the ladder; **Post–2O** for map/presence. Each phase = PR + `rg "\.from\(" apps/mobile` audit.
 
 ---
 
@@ -79,11 +79,11 @@ Do **not** add any of the following without a written phase plan, presence-owner
 - `user_presence` **writes** (except in a gated beta phase per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md))
 - Changing production presence ownership
 
-**Safe without a new phase:** mobile UI polish that does **not** add new `supabase.from(...)` calls. **2F** allows read-only **`profiles`** for the signed-in user only — still the **only** approved table in code after **2J**.
+**Safe without a new phase:** mobile UI polish that does **not** add new `supabase.from(...)` beyond **2K**’s approved tables. **2K** allows read-only **`friend_requests`**, **`blocks`**, and **`profiles`** (friend rows + lifecycle filter) for accepted-friends flows only.
 
-**Next implementation phase (when approved):** **Phase 2K** — first additional read-only data (friends / social graph). See [Phase 2J](#phase-2j--native-migration-read-only-data-plan--gates-) and [Planned read-only ladder (2K–2O)](#planned-read-only-data-implementation-phases-not-started).
+**Next implementation phase (when approved):** **Phase 2L** — read-only venues. See [Phase 2K](#phase-2k--read-only-accepted-friends-) and [Planned read-only ladder (2K–2O)](#planned-read-only-data-implementation-phases-not-started).
 
-**Gate:** Native **must not** add new `.from()` calls without a **named phase (2K–2O or post–2O)** and the audit checklist in [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md).
+**Gate:** Native **must not** add new `.from()` tables beyond the **named phase** without updating this doc — [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) rule 9.
 
 ---
 
@@ -419,13 +419,13 @@ Visual direction (later): floating / glass bottom control aligned with web token
 
 **`user_presence` on native:** **Forbidden** for reads and writes through **2O** (and through any read-only social phase) unless a **later, explicitly documented** phase adds read-only presence **display** with its own gate — not part of **2K–2O** as specified here.
 
-### Planned read-only data implementation phases (not started)
+### Planned read-only data ladder (2K–2O)
 
 Order is **mandatory** unless this doc is amended with rationale. Each phase: spec tables + RLS + `rg "\.from\(" apps/mobile` audit + `npm run test:shared` + `npx tsc --noEmit`.
 
 | Phase | Focus | Intent |
 |-------|--------|--------|
-| **2K** | Friends / profile **social graph** | Read-only accepted friends (or web-equivalent); hydrate Hub/Profile shells — **no** presence rows |
+| **2K** | Friends / profile **social graph** | ✅ **Complete** — read-only accepted friends (`friend_requests`, `blocks`, `profiles`); Hub + Profile; **no** `user_presence` |
 | **2L** | **Venues** | Read-only venue lists / cards for Hub/Map shells — still **no** Mapbox/GPS |
 | **2M** | **Hub feed / moments** | Read-only feed-shaped queries **if** safe under RLS and product review |
 | **2N** | **Chat list** | Read-only thread list / previews — **no** full realtime pipeline until planned |
@@ -447,17 +447,49 @@ Not part of **2K–2O**. Requires separate plans: dev client, Mapbox SKU, `expo-
 
 ---
 
+## Phase 2K — Read-only accepted friends ✅
+
+**Goal:** Hydrate native with the same **accepted friends set** as web (`acceptedFriendIdsExcludingBlocks` semantics) — **read-only**, **no** `user_presence`, **no** writes.
+
+**What changed:**
+
+- `fetchAcceptedFriends` + `useAcceptedFriends` — `friend_requests` (accepted) → `blocks` → `profiles` (`account_lifecycle_state = active`), batched `.in()` for profile ids
+- Hub **Moments** rail: real friend rings (`FriendHubRing`) after “Your moment”; loading/error/empty copy
+- Profile stats: **Friends** count from the same hook
+
+**What did not change:**
+
+- No `user_presence` reads or writes
+- No `expo-location`, Mapbox, push, or new writes
+- No changes to `apps/web/src` or `packages/shared` timing constants
+
+**Verify:** `npx tsc --noEmit`; `npm run test:shared`; `.from(` grep includes only `profiles`, `friend_requests`, `blocks`
+
+### Phase 2K audit results
+
+| Check | Result |
+|-------|--------|
+| `npm run test:shared` | ✅ (run on merge) |
+| `cd apps/mobile && npx tsc --noEmit` | ✅ Pass |
+| `expo-location` / `mapbox` in `apps/mobile` app + `src` | ✅ Not present |
+| `user_presence` in `apps/mobile/app` + `src` | ✅ Not present |
+| `.from(` in `apps/mobile` | ✅ `profiles`, `friend_requests`, `blocks` only |
+| `git diff HEAD -- apps/web/src packages/shared` | ✅ No changes vs HEAD |
+
+---
+
 ## Architecture diagram
 
 ```
-Today (post–2J plan, same runtime as post–2I):
+Today (post–2K):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
 
   apps/mobile ──auth──► Supabase (auth session)
        │
-       ├──► profiles (read own row only, Profile tab)  ← only approved .from()
+       ├──► profiles (own row + accepted friends’ display rows)
+       ├──► friend_requests (accepted edges), blocks (exclusions)
        ├──► Tab shell — Hub / Map / Create / Chat / Profile
        └──► @intencity/shared (display smoke on Hub)
 

@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../../src/components/Screen";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { SectionHeader } from "../../src/components/SectionHeader";
@@ -7,7 +7,10 @@ import { ShellListRow } from "../../src/components/ShellListRow";
 import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
 import { StoryRingPlaceholder } from "../../src/components/StoryRingPlaceholder";
 import { VenueChipPlaceholder } from "../../src/components/VenueChipPlaceholder";
+import { FriendHubRing } from "../../src/components/FriendHubRing";
+import { useAcceptedFriends } from "../../src/hooks/useAcceptedFriends";
 import { getSharedSmokeSummary } from "../../src/lib/sharedSmoke";
+import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 import { layout } from "../../src/theme/layout";
 
@@ -16,18 +19,29 @@ const FEED_ROWS = [
   { title: "Tonight near you", subtitle: "Live places preview" },
 ];
 
+function friendRingLabel(f: { display_name: string | null; username: string | null }) {
+  const d = f.display_name?.trim();
+  if (d) return d;
+  const u = f.username?.trim();
+  if (u) return `@${u}`;
+  return "Friend";
+}
+
 export default function HubTabScreen() {
+  const { user } = useAuth();
+  const { friends, loading: friendsLoading, error: friendsError } = useAcceptedFriends(user?.id);
   const sharedSmoke = getSharedSmokeSummary();
+
+  const momentsAction =
+    !friendsLoading && friends.length > 0 ? `${friends.length} friends` : undefined;
 
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
-      <ScreenHeader
-        title="Hub"
-        subtitle="Live the city, feel the intencity."
-      />
+      <ScreenHeader title="Hub" subtitle="Live the city, feel the intencity." />
       <SearchFieldPlaceholder />
 
-      <SectionHeader title="Moments" />
+      <SectionHeader title="Moments" actionLabel={momentsAction} />
+      {friendsError ? <Text style={styles.inlineError}>{friendsError}</Text> : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -35,11 +49,19 @@ export default function HubTabScreen() {
         style={styles.railScroll}
       >
         <StoryRingPlaceholder label="Your moment" accent />
-        <StoryRingPlaceholder label="Maya" />
-        <StoryRingPlaceholder label="Jordan" />
-        <StoryRingPlaceholder label="Alex" />
-        <StoryRingPlaceholder label="Sam" />
+        {friendsLoading ? (
+          <View style={styles.friendsLoading}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        ) : null}
+        {!friendsLoading &&
+          friends.map((f) => (
+            <FriendHubRing key={f.id} avatarUrl={f.avatar_url} label={friendRingLabel(f)} />
+          ))}
       </ScrollView>
+      {!friendsLoading && !friendsError && friends.length === 0 ? (
+        <Text style={styles.friendsHint}>Friends you connect with on web/PWA show here.</Text>
+      ) : null}
 
       <SectionHeader title="Live places" actionLabel="See map" />
       <ScrollView
@@ -81,6 +103,26 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: layout.screenPaddingX,
     paddingBottom: 2,
+    alignItems: "flex-start",
+  },
+  friendsLoading: {
+    width: 64,
+    height: 88,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  friendsHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: -8,
+    marginBottom: layout.sectionGap,
+    paddingHorizontal: layout.screenPaddingX,
+  },
+  inlineError: {
+    fontSize: 12,
+    color: colors.danger,
+    marginBottom: 8,
+    paddingHorizontal: 2,
   },
   smoke: {
     marginTop: 8,

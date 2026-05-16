@@ -21,7 +21,7 @@
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile** | Auth + **read-only own `profiles` row** — **no** `user_presence` read/write, no `expo-location` |
+| **Mobile** | Auth + **read-only own `profiles` row** + **read-only accepted friends** (`friend_requests`, `blocks`, friend `profiles`) — **no** `user_presence` read/write, no `expo-location` |
 | **Mobile shared usage** | Display smoke on Hub tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
 | **Mobile navigation** | Phase 2H Hub/Map/Create/Chat/Profile; Profile hydrated in 2F; no fixed Search tab |
 
@@ -133,13 +133,13 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
-| 2A–2J | No | Yes | ✅ Through **2J** docs — **no** native `user_presence`; web sole physical presence writer |
+| 2A–2K | No | Yes | ✅ Through **2K** — **no** native `user_presence`; web sole physical presence writer |
 | 2K–2O read-only data | No | Yes | Future — staged reads per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — **still no** `user_presence` on native unless a later phase explicitly allows read-only display |
 | Post–2O presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` reads or writes through Phase 2O** as specified in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). Phase 2F adds read-only `profiles` for the signed-in user only; no `expo-location`.
+**No mobile `user_presence` reads or writes through Phase 2O** as specified in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). Phase 2F adds read-only own `profiles`; Phase **2K** adds read-only social graph tables only; no `expo-location`.
 
 ---
 
