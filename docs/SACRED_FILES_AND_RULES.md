@@ -16,6 +16,7 @@
 6. **Post–2F:** `apps/mobile` may read **own `profiles` row** only; do **not** add location, `user_presence`, or other table reads without a new phase plan.
 7. **Phase 2G:** navigation planning docs only — no map engine, GPS, or presence I/O.
 8. **Post–2H:** native tabs are Hub / Map / Create / Chat / Profile **placeholders only** — still no Mapbox, `expo-location`, or `user_presence`; inherit web IA, do not redesign independently.
+9. **Native `supabase.from(...)` / new `.from()` calls:** **Forbidden** unless tied to a **named migration sub-phase (2K–2O or post–2O)** in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md), with PR scope limited to that phase and **grep audit** (`rg "\.from\(" apps/mobile`) + `npm run test:shared` + `npx tsc --noEmit` documented. **2J** itself adds **no** new `.from()` — planning only.
 
 ---
 
@@ -180,14 +181,14 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 ---
 
-## `apps/mobile` (post–2H)
+## `apps/mobile` (post–2J plan)
 
 | | |
 |---|---|
-| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H web-parity tabs (placeholders), Phase 2F read-only own profile, `@intencity/shared` smoke on Hub, Metro monorepo config |
-| **Does not own** | `user_presence`, geolocation, live map, hub/chat/stories data, notifications delivery |
-| **Change when** | UI polish, own-profile read (2F), or an **approved** phase plan for more reads or presence |
-| **Avoid** | `expo-location`, reads beyond approved tables, `user_presence` I/O, “quick map screen” without phase approval |
+| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H–2I shell, Phase 2F read-only own profile, `@intencity/shared` smoke on Hub, Metro monorepo config |
+| **Does not own** | `user_presence` (read/write), geolocation, live map data, hub/chat/stories **data** (until **2K–2O**), notifications delivery |
+| **Change when** | UI polish, own-profile read (2F), or an **approved** **2K+** phase per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) |
+| **Avoid** | New `.from()` without named phase + audit (rule 9); `expo-location`, `user_presence` I/O, “quick map screen” without phase approval |
 | **Navigation** | Phase 2H Hub / Map / Create / Chat / Profile (placeholders); no fixed Search tab — web `BottomNav.tsx` is UX source of truth |
 
 ---
@@ -196,7 +197,7 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2I** = visual shell; no presence/map engine without **2J+** phase).
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2J** = data ladder documented; next code is **2K** unless amended; **no** new `.from()` without named phase).
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
 3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
 4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.

@@ -2,11 +2,11 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Phase 2I complete** — native visual parity shell (floating/glass nav, denser product placeholders). **No** `user_presence`, location, map engine, or reads beyond current user's `profiles` row without an explicit planned phase.
+**Current phase:** **Phase 2J complete** — read-only native data **plan + gates** (documentation only; **no** new `.from()` in code). **2I** visual shell unchanged in code. Next **code** phase when approved: **2K** (friends / social graph reads). **No** `user_presence` on native, no new table reads until a named sub-phase.
 
 ---
 
-## Current mobile status (as of Phase 2I)
+## Current mobile status (as of Phase 2J)
 
 | Area | Status |
 |------|--------|
@@ -56,9 +56,15 @@ Visual polish (floating/glass nav) and real map/chat data are **later** phases. 
 | **2G** | Web-parity native navigation **plan** | **Complete** | Documented target nav vs 2E scaffold — planning only |
 | **2H** | Native nav parity **shell** | **Complete** | Hub / Map / Create / Chat / Profile placeholders — **still read-only** |
 | **2I** | Visual parity **shell** | **Complete** | Floating/glass nav, tighter layout, product-like placeholders — **no data/presence changes** |
-| **2J+** | More read-only data & presence | **Future** | Friends, venues, optional `user_presence` **display**, then gated writes — **requires explicit plan** |
+| **2J** | Read-only data **plan + gates** | **Complete** | Documented ladder **2K–2O** + approved/forbidden table — **docs only**, no new Supabase reads in app |
+| **2K** | Friends / social graph | **Future** | Read-only friends (or equivalent) — **named phase + audit before `.from()`** |
+| **2L** | Venues | **Future** | Read-only venues / discovery data |
+| **2M** | Hub feed / moments | **Future** | Read-only hub-style feed **if** RLS + product review say safe |
+| **2N** | Chat list | **Future** | Read-only chat threads / previews — no realtime until planned |
+| **2O** | Integrated search | **Future** | Read-only search queries (overlay UX; no fixed Search tab) |
+| **Post–2O** | Map / GPS / `user_presence` | **Future** | Mapbox, `expo-location`, presence read/write — **explicit approval + [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md)** only |
 
-**Renumbering note:** Earlier drafts listed “read-only mobile” as 2C and “presence beta” as 2D. **2F** is the first Supabase product read (own profile only). **2G–2H** are navigation/IA only (no location, no presence I/O). Data reads beyond `profiles` and presence beta remain **2J+** and must be planned before coding.
+**Renumbering note:** **2F** is the first Supabase product read (own `profiles` only). **2G–2I** are nav + visual shell only. **2J** locks the read-only data ladder and gates; **2K–2O** are the **only** sanctioned order for adding new read-only `.from()` calls (each phase = PR + grep audit). Do **not** skip ahead without updating this doc and `apps/mobile/README.md`.
 
 ---
 
@@ -69,13 +75,15 @@ Do **not** add any of the following without a written phase plan, presence-owner
 - `expo-location` or background location
 - Geofencing / task-manager location
 - Mapbox or map screens tied to live GPS
-- `user_presence` **reads** (except in a dedicated read-only phase plan)
+- `user_presence` **reads** on native — **forbidden** through **2O**; only a **future, explicitly named** phase (post–2O or separate doc) may allow read-only presence **display**
 - `user_presence` **writes** (except in a gated beta phase per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md))
 - Changing production presence ownership
 
-**Safe without a new phase:** mobile UI polish and read-only shell layout (2E-style) that does not touch location, map, presence tables, or web sacred files. **2F allows** read-only `profiles` for the signed-in user only. **2G** is docs/planning only. **2H** may change tab routes/labels to match web IA using **placeholder screens only**.
+**Safe without a new phase:** mobile UI polish that does **not** add new `supabase.from(...)` calls. **2F** allows read-only **`profiles`** for the signed-in user only — still the **only** approved table in code after **2J**.
 
-**Next implementation phase (approved direction, not started):** **Phase 2J+** — read-only data, integrated search UX, map engine — see [Phase 2J+](#phase-2j--future-native-work-not-started).
+**Next implementation phase (when approved):** **Phase 2K** — first additional read-only data (friends / social graph). See [Phase 2J](#phase-2j--native-migration-read-only-data-plan--gates-) and [Planned read-only ladder (2K–2O)](#planned-read-only-data-implementation-phases-not-started).
+
+**Gate:** Native **must not** add new `.from()` calls without a **named phase (2K–2O or post–2O)** and the audit checklist in [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md).
 
 ---
 
@@ -303,7 +311,7 @@ Visual direction (later): floating / glass bottom control aligned with web token
 | `user_presence` reads or writes | No dual-write; no display without plan |
 | Changing `@intencity/shared` timing / activity windows | Cross-platform display contract |
 | Independent native IA redesign | Web/PWA is UX source of truth |
-| New Supabase table reads (friends, venues, messages, etc.) | 2J+ read-only data phases |
+| New Supabase table reads (friends, venues, messages, etc.) | **2K–2O** only, one phase per PR + audit ([Phase 2J](#phase-2j--native-migration-read-only-data-plan--gates-)) |
 
 ### Deliverables (2G)
 
@@ -379,38 +387,81 @@ Visual direction (later): floating / glass bottom control aligned with web token
 
 ---
 
-## Phase 2J+ — Future native work (not started)
+## Phase 2J — Native migration read-only data plan + gates ✅
 
-Planned direction (order TBD when approved):
+**Goal:** Lock a **clear ladder** and **gates** for future native read-only Supabase usage **before** any new `.from()` calls ship. **Docs and process only** — **no** new table reads, **no** UI behavior change, **no** app code in 2J.
 
-| Topic | Notes |
-|-------|--------|
-| **Integrated search UX** | Overlays/modals on hub/map — not necessarily restoring a fixed Search tab |
-| **More read-only mobile data** | Friends, venues, optional `user_presence` **display** — still **no** mobile writes |
-| **Map engine + GPS** | Mapbox dev build, `expo-location` — **after** nav shell and explicit presence plan |
-| **Foreground presence beta** | Gated `user_presence` writes; requires schema/flag per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
-| **Background native presence** | Confidence model, OS permissions, likely schema |
-| **Web write retirement** | Web stops GPS upserts; mobile becomes authority for opted-in users |
+**Deliverables:**
 
-See [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) and [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md).
+- This section + [Planned read-only ladder (2K–2O)](#planned-read-only-data-implementation-phases-not-started)
+- [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) — read-only data migration ladder
+- [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirms **no** ownership / writer rule changes in 2J
+- [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) — `.from()` gate rule
+- [apps/mobile/README.md](../apps/mobile/README.md) — approved access list
+
+### Approved vs forbidden — native Supabase / product data (post–2J)
+
+| Category | Native (until a named phase ships) |
+|----------|-----------------------------------|
+| **Approved reads** | **`profiles`** — current user only, read-only (`fetchMyProfile` / Profile tab). Auth session APIs (not `.from()`). |
+| **Forbidden reads** | **`user_presence`** (and any table not explicitly unlocked in **2K–2O** or later). |
+| **Forbidden writes** | All `user_presence` writes; all product writes unless a future gated phase says otherwise. |
+| **Forbidden SDKs** | `expo-location`, Mapbox / `@rnmapbox/maps`, background tracking, geofencing, push (until respective phases). |
+| **Forbidden shared edits** | Changing `MAP_ACTIVITY_WINDOW_MS`, `RECENT_WINDOW_MS`, `FRIEND_ONLINE_BADGE_MS`, or other `packages/shared` presence constants without a cross-platform plan. |
+
+**Presence display constants (unchanged — do not edit in mobile or shared without migration review):**
+
+| Constant | Value |
+|----------|--------|
+| `MAP_ACTIVITY_WINDOW_MS` | **20 minutes** |
+| `RECENT_WINDOW_MS` | **60 minutes** |
+| `FRIEND_ONLINE_BADGE_MS` | **4 minutes** |
+
+**`user_presence` on native:** **Forbidden** for reads and writes through **2O** (and through any read-only social phase) unless a **later, explicitly documented** phase adds read-only presence **display** with its own gate — not part of **2K–2O** as specified here.
+
+### Planned read-only data implementation phases (not started)
+
+Order is **mandatory** unless this doc is amended with rationale. Each phase: spec tables + RLS + `rg "\.from\(" apps/mobile` audit + `npm run test:shared` + `npx tsc --noEmit`.
+
+| Phase | Focus | Intent |
+|-------|--------|--------|
+| **2K** | Friends / profile **social graph** | Read-only accepted friends (or web-equivalent); hydrate Hub/Profile shells — **no** presence rows |
+| **2L** | **Venues** | Read-only venue lists / cards for Hub/Map shells — still **no** Mapbox/GPS |
+| **2M** | **Hub feed / moments** | Read-only feed-shaped queries **if** safe under RLS and product review |
+| **2N** | **Chat list** | Read-only thread list / previews — **no** full realtime pipeline until planned |
+| **2O** | **Integrated search** | Read-only search (friends/places/venues) behind overlay — matches web (no fixed Search tab) |
+
+### Post–2O — map engine, GPS, presence (explicit approval only)
+
+Not part of **2K–2O**. Requires separate plans: dev client, Mapbox SKU, `expo-location`, [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) gates for any `user_presence` read/write, and web regression discipline.
+
+### Phase 2J verify (docs only)
+
+| Check | Expected |
+|-------|----------|
+| `npm run test:shared` | ✅ Pass |
+| `cd apps/mobile && npx tsc --noEmit` | ✅ Pass |
+| `rg "\.from\(" apps/mobile` | ✅ `profiles` only (`fetchMyProfile.ts`) |
+| `rg "user_presence|expo-location|mapbox" apps/mobile/app apps/mobile/src` | ✅ No real usage (placeholders may mention strings in copy — avoid adding deps) |
+| `git diff HEAD -- apps/web/src packages/shared` | ✅ Empty for doc-only PR |
 
 ---
 
 ## Architecture diagram
 
 ```
-Today (post–2I):
+Today (post–2J plan, same runtime as post–2I):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
 
   apps/mobile ──auth──► Supabase (auth session)
        │
-       ├──► profiles (read own row only, Profile tab)
-       ├──► Tab shell — Hub / Map / Create / Chat / Profile placeholders
+       ├──► profiles (read own row only, Profile tab)  ← only approved .from()
+       ├──► Tab shell — Hub / Map / Create / Chat / Profile
        └──► @intencity/shared (display smoke on Hub)
 
-Target (2J+ presence — gated):
+After post–2O (gated — not started):
   apps/mobile ──writes──► user_presence (gated)
   apps/web ──reads──► viewer + social
 ```

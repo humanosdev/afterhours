@@ -12,22 +12,24 @@
 
 ---
 
-## Current state (post–2F)
+## Current state (post–2I / Phase 2J docs)
 
 | Layer | Owner |
 |-------|--------|
-| **Deterministic rules** | `packages/shared` — zone math, windows, heat ramp, distance (**unchanged in 2F**) |
+| **Deterministic rules** | `packages/shared` — zone math, windows, heat ramp, distance (**unchanged**) |
 | **Side effects** | `apps/web` only — GPS, Supabase presence upserts, notifications |
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile** | Auth + **read-only own `profiles` row** — no `user_presence`, no `expo-location` |
-| **Mobile shared usage** | Display smoke on Home tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
-| **Mobile navigation** | Phase 2H Hub/Map/Create/Chat/Profile placeholders; Profile hydrated in 2F; no fixed Search tab |
+| **Mobile** | Auth + **read-only own `profiles` row** — **no** `user_presence` read/write, no `expo-location` |
+| **Mobile shared usage** | Display smoke on Hub tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
+| **Mobile navigation** | Phase 2H Hub/Map/Create/Chat/Profile; Profile hydrated in 2F; no fixed Search tab |
 
 `apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or venue data and does **not** read `user_presence`.
 
-**Product split:** Web/PWA = map, venues, stories, chat, full profile/presence — **and** source of truth for navigation/UX. Mobile = read-only scaffold + own profile display; temporary native tabs are not final IA ([NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical)).
+**Phase 2J (documentation only):** Read-only data ladder **2K–2O** and gates are documented in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). **No change** to presence **ownership**: web/PWA remains the only production physical presence writer; native **must not** read `user_presence` through **2O** unless a **future** phase explicitly allows read-only presence display (not part of **2K–2O** as currently defined).
+
+**Product split:** Web/PWA = map, venues, stories, chat, full profile/presence — **and** source of truth for navigation/UX. Mobile = read-only scaffold + own profile display ([NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical)).
 
 ---
 
@@ -131,14 +133,13 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
-| 2A–2F | No | Yes | ✅ Complete (through read-only own profile) |
-| 2G–2H | No | Yes | ✅ Nav plan + web-parity shell — **no** presence or GPS; timing windows unchanged |
-| 2J+ read-only data | No | Yes | Future — friends/venues/presence display |
-| 2J+ presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
+| 2A–2J | No | Yes | ✅ Through **2J** docs — **no** native `user_presence`; web sole physical presence writer |
+| 2K–2O read-only data | No | Yes | Future — staged reads per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — **still no** `user_presence` on native unless a later phase explicitly allows read-only display |
+| Post–2O presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` reads or writes through Phase 2F.** Phase 2F adds read-only `profiles` for the signed-in user only; no `expo-location`.
+**No mobile `user_presence` reads or writes through Phase 2O** as specified in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). Phase 2F adds read-only `profiles` for the signed-in user only; no `expo-location`.
 
 ---
 

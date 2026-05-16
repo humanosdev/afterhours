@@ -87,7 +87,7 @@ Implemented Hub / Map / Create / Chat / Profile routes aligned with production `
 | Map engine (Mapbox, `@rnmapbox/maps`) | Map tab is shell only |
 | Live GPS / `expo-location` | Web remains presence writer |
 | `user_presence` reads or writes | See [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
-| Integrated search UX | Overlays on hub/map — 2J+ |
+| Integrated search UX | Overlays on hub/map — **2O** (after 2K–2N unless doc amended) |
 | Presence timing window changes | `packages/shared` constants unchanged |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md#phase-2h--native-nav-parity-shell-).
@@ -143,7 +143,7 @@ Phase 1 git range (for `git log` / `git diff`):
 
 ---
 
-## Current mobile status (post–2I)
+## Current mobile status (post–2J)
 
 | | |
 |---|---|
@@ -151,20 +151,20 @@ Phase 1 git range (for `git log` / `git diff`):
 | **Auth** | Supabase email/password, SecureStore |
 | **UI** | Phase 2C shell + **2I** visual parity (glass nav, compact placeholders) |
 | **Navigation** | Phase 2H routes + **2I** floating tab bar — see [UX source of truth](#ux-source-of-truth-critical) |
-| **Data** | Phase 2F — read-only own `profiles` row on Profile tab |
-| **Shared** | Smoke import on Home tab only — **presence windows unchanged** |
+| **Data** | Phase 2F — read-only own `profiles` row on Profile tab (**only** approved `.from()`); **2J** documents ladder **2K–2O** — no new reads in code until **2K+** |
+| **Shared** | Smoke import on Hub tab — **presence windows unchanged** |
 | **Authority** | **Non-authoritative** — web owns `user_presence` |
 
 **Production UX today** is entirely on **`apps/web` (PWA):** map, venues, stories/shares, chat, profile, friends, notifications, presence.
 
 ---
 
-## Current architecture (as of Phase 2I)
+## Current architecture (as of Phase 2J)
 
 ```
 packages/shared/     ← deterministic engine (math, windows, zone state)
 apps/web/            ← production runtime (GPS, DB, notifications, full product UI, PWA)
-apps/mobile/         ← web-parity nav shell + read-only own profile (profiles table only)
+apps/mobile/         ← web-parity shell + read-only own profile (`profiles` only); ladder **2K–2O** documented in 2J
 ```
 
 ### `packages/shared` owns
@@ -211,9 +211,30 @@ Phase 2 prepares native/mobile **without** changing production presence behavior
 | **2G** | ✅ | Web-parity native navigation **plan** |
 | **2H** | ✅ | Nav parity **shell** — Hub / Map / Create / Chat / Profile placeholders |
 | **2I** | ✅ | Visual parity **shell** — glass nav, denser product-like placeholders |
-| **2J+** | Future | Read-only data, map engine, gated presence — **explicit plan required** |
+| **2J** | ✅ | Read-only data **plan + gates** — ladder **2K–2O**, no new `.from()` in 2J |
+| **2K–2O** | Future | Staged read-only data — see ladder below |
+| **Post–2O** | Future | Map engine, GPS, `user_presence` I/O — **explicit approval only** |
 
 Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md).
+
+---
+
+## Read-only data migration ladder (post–2J)
+
+**Purpose:** Order native **read-only** Supabase work so it mirrors web/PWA priorities without inventing parallel product behavior. **Web/PWA remains source of truth** for UX and production behavior.
+
+| Step | Phase | What ships (when implemented) | Still forbidden |
+|------|-------|------------------------------|-----------------|
+| 1 | **2K** | Friends / social graph reads (RLS-safe) | `user_presence`, GPS, Mapbox |
+| 2 | **2L** | Venues read-only (lists/cards) | Live map, location SDK |
+| 3 | **2M** | Hub feed / moments read-only **if** product + RLS sign off | Writes, presence |
+| 4 | **2N** | Chat list / previews read-only | Full realtime unless planned |
+| 5 | **2O** | Integrated search read-only (overlay) | Fixed Search tab |
+| — | **Post–2O** | Mapbox, `expo-location`, `user_presence` read/write | Requires separate docs + [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) |
+
+**Gates (every step):** Named phase in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md); no new `.from()` without that phase + audit ([SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md)); `npm run test:shared`; `npx tsc --noEmit`; do not touch `apps/web/src` or `packages/shared` unless the task explicitly allows.
+
+**Today:** Only **`profiles`** (current user) is approved for `.from()` — see Phase **2J** in migration phases.
 
 ---
 
@@ -323,7 +344,7 @@ Web continues using existing Next.js `NEXT_PUBLIC_*` and root `.env.local`.
 1. Read [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) before editing presence-related web files.
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) before any `user_presence` write on a new platform.
 3. Do not conflate **migration Phase 2** with **V1 launch plan** moderation phases in `V1_LAUNCH_PLAN.md`.
-4. Post–2F: **no** `expo-location`, map engine, or `user_presence` on mobile; Supabase reads limited to own `profiles` until a new phase plan.
+4. Post–2J: Supabase `.from()` limited to **`profiles`** (own row) until **2K** (or later named phase) is approved and documented; **no** `user_presence` reads on native through **2O** as currently specified.
 5. Web/PWA = production product **and UX source of truth**; mobile = read-only scaffold — **do not** cement the current four-tab layout as long-term.
 6. **Post–2I:** web-parity nav + visual shell — still no GPS/presence/map SDK until later phases.
 7. Native nav/IA changes require explicit web-parity intent — see [UX source of truth](#ux-source-of-truth-critical).

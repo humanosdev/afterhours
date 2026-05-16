@@ -1,8 +1,37 @@
-# Intencity mobile (Phase 2I — visual parity shell)
+# Intencity mobile (Phase 2J — read-only data plan + gates)
 
-Expo native app — **phased read-only scaffold** with web-parity navigation (Phase 2H) and visual polish toward web/PWA (Phase 2I). Profile hydration (Phase 2F) is the only Supabase table read. **Not** production.
+Expo native app — **phased read-only scaffold** with web-parity navigation (Phase **2H**), visual polish toward web/PWA (Phase **2I**), and a **documented ladder** for future read-only data (Phase **2J**). Profile hydration (Phase **2F**) is the **only** Supabase `.from()` in code today. **Not** production.
 
-**Web/PWA** (`apps/web`) defines final navigation and behavior. Native matches web **tab structure** with placeholder screens only.
+**Web/PWA** (`apps/web`) defines final navigation, behavior, and presence authority. See [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md#phase-2j--native-migration-read-only-data-plan--gates-) and [docs/NATIVE_ARCHITECTURE.md](../../docs/NATIVE_ARCHITECTURE.md#read-only-data-migration-ladder-post–2j).
+
+## Approved Supabase access (post–2J — code)
+
+| Source | Scope | Notes |
+|--------|--------|--------|
+| **`profiles`** | Current user only | `select(username, display_name, bio, avatar_url).eq("id", userId).maybeSingle()` in `src/lib/fetchMyProfile.ts` |
+| **Auth** | Session | Supabase Auth APIs only — **not** `.from()` |
+
+**Forbidden until a named phase (2K–2O or post–2O):** any other `supabase.from(...)` / new `.from()` calls. **`user_presence`** — **no reads or writes** on native through **2O** per migration docs.
+
+**Presence windows** (unchanged in `packages/shared`; do not edit for native-only work):
+
+| Constant | Value |
+|----------|--------|
+| `MAP_ACTIVITY_WINDOW_MS` | 20 minutes |
+| `RECENT_WINDOW_MS` | 60 minutes |
+| `FRIEND_ONLINE_BADGE_MS` | 4 minutes |
+
+## Planned read-only ladder (documentation — implement in 2K+)
+
+| Phase | Focus |
+|-------|--------|
+| **2K** | Friends / social graph — read-only |
+| **2L** | Venues — read-only |
+| **2M** | Hub feed / moments — read-only, if safe |
+| **2N** | Chat list — read-only |
+| **2O** | Integrated search — read-only |
+
+**Post–2O:** Mapbox, GPS, `user_presence` — explicit approval and presence-ownership gates only.
 
 ## Bottom navigation (Phase 2H / 2I)
 
@@ -16,11 +45,9 @@ Floating glass-style tab bar aligned with web/PWA. Icon-only; Create is center-e
 | **Chat** | Messages list placeholder — no API or realtime |
 | **Profile** | Read-only `profiles` row (Phase 2F) + sign out |
 
-**Search** is **not** a permanent bottom tab (matches web integrated search). Integrated search UX is a later phase.
+**Search** is **not** a permanent bottom tab (matches web integrated search). Integrated search data is **2O**.
 
 Signed-in users land on **Hub** (`/hub`). Production map, chat, stories, and presence remain on web/PWA.
-
-See [docs/NATIVE_ARCHITECTURE.md](../../docs/NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical) and [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md#phase-2h--native-nav-parity-shell-).
 
 Does not write `user_presence`, read presence, or use location.
 
@@ -92,15 +119,7 @@ Then scan the new QR code (tunnel is slower but works across networks).
 - Friends, venues, stories, messages, or notifications data
 - Profile editing or avatar upload on native
 - Push notifications
-- Integrated search overlays
-
-## Supabase reads (Phase 2F / 2H)
-
-| Table | Scope | Notes |
-|-------|--------|--------|
-| `profiles` | Current user only | `select(username, display_name, bio, avatar_url).eq("id", userId).maybeSingle()` |
-
-Auth session uses Supabase Auth APIs only (not `.from()`).
+- Integrated search queries (planned **2O**)
 
 ## Run (reference)
 
@@ -110,7 +129,7 @@ npm run dev:mobile          # from repo root
 
 Or from this directory: `npm run start`.
 
-- **Expo Go** is enough for the current shell + profile read (Phase 2B–2H).
+- **Expo Go** is enough for the current shell + profile read (Phase 2B–2I).
 - **Development build** (`expo run:ios` / `android`) is for later native modules (Mapbox, background location, etc.).
 
 ## Bundle ID
@@ -152,19 +171,19 @@ Root `.gitignore` ignores all `node_modules/` and `.expo/`. Prefer **`npm instal
 
 ### Expo Go vs dev client
 
-Phase 2B–2H works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
+Phase 2B–2I works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
 
-## Current boundaries (post–2I)
+## Current boundaries (post–2J)
 
-| Allowed | Not allowed without new phase plan |
-|---------|-------------------------------------|
-| Auth UI polish | `expo-location`, background GPS |
+| Allowed | Not allowed without named phase + audit |
+|---------|-------------------------------------------|
+| Auth UI polish | New `.from()` (see [SACRED_FILES_AND_RULES.md](../../docs/SACRED_FILES_AND_RULES.md) rule 9) |
 | Sign in / sign out | `user_presence` reads or writes |
-| Read own `profiles` row | Other Supabase table reads |
+| Read own `profiles` row | Other Supabase table reads (**2K+** only) |
 | Hub/Map/Create/Chat/Profile placeholders | Mapbox, map engine, live map |
 | Shared smoke on Hub | Live hub/chat/stories/messages data |
 | | Profile edit / avatar upload on native |
 | | Push, geofencing |
-| | Fixed Search bottom tab (use integrated search in later phase) |
+| | Fixed Search bottom tab (use integrated search in **2O**) |
 
 **Web** remains the only **physical presence** writer. See [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md) and [docs/PRESENCE_OWNERSHIP.md](../../docs/PRESENCE_OWNERSHIP.md).
