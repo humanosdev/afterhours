@@ -1,21 +1,19 @@
-import { Pressable, StyleSheet, Text } from "react-native";
-import { Screen } from "../../src/components/Screen";
-import { ScreenHeader } from "../../src/components/ScreenHeader";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { ChatThreadRow } from "../../src/components/ChatThreadRow";
 import { GlassSurface } from "../../src/components/GlassSurface";
+import { Screen } from "../../src/components/Screen";
+import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
+import { useChatPreviews } from "../../src/hooks/useChatPreviews";
+import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 import { glass } from "../../src/theme/glass";
 import { layout } from "../../src/theme/layout";
 
-const THREADS = [
-  { name: "Maya Chen", preview: "See you at the bar?", time: "9:41 PM", unread: true },
-  { name: "Jordan Lee", preview: "On my way", time: "8:12 PM" },
-  { name: "Alex Rivera", preview: "This place is packed 🔥", time: "Yesterday" },
-  { name: "Sam Ortiz", preview: "You still out?", time: "Mon" },
-];
-
 export default function ChatTabScreen() {
+  const { user } = useAuth();
+  const { previews, loading, error } = useChatPreviews(user?.id);
+
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
       <ScreenHeader
@@ -37,19 +35,37 @@ export default function ChatTabScreen() {
       <SearchFieldPlaceholder placeholder="Search by username" />
 
       <GlassSurface style={styles.listWrap} muted>
-        {THREADS.map((thread, index) => (
-          <ChatThreadRow
-            key={thread.name}
-            name={thread.name}
-            preview={thread.preview}
-            time={thread.time}
-            unread={thread.unread}
-            isLast={index === THREADS.length - 1}
-          />
-        ))}
+        {loading ? (
+          <View style={styles.feedbackBlock}>
+            <ActivityIndicator accessibilityLabel="Loading chats" />
+            <Text style={styles.feedbackText}>Loading conversations…</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.feedbackBlock}>
+            <Text style={styles.inlineError}>{error}</Text>
+            <Text style={styles.feedbackMuted}>Signed-in reads only — check connection and retry by reopening Messages.</Text>
+          </View>
+        ) : previews.length === 0 ? (
+          <View style={styles.feedbackBlock}>
+            <Text style={styles.feedbackText}>No conversations yet</Text>
+            <Text style={styles.feedbackMuted}>Open Intencity on web/PWA to start a chat.</Text>
+          </View>
+        ) : (
+          previews.map((thread, index) => (
+            <ChatThreadRow
+              key={thread.chatId}
+              name={thread.title}
+              preview={thread.preview}
+              time={thread.timeLabel}
+              unread={thread.unread}
+              isLast={index === previews.length - 1}
+              avatarUrl={thread.avatarUrl}
+            />
+          ))
+        )}
       </GlassSurface>
 
-      <Text style={styles.footnote}>Real threads and realtime live on web/PWA.</Text>
+      <Text style={styles.footnote}>Previews from Supabase — realtime and composing live on web/PWA.</Text>
     </Screen>
   );
 }
@@ -72,6 +88,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 2,
     marginTop: 2,
+  },
+  feedbackBlock: {
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    gap: 8,
+  },
+  feedbackText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  feedbackMuted: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textWhite42,
+    textAlign: "center",
+  },
+  inlineError: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.danger,
+    textAlign: "center",
   },
   footnote: {
     marginTop: 14,

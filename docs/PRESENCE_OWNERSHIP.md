@@ -12,7 +12,7 @@
 
 ---
 
-## Current state (post–2M)
+## Current state (post–2N)
 
 | Layer | Owner |
 |-------|--------|
@@ -21,15 +21,17 @@
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile** | Auth + **read-only** `profiles`, **`friend_requests`**, **`blocks`**, **`venues`**, **`stories`** (Hub share preview only) — **no** `user_presence` read/write, no `expo-location` |
+| **Mobile** | Auth + **read-only** `profiles`, **`friend_requests`**, **`blocks`**, **`venues`**, **`stories`** (Hub share preview), **`chats`**, **`messages`** (Chat **list previews** only — **2N**) — **no** `user_presence` read/write, no `expo-location` |
 | **Mobile shared usage** | Display smoke on Hub tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
 | **Mobile navigation** | Phase 2H Hub/Map/Create/Chat/Profile; Profile hydrated in 2F; no fixed Search tab |
 
-`apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or live presence rows and does **not** read `user_presence`. Native **`venues`** and **`stories`** reads are catalog / social **media** data for UI only — not used as a location signal.
+`apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or live presence rows and does **not** read `user_presence`. Native **`venues`**, **`stories`**, **`chats`**, and **`messages`** reads are **social / UI preview** data only — **not** used as a physical location signal.
+
+**Phase 2N:** Read-only **`chats`** + **`messages`** + counterpart **`profiles`** for the Messages tab mirrors web `/chat` **initial load** semantics — **no** realtime **`messages`** subscriptions, **no** `notifications` mutations, **no** send path on native ([MIGRATION_PHASES.md](./MIGRATION_PHASES.md#phase-2n--read-only-chat-list-previews-)).
 
 **Phase 2J (documentation only):** Read-only data ladder **2K–2O** and gates are documented in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). **No change** to presence **ownership**: web/PWA remains the only production physical presence writer; native **must not** read `user_presence` through **2O** unless a **future** phase explicitly allows read-only presence display (not part of **2K–2O** as currently defined).
 
-**Product split:** Web/PWA = map, venues **with live presence/heat**, **full** stories/shares pipeline (likes, comments, realtime), chat — **and** source of truth for navigation/UX. Mobile = read-only scaffold + profile + friends + venues + **static Hub share preview** ([NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical)).
+**Product split:** Web/PWA = map, venues **with live presence/heat**, **full** stories/shares pipeline (likes, comments, realtime), **live** chat (compose, realtime, notifications) — **and** source of truth for navigation/UX. Mobile = read-only scaffold + profile + friends + venues + **static Hub share preview** + **snapshot Chat previews** ([NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical)).
 
 ---
 
@@ -133,13 +135,13 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
-| 2A–2M | No | Yes | ✅ Through **2M** — **no** native `user_presence`; web sole physical presence writer |
+| 2A–2N | No | Yes | ✅ Through **2N** — **no** native `user_presence`; web sole physical presence writer |
 | 2K–2O read-only data | No | Yes | Future — staged reads per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — **still no** `user_presence` on native unless a later phase explicitly allows read-only display |
 | Post–2O presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` reads or writes through Phase 2O** as specified in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). Phase 2F adds read-only own `profiles`; Phase **2K** adds read-only social graph tables; Phase **2L** adds read-only **`venues`**; Phase **2M** adds read-only **`stories`** (Hub share rows for self + accepted friends); no `expo-location`.
+**No mobile `user_presence` reads or writes through Phase 2O** as specified in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). Phase 2F adds read-only own `profiles`; Phase **2K** adds read-only social graph tables; Phase **2L** adds read-only **`venues`**; Phase **2M** adds read-only **`stories`** (Hub share rows); Phase **2N** adds read-only **`chats`** / **`messages`** (conversation list previews only); no `expo-location`.
 
 ---
 

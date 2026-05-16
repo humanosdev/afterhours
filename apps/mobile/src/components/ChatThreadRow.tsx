@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { ProfileAvatar } from "./ProfileAvatar";
 import { colors } from "../theme/colors";
 
 type ChatThreadRowProps = {
@@ -7,16 +8,22 @@ type ChatThreadRowProps = {
   time: string;
   unread?: boolean;
   isLast?: boolean;
+  avatarUrl?: string | null;
 };
 
-export function ChatThreadRow({ name, preview, time, unread = false, isLast = false }: ChatThreadRowProps) {
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
+const AVATAR_SIZE = 52;
 
+export function ChatThreadRow({
+  name,
+  preview,
+  time,
+  unread = false,
+  isLast = false,
+  avatarUrl,
+}: ChatThreadRowProps) {
   return (
     <View style={[styles.row, !isLast && styles.rowBorder]}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{initial}</Text>
-      </View>
+      <ProfileAvatar avatarUrl={avatarUrl ?? null} label={name} size={AVATAR_SIZE} />
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={1}>
           {name}
@@ -44,21 +51,6 @@ const styles = StyleSheet.create({
   rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.borderSubtle,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.surfaceHover,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: colors.textSecondary,
   },
   body: {
     flex: 1,

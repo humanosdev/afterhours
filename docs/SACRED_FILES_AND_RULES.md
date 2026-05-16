@@ -13,9 +13,9 @@
 3. **`packages/shared`** changes affect future mobile + web — require `npm run test:shared`.
 4. **Do not enable mobile `user_presence` writes** without gates in [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md).
 5. Phase 1 intentionally **did not** touch map or AppShell — keep that discipline until web write retirement.
-6. **Post–2F:** `apps/mobile` may read approved tables per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) (**2F**–**2M**); do **not** add location, `user_presence`, or other table reads without a new phase plan.
+6. **Post–2F:** `apps/mobile` may read approved tables per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) (**2F**–**2N**); do **not** add location, `user_presence`, or other table reads without a new phase plan.
 7. **Phase 2G:** navigation planning docs only — no map engine, GPS, or presence I/O.
-8. **Post–2H:** native tabs are Hub / Map / Create / Chat / Profile **placeholders only** — still no Mapbox, `expo-location`, or `user_presence`; inherit web IA, do not redesign independently.
+8. **Post–2H:** native tabs are Hub / Map / Create / Chat / Profile — **still no Mapbox**, `expo-location`, or `user_presence`; Chat has **read-only list previews only** (**2N**); inherit web IA, do not redesign independently.
 9. **Native `supabase.from(...)` / new `.from()` calls:** **Forbidden** unless tied to a **named migration sub-phase (2K–2O or post–2O)** in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md), with PR scope limited to that phase and **grep audit** (`rg "\.from\(" apps/mobile`) + `npm run test:shared` + `npx tsc --noEmit` documented. **2J** itself adds **no** new `.from()` — planning only.
 
 ---
@@ -181,15 +181,15 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 ---
 
-## `apps/mobile` (post–2M)
+## `apps/mobile` (post–2N)
 
 | | |
 |---|---|
-| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H–2I shell, Phase 2F own profile, Phase 2K `friend_requests` / `blocks` / friend `profiles`, Phase 2L **`venues`**, **Phase 2M** read-only Hub **`stories`** (shares), `@intencity/shared` smoke on Hub, Metro monorepo config |
-| **Does not own** | `user_presence` (read/write), geolocation, live map **engine** (Mapbox), **chat** data / realtime (until **2N+**), notifications delivery |
-| **Change when** | UI polish, or an **approved** **2N+** phase per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) |
+| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H–2I shell, Phase 2F own profile, Phase 2K `friend_requests` / `blocks` / friend `profiles`, Phase 2L **`venues`**, **Phase 2M** read-only Hub **`stories`** (shares), **Phase 2N** read-only **`chats`** / **`messages`** (list previews), `@intencity/shared` smoke on Hub, Metro monorepo config |
+| **Does not own** | `user_presence` (read/write), geolocation, live map **engine** (Mapbox), **live** chat (**send**, subscriptions, notifications mutations, thread UX — web/PWA until later phases), notifications delivery |
+| **Change when** | UI polish, or an **approved** **2O+** phase per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) |
 | **Avoid** | New `.from()` without named phase + audit (rule 9); `expo-location`, `user_presence` I/O, “quick map screen” without phase approval |
-| **Navigation** | Phase 2H Hub / Map / Create / Chat / Profile; Hub has **read-only** friends, venues, Hub **Shares** (`stories`); no fixed Search tab — web `BottomNav.tsx` is UX source of truth |
+| **Navigation** | Phase 2H Hub / Map / Create / Chat / Profile; Hub has **read-only** friends, venues, Hub **Shares** (`stories`); Chat lists **read-only** previews (**`chats`**, **`messages`**); no fixed Search tab — web `BottomNav.tsx` is UX source of truth |
 
 ---
 
@@ -197,7 +197,7 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2M** = Hub **`stories`** preview shipped; next code **2N** unless amended; **no** new `.from()` tables without named phase).
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2N** = Chat list previews shipped; next code **2O** unless amended; **no** new `.from()` tables without named phase).
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
 3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
 4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.
