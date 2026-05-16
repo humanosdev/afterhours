@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../../src/components/Screen";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
@@ -5,7 +6,10 @@ import { SectionHeader } from "../../src/components/SectionHeader";
 import { ShellCard } from "../../src/components/ShellCard";
 import { ShellListRow } from "../../src/components/ShellListRow";
 import { GlassSurface } from "../../src/components/GlassSurface";
+import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
 import { useVenuesPreview } from "../../src/hooks/useVenuesPreview";
+import { useLocalSearchQuery } from "../../src/hooks/useLocalSearchQuery";
+import { matchesLocalSearch, normalizeLocalSearchQuery } from "../../src/lib/localSearch";
 import { formatVenueCategoryLabel } from "../../src/lib/venueDisplay";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
@@ -24,10 +28,26 @@ const PREVIEW_ROW_CAP = 14;
 
 export default function MapTabScreen() {
   const { user } = useAuth();
+  const { query, setQuery, debouncedQuery } = useLocalSearchQuery();
   const { venues, loading, error } = useVenuesPreview(Boolean(user?.id));
-  const previewRows = venues.slice(0, PREVIEW_ROW_CAP);
-  const overflow = venues.length - previewRows.length;
-  const firstVenue = venues[0];
+
+  const filteredVenues = useMemo(() => {
+    if (!normalizeLocalSearchQuery(debouncedQuery)) return venues;
+    return venues.filter((v) =>
+      matchesLocalSearch(debouncedQuery, v.name, v.category, formatVenueCategoryLabel(v.category))
+    );
+  }, [venues, debouncedQuery]);
+
+  const previewRows = filteredVenues.slice(0, PREVIEW_ROW_CAP);
+  const overflow = filteredVenues.length - previewRows.length;
+  const firstVenue = filteredVenues[0];
+
+  const filterEmptyButHasVenues =
+    !loading &&
+    !error &&
+    venues.length > 0 &&
+    normalizeLocalSearchQuery(debouncedQuery).length > 0 &&
+    filteredVenues.length === 0;
 
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset style={styles.screen}>
@@ -87,6 +107,11 @@ export default function MapTabScreen() {
       </View>
 
       <SectionHeader title="Places in app" actionLabel={loading ? undefined : error ? undefined : `${venues.length} venues`} />
+      <SearchFieldPlaceholder
+        placeholder="Filter loaded places…"
+        value={query}
+        onChangeText={setQuery}
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading ? (
         <View style={styles.loadingBlock}>
@@ -97,6 +122,10 @@ export default function MapTabScreen() {
 
       {!loading && !error && venues.length === 0 ? (
         <Text style={styles.empty}>No venues to show. Production map data stays on web.</Text>
+      ) : null}
+
+      {filterEmptyButHasVenues ? (
+        <Text style={styles.filterEmpty}>No matches in loaded places — adjust the filter.</Text>
       ) : null}
 
       {!loading && previewRows.length > 0 ? (
@@ -275,6 +304,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
     marginBottom: 12,
+  },
+  filterEmpty: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginBottom: 12,
+    lineHeight: 17,
   },
   more: {
     fontSize: 11,

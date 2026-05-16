@@ -2,11 +2,11 @@
 
 **Purpose:** Single source of truth for **engineering migration** phases (monorepo, shared engine, native app). This is **not** the same as product phases in [V1_LAUNCH_PLAN.md](./V1_LAUNCH_PLAN.md) (moderation, admin, launch checklist).
 
-**Current phase:** **Phase 2N complete** — read-only **Chat tab** previews from **`chats`** + **`messages`** + counterpart **`profiles`** (mirrors web `/chat` list load). Hub **2M** unchanged. **No** `user_presence`, **no** realtime subscriptions, **no** writes. Next when approved: **2O** (integrated search — read-only).
+**Current phase:** **Phase 2O complete** — **integrated local search** on Hub, Chat, and Map **Places** tabs: debounced in-memory filtering over **already-loaded** friends, venues, shares, chat previews, and venue list — **no** new `.from()` targets, **no** realtime, **no** writes. **Next** when explicitly approved: **Post–2O** — Mapbox, `expo-location`, and native `user_presence` read/write gates (section **Post–2O — map engine, GPS, presence** below).
 
 ---
 
-## Current mobile status (as of Phase 2N)
+## Current mobile status (as of Phase 2O)
 
 | Area | Status |
 |------|--------|
@@ -19,8 +19,8 @@
 | **Production presence authority** | ❌ **Mobile is not authoritative** — web/PWA only |
 | **`expo-location` / GPS** | ❌ Not installed |
 | **`user_presence` reads/writes** | ❌ None |
-| **Supabase table reads** | ✅ **`profiles`**, **`friend_requests`**, **`blocks`**, **`venues`**, **`stories`** (Hub shares — **2M**); **`chats`**, **`messages`** (Chat list preview — **2N**) |
-| **Map / hub / chat / stories** | Hub + Map unchanged from **2M**/**2L**. Chat: **read-only** conversation rows + last-message snippet + peer avatar/display (**2N**) — composing and live threads remain **web/PWA** |
+| **Supabase table reads** | Same **2N** set: **`profiles`**, **`friend_requests`**, **`blocks`**, **`venues`**, **`stories`**, **`chats`**, **`messages`** (**2O** adds **no** new queries) |
+| **Map / hub / chat / stories** | **2O** debounced **local** search: Hub (friends + venues + shares in memory), Chat (previews), Map **Places** list (venues) — composing / live map / GPS / threads remain **web/PWA** |
 
 **Production product today:** `apps/web` (PWA) — map, venues, stories/shares, chat, profile, friends, notifications, and **all** physical presence writes.
 
@@ -28,16 +28,16 @@
 
 **Web/PWA is the source of truth** for final UX and navigation. **`apps/mobile` is a phased read-only scaffold** — not a parallel product design.
 
-| Web/PWA (production) | Native today (Phase 2N scaffold) |
-|----------------------|-------------------------------|
-| Hub feed (`/hub`) | **Hub** — web-shaped sections: Moments, Active friends, Live places, **Shares** (read-only **`stories`**, 2M) + 2K/2L data |
-| **Map** (primary core, `/map`) | **Map** — decorative canvas + **read-only venue list** (2L) — **no** Mapbox/GPS |
+| Web/PWA (production) | Native today (Phase **2O** scaffold) |
+|----------------------|-----------------------------------|
+| Hub feed (`/hub`) | **Hub** — same **2M** sections + **local** search across loaded friends / venues / shares (**2O**) |
+| **Map** (primary core, `/map`) | **Map** — decorative canvas + **filterable** read-only venue list (**2L** + **2O**) |
 | Create / share (center action) | **Create** placeholder — no camera/upload |
-| Chat (`/chat`) | **Chat** — **read-only** previews (**`chats`**, **`messages`**, **`profiles`**) — **no** thread open/send/realtime on native (**2N**) |
+| Chat (`/chat`) | **Chat** — **read-only** previews + **local** search over loaded rows (**2N** + **2O**) |
 | Profile (`/profile`) | **Profile** (+ 2F read-only `profiles` hydration) |
-| Search (integrated in surfaces) | **No fixed Search tab** — integrated search is a later phase |
+| Search (integrated in surfaces) | **No fixed Search tab** — **2O** wired into Hub / Chat / Map (**in-memory** only) |
 
-Visual polish (floating/glass nav) and real map/chat data are **later** phases. Details: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
+Visual polish (floating/glass nav); **read** map/chat data for **lists** only; **live** map engine and messaging remain **Post–2O** / web. Details: [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical).
 
 ---
 
@@ -61,7 +61,7 @@ Visual polish (floating/glass nav) and real map/chat data are **later** phases. 
 | **2L** | Venues | **Complete** | Read-only **`venues`** — Hub live-places rail + Map static preview — **no** Mapbox/GPS/`user_presence` |
 | **2M** | Hub feed / moments | **Complete** | Read-only **`stories`** (friend shares) + `profiles` hydrate — Hub **Shares** list; **no** likes/comments API, **no** realtime |
 | **2N** | Chat list | **Complete** | Read-only **`chats`** + **`messages`** + peer **`profiles`** — list previews only; **no** send, subscriptions, or `notifications` mutations |
-| **2O** | Integrated search | **Future** | Read-only search queries (overlay UX; no fixed Search tab) |
+| **2O** | Integrated search | **Complete** | **Local-only** Hub / Chat / Map filters over **already-loaded** rows — **`useDebouncedValue`**, **`useLocalSearchQuery`**, **`localSearch`** helpers — **no** new `.from()` / realtime / writes |
 | **Post–2O** | Map / GPS / `user_presence` | **Future** | Mapbox, `expo-location`, presence read/write — **explicit approval + [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md)** only |
 
 **Renumbering note:** **2F** first product read (own `profiles`). **2K** social graph. **2L** **`venues`**. **2M** **`stories`** (Hub shares). **2N** **`chats`** / **`messages`** (list previews). **2O** search; **Post–2O** for map/presence. Each phase = PR + `rg "\.from\(" apps/mobile` audit.
@@ -79,9 +79,9 @@ Do **not** add any of the following without a written phase plan, presence-owner
 - `user_presence` **writes** (except in a gated beta phase per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md))
 - Changing production presence ownership
 
-**Safe without a new phase:** mobile UI polish that does **not** add new `supabase.from(...)` beyond **2N**’s approved tables (`profiles`, `friend_requests`, `blocks`, `venues`, `stories`, `chats`, `messages` as documented).
+**Safe without a new phase:** mobile UI polish that does **not** add new `supabase.from(...)` beyond **2N**’s approved tables (**2O** search is **strictly client-side**).
 
-**Next implementation phase (when approved):** **Phase 2O** — read-only integrated search. See [Phase 2N](#phase-2n--read-only-chat-list-previews-) and [Planned read-only ladder (2K–2O)](#planned-read-only-data-implementation-phases-not-started).
+**Next implementation phase bucket (explicit approval required):** **Post–2O** — map engine (**Mapbox**), **`expo-location`**, **`user_presence`** I/O per [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md). No further **named 2× sub-phases** remain in the read-only ladder beyond **2O**.
 
 **Gate:** Native **must not** add new `.from()` tables beyond the **named phase** without updating this doc — [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) rule 9.
 
@@ -399,11 +399,12 @@ Visual direction (later): floating / glass bottom control aligned with web token
 - [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md) — `.from()` gate rule
 - [apps/mobile/README.md](../apps/mobile/README.md) — approved access list
 
-### Approved vs forbidden — native Supabase / product data (post–2N)
+### Approved vs forbidden — native Supabase / product data (post–2O)
 
 | Category | Native (until a named phase ships) |
 |----------|-----------------------------------|
 | **Approved reads** | **`profiles`** — own row + accepted friends’ display rows + DM counterpart rows; **`friend_requests`**, **`blocks`** (2K); **`venues`** (2L); **`stories`** — read-only Hub **Shares** rows for self + accepted friends, same filters as web `loadHubFriendShares` (2M); **`chats`** — rows where user is **`user1_id`** or **`user2_id`**; **`messages`** — read-only preview fetch (latest row per **`chat_id`**, same columns as web list load — **2N**). Auth session APIs (not `.from()`). |
+| **Approved client-only UX (no new `.from()` )** | **2O** — debounced substring search over **in-memory copies** of data already fetched for Hub, Chat, and Map (Places list). |
 | **Forbidden reads** | **`user_presence`**; any `.from()` table **not** listed here or in an approved later phase doc update. |
 | **Forbidden writes** | All `user_presence` writes; all product writes unless a future gated phase says otherwise. |
 | **Forbidden SDKs** | `expo-location`, Mapbox / `@rnmapbox/maps`, background tracking, geofencing, push (until respective phases). |
@@ -429,7 +430,7 @@ Order is **mandatory** unless this doc is amended with rationale. Each phase: sp
 | **2L** | **Venues** | ✅ **Complete** — read-only venue lists / cards for Hub/Map shells — still **no** Mapbox/GPS |
 | **2M** | **Hub feed / shares** | ✅ **Complete** — read-only **`stories`** (share rows) + **`profiles`** hydrate — **no** realtime / likes pipeline on native |
 | **2N** | **Chat list** | ✅ **Complete** — read-only **`chats`** / **`messages`** / peer **`profiles`** — **no** subscriptions, send, thread navigation, or `notifications` mutations on native |
-| **2O** | **Integrated search** | Read-only search (friends/places/venues) behind overlay — matches web (no fixed Search tab) |
+| **2O** | **Integrated search** | ✅ **Complete** — **debounced local** filtering on Hub (friends / venues / shares), Chat (preview rows), Map venue list — **zero** extra Supabase |
 
 ### Post–2O — map engine, GPS, presence (explicit approval only)
 
@@ -559,10 +560,40 @@ Not part of **2K–2O**. Requires separate plans: dev client, Mapbox SKU, `expo-
 
 ---
 
+## Phase 2O — Integrated local search (Hub / Chat / Map) ✅
+
+**Goal:** Ship **web-shaped integrated search** without a fixed Search tab: **debounced in-memory** filtering over rows **already loaded** for each tab — **no** new **`supabase.from(...)`**, **no** realtime, **no** writes, **no** `user_presence`, **no** navigation / route changes.
+
+**What changed:**
+
+- **`useDebouncedValue`**, **`useLocalSearchQuery`** — shared debounce + **`intentActive`** (immediate) vs filter on **`debouncedQuery`**
+- **`localSearch`** (`normalizeLocalSearchQuery`, `matchesLocalSearch`) — token AND / substring match helper
+- **`SearchFieldPlaceholder`** — optional controlled **`TextInput`** (glass field) when **`onChangeText`** is passed
+- **Hub** — search replaces main feed while query non-empty; **`GlassSurface`** results (Friends / Places / Shares) via **`ShellListRow`**; pending + empty copy
+- **Chat** — filter previews by peer username/display/title/snippet
+- **Map** — **`Places in app`** list + peek row filtered locally
+
+**What did not change:**
+
+- Approved **`.from()`** table set (**2N** unchanged); **`packages/shared`** windows untouched; **`apps/web/src`** untouched
+
+**Verify:** `npx tsc --noEmit`; `npm run test:shared`; `.from(` unchanged vs **2N**; `git diff HEAD -- apps/web/src packages/shared` empty
+
+### Phase 2O audit results
+
+| Check | Result |
+|-------|--------|
+| `npm run test:shared` | ✅ |
+| `cd apps/mobile && npx tsc --noEmit` | ✅ Pass |
+| New `supabase.from` / realtime / writes | ✅ None added |
+| `git diff HEAD -- apps/web/src packages/shared` | ✅ Empty |
+
+---
+
 ## Architecture diagram
 
 ```
-Today (post–2N):
+Today (post–2O read-only ladder done):
   apps/web ──reads/writes──► Supabase (user_presence)  ← production authority
        │
        └──► @intencity/shared
@@ -576,6 +607,8 @@ Today (post–2N):
        ├──► chats + messages (read-only conversation list previews)
        ├──► Tab shell — Hub / Map / Create / Chat / Profile
        └──► @intencity/shared (display smoke on Hub)
+
+  Local search (2O): in-memory filter only — no extra Supabase calls
 
 After post–2O (gated — not started):
   apps/mobile ──writes──► user_presence (gated)

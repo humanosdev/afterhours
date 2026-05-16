@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { ChatThreadRow } from "../../src/components/ChatThreadRow";
 import { GlassSurface } from "../../src/components/GlassSurface";
@@ -5,6 +6,8 @@ import { Screen } from "../../src/components/Screen";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
 import { useChatPreviews } from "../../src/hooks/useChatPreviews";
+import { useLocalSearchQuery } from "../../src/hooks/useLocalSearchQuery";
+import { matchesLocalSearch, normalizeLocalSearchQuery } from "../../src/lib/localSearch";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 import { glass } from "../../src/theme/glass";
@@ -13,6 +16,21 @@ import { layout } from "../../src/theme/layout";
 export default function ChatTabScreen() {
   const { user } = useAuth();
   const { previews, loading, error } = useChatPreviews(user?.id);
+  const { query, setQuery, debouncedQuery } = useLocalSearchQuery();
+
+  const filteredPreviews = useMemo(() => {
+    if (!normalizeLocalSearchQuery(debouncedQuery)) return previews;
+    return previews.filter((p) =>
+      matchesLocalSearch(debouncedQuery, p.peerUsername, p.peerDisplayName, p.title, p.preview)
+    );
+  }, [previews, debouncedQuery]);
+
+  const searchNoMatches =
+    !loading &&
+    !error &&
+    previews.length > 0 &&
+    normalizeLocalSearchQuery(debouncedQuery).length > 0 &&
+    filteredPreviews.length === 0;
 
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
@@ -32,7 +50,11 @@ export default function ChatTabScreen() {
         }
       />
 
-      <SearchFieldPlaceholder placeholder="Search by username" />
+      <SearchFieldPlaceholder
+        placeholder="Search by username, name, or message"
+        value={query}
+        onChangeText={setQuery}
+      />
 
       <GlassSurface style={styles.listWrap} muted>
         {loading ? (
@@ -50,15 +72,22 @@ export default function ChatTabScreen() {
             <Text style={styles.feedbackText}>No conversations yet</Text>
             <Text style={styles.feedbackMuted}>Open Intencity on web/PWA to start a chat.</Text>
           </View>
+        ) : searchNoMatches ? (
+          <View style={styles.feedbackBlock}>
+            <Text style={styles.feedbackText}>No matches</Text>
+            <Text style={styles.feedbackMuted}>
+              Nothing in loaded previews matches — try another term or clear the search.
+            </Text>
+          </View>
         ) : (
-          previews.map((thread, index) => (
+          filteredPreviews.map((thread, index) => (
             <ChatThreadRow
               key={thread.chatId}
               name={thread.title}
               preview={thread.preview}
               time={thread.timeLabel}
               unread={thread.unread}
-              isLast={index === previews.length - 1}
+              isLast={index === filteredPreviews.length - 1}
               avatarUrl={thread.avatarUrl}
             />
           ))

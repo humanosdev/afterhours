@@ -1,17 +1,22 @@
+import { useMemo } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { HubSharePreviewCard } from "../../src/components/HubSharePreviewCard";
 import { HubTopChrome } from "../../src/components/HubTopChrome";
+import { GlassSurface } from "../../src/components/GlassSurface";
 import { Screen } from "../../src/components/Screen";
 import { SectionHeader } from "../../src/components/SectionHeader";
 import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
+import { ShellListRow } from "../../src/components/ShellListRow";
 import { StoryRingPlaceholder } from "../../src/components/StoryRingPlaceholder";
 import { VenueChipPlaceholder } from "../../src/components/VenueChipPlaceholder";
 import { FriendHubRing } from "../../src/components/FriendHubRing";
 import { useAcceptedFriends } from "../../src/hooks/useAcceptedFriends";
 import { useHubFeedPreview } from "../../src/hooks/useHubFeedPreview";
+import { useLocalSearchQuery } from "../../src/hooks/useLocalSearchQuery";
 import { useVenuesPreview } from "../../src/hooks/useVenuesPreview";
+import { matchesLocalSearch, normalizeLocalSearchQuery } from "../../src/lib/localSearch";
 import { getSharedSmokeSummary } from "../../src/lib/sharedSmoke";
-import { venueChipMeta } from "../../src/lib/venueDisplay";
+import { formatVenueCategoryLabel, venueChipMeta } from "../../src/lib/venueDisplay";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 import { layout } from "../../src/theme/layout";
@@ -26,10 +31,39 @@ function friendRingLabel(f: { display_name: string | null; username: string | nu
 
 export default function HubTabScreen() {
   const { user } = useAuth();
+  const { query, setQuery, debouncedQuery, intentActive } = useLocalSearchQuery();
   const { friends, loading: friendsLoading, error: friendsError } = useAcceptedFriends(user?.id);
   const { venues, loading: venuesLoading, error: venuesError } = useVenuesPreview(Boolean(user?.id));
   const { shares, loading: sharesLoading, error: sharesError } = useHubFeedPreview(user?.id, friends, friendsLoading);
   const sharedSmoke = getSharedSmokeSummary();
+
+  const friendMatches = useMemo(() => {
+    if (!normalizeLocalSearchQuery(debouncedQuery)) return [];
+    return friends.filter((f) =>
+      matchesLocalSearch(debouncedQuery, friendRingLabel(f), f.username, f.display_name)
+    );
+  }, [friends, debouncedQuery]);
+
+  const venueMatches = useMemo(() => {
+    if (!normalizeLocalSearchQuery(debouncedQuery)) return [];
+    return venues.filter((v) =>
+      matchesLocalSearch(debouncedQuery, v.name, v.category, formatVenueCategoryLabel(v.category))
+    );
+  }, [venues, debouncedQuery]);
+
+  const shareMatches = useMemo(() => {
+    if (!normalizeLocalSearchQuery(debouncedQuery)) return [];
+    return shares.filter((s) => matchesLocalSearch(debouncedQuery, s.username));
+  }, [shares, debouncedQuery]);
+
+  const searchPendingDebounce = intentActive && normalizeLocalSearchQuery(debouncedQuery).length === 0;
+
+  const searchHasNoHits =
+    intentActive &&
+    normalizeLocalSearchQuery(debouncedQuery).length > 0 &&
+    friendMatches.length === 0 &&
+    venueMatches.length === 0 &&
+    shareMatches.length === 0;
 
   const momentsAction =
     !friendsLoading && friends.length > 0 ? `${friends.length} friends` : undefined;
@@ -43,10 +77,67 @@ export default function HubTabScreen() {
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
       <HubTopChrome />
-      <SearchFieldPlaceholder />
+      <SearchFieldPlaceholder value={query} onChangeText={setQuery} />
 
-      <SectionHeader title="Moments" actionLabel={momentsAction} prominence="hub" />
-      {friendsError ? <Text style={styles.inlineError}>{friendsError}</Text> : null}
+      {intentActive ? (
+        <View style={styles.hubSearchWrap}>
+          <GlassSurface style={styles.hubSearchSurface} muted>
+            {searchPendingDebounce ? (
+              <Text style={styles.hubSearchPending}>Applying filter…</Text>
+            ) : null}
+            {searchHasNoHits ? (
+              <Text style={styles.hubSearchEmpty}>No matches in loaded Hub data.</Text>
+            ) : null}
+            {!searchPendingDebounce && !searchHasNoHits && friendMatches.length > 0 ? (
+              <>
+                <Text style={styles.hubSearchHeading}>Friends</Text>
+                {friendMatches.map((f, i) => (
+                  <ShellListRow
+                    key={f.id}
+                    title={friendRingLabel(f)}
+                    subtitle={f.username ? `@${f.username.replace(/^@/, "")}` : undefined}
+                    isLast={i === friendMatches.length - 1 && venueMatches.length === 0 && shareMatches.length === 0}
+                  />
+                ))}
+                {venueMatches.length + shareMatches.length > 0 ? <View style={styles.hubSearchRule} /> : null}
+              </>
+            ) : null}
+            {!searchPendingDebounce && !searchHasNoHits && venueMatches.length > 0 ? (
+              <>
+                <Text style={styles.hubSearchHeading}>Places</Text>
+                {venueMatches.map((v, i) => (
+                  <ShellListRow
+                    key={v.id}
+                    title={v.name}
+                    subtitle={formatVenueCategoryLabel(v.category)}
+                    isLast={i === venueMatches.length - 1 && shareMatches.length === 0}
+                  />
+                ))}
+                {shareMatches.length > 0 ? <View style={styles.hubSearchRule} /> : null}
+              </>
+            ) : null}
+            {!searchPendingDebounce && !searchHasNoHits && shareMatches.length > 0 ? (
+              <>
+                <Text style={styles.hubSearchHeading}>Shares</Text>
+                {shareMatches.map((s, i) => (
+                  <ShellListRow
+                    key={s.id}
+                    title={s.username}
+                    subtitle="Share"
+                    isLast={i === shareMatches.length - 1}
+                  />
+                ))}
+              </>
+            ) : null}
+          </GlassSurface>
+          <Text style={styles.hubSearchHint}>Searching loaded friends, venues, and shares only — debounced locally.</Text>
+        </View>
+      ) : null}
+
+      {!intentActive ? (
+        <>
+          <SectionHeader title="Moments" actionLabel={momentsAction} prominence="hub" />
+          {friendsError ? <Text style={styles.inlineError}>{friendsError}</Text> : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -128,6 +219,8 @@ export default function HubTabScreen() {
             <HubSharePreviewCard key={s.id} item={s} />
           ))}
         </View>
+      ) : null}
+        </>
       ) : null}
 
       <Text style={styles.smoke}>
@@ -244,5 +337,50 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: "center",
     opacity: 0.7,
+  },
+  hubSearchWrap: {
+    marginBottom: layout.sectionGap,
+    gap: 8,
+  },
+  hubSearchSurface: {
+    borderRadius: layout.cardRadius,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  hubSearchHeading: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    marginTop: 4,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  hubSearchRule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+    marginVertical: 10,
+  },
+  hubSearchPending: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 8,
+  },
+  hubSearchEmpty: {
+    fontSize: 13,
+    color: colors.textWhite42,
+    textAlign: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 8,
+  },
+  hubSearchHint: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.textMuted,
+    textAlign: "center",
+    paddingHorizontal: 8,
   },
 });

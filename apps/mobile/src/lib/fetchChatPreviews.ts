@@ -150,6 +150,8 @@ export async function fetchChatPreviews(meId: string): Promise<FetchChatPreviews
     return {
       chatId: chat.id,
       peerId,
+      peerUsername: profile?.username?.trim() ?? null,
+      peerDisplayName: profile?.display_name?.trim() ?? null,
       title,
       preview,
       timeLabel: formatChatListTime(updatedAt),
