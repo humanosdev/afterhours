@@ -35,7 +35,7 @@ export function ShellCard({ title, description, children, style, glass: useGlass
 const styles = StyleSheet.create({
   card: {
     borderRadius: layout.cardRadius,
-    padding: 12,
+    padding: layout.cardGap + 2,
     gap: 8,
   },
   cardSolid: {

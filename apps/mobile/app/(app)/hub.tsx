@@ -1,7 +1,7 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { HubSharePreviewCard } from "../../src/components/HubSharePreviewCard";
+import { HubTopChrome } from "../../src/components/HubTopChrome";
 import { Screen } from "../../src/components/Screen";
-import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { SectionHeader } from "../../src/components/SectionHeader";
 import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
 import { StoryRingPlaceholder } from "../../src/components/StoryRingPlaceholder";
@@ -42,16 +42,16 @@ export default function HubTabScreen() {
 
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
-      <ScreenHeader title="Hub" subtitle="Live the city, feel the intencity." />
+      <HubTopChrome />
       <SearchFieldPlaceholder />
 
-      <SectionHeader title="Moments" actionLabel={momentsAction} />
+      <SectionHeader title="Moments" actionLabel={momentsAction} prominence="hub" />
       {friendsError ? <Text style={styles.inlineError}>{friendsError}</Text> : null}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.rail}
-        style={styles.railScroll}
+        style={[styles.railScroll, styles.momentsRail]}
       >
         <StoryRingPlaceholder label="Your moment" accent />
         {friendsLoading ? (
@@ -69,7 +69,8 @@ export default function HubTabScreen() {
       ) : null}
 
       <View style={styles.sectionSpacer} />
-      <SectionHeader title="Active friends" />
+      <SectionHeader title="Active friends" prominence="hub" />
+
       <View style={styles.activeFriendsCard}>
         <Text style={styles.activeFriendsTitle}>No friends live right now</Text>
         <Text style={styles.activeFriendsBody}>
@@ -80,7 +81,7 @@ export default function HubTabScreen() {
 
       <View style={styles.divider} />
 
-      <SectionHeader title="Live places" actionLabel={livePlacesAction ?? "Map tab"} />
+      <SectionHeader title="Live places" actionLabel={livePlacesAction ?? "Map tab"} prominence="hub" />
       {venuesError ? <Text style={styles.inlineError}>{venuesError}</Text> : null}
       <ScrollView
         horizontal
@@ -110,7 +111,7 @@ export default function HubTabScreen() {
 
       <View style={styles.divider} />
 
-      <SectionHeader title="Shares" actionLabel={sharesAction} />
+      <SectionHeader title="Shares" actionLabel={sharesAction} prominence="hub" />
       {sharesError ? <Text style={styles.inlineError}>{sharesError}</Text> : null}
       {sharesLoading ? (
         <View style={styles.sharesLoading}>
@@ -141,39 +142,46 @@ const styles = StyleSheet.create({
     marginHorizontal: -layout.screenPaddingX,
     marginBottom: layout.sectionGap,
   },
+  momentsRail: {
+    marginBottom: 4,
+  },
   rail: {
-    gap: 12,
+    gap: layout.hubRailGap,
     paddingHorizontal: layout.screenPaddingX,
-    paddingBottom: 2,
+    paddingVertical: 6,
+    paddingBottom: 8,
     alignItems: "flex-start",
   },
   sectionSpacer: {
     height: 10,
   },
   divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.borderSubtle,
+    height: 1,
+    backgroundColor: colors.divider,
     marginVertical: layout.sectionGap,
-    opacity: 0.9,
   },
   activeFriendsCard: {
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-    gap: 6,
+    paddingVertical: 18,
+    paddingHorizontal: 2,
+    gap: 8,
+    alignItems: "center",
   },
   activeFriendsTitle: {
     fontSize: 15,
     fontWeight: "600",
-    color: colors.textPrimary,
+    color: colors.textWhite85,
+    textAlign: "center",
   },
   activeFriendsBody: {
     fontSize: 13,
-    lineHeight: 18,
-    color: colors.textMuted,
+    lineHeight: 19,
+    color: colors.textWhite42,
+    textAlign: "center",
+    maxWidth: 320,
   },
   friendsLoading: {
-    width: 64,
-    height: 88,
+    width: 84,
+    height: 100,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -201,9 +209,9 @@ const styles = StyleSheet.create({
   },
   sharesEmpty: {
     fontSize: 13,
-    color: colors.textMuted,
+    color: colors.textWhite42,
     textAlign: "center",
-    paddingVertical: 16,
+    paddingVertical: 18,
   },
   sharesStack: {
     gap: 14,

@@ -9,14 +9,12 @@ type FriendHubRingProps = {
 };
 
 /**
- * Hub moments-rail cell for a read-only friend (Phase 2K). Stories not wired — avatar + name only.
+ * Hub moments-rail cell for a read-only friend — sized closer to web StoryRing lane (~84px).
  */
 export function FriendHubRing({ avatarUrl, label }: FriendHubRingProps) {
   return (
     <View style={styles.wrap} accessibilityLabel={label}>
-      <View style={styles.ring}>
-        <ProfileAvatar avatarUrl={avatarUrl} label={label} size={56} />
-      </View>
+      <ProfileAvatar avatarUrl={avatarUrl} label={label} size={70} />
       <Text style={styles.caption} numberOfLines={1}>
         {label}
       </Text>
@@ -26,24 +24,15 @@ export function FriendHubRing({ avatarUrl, label }: FriendHubRingProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    width: 72,
+    width: 84,
     alignItems: "center",
-    gap: 6,
-  },
-  ring: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    padding: 2,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
   },
   caption: {
     width: "100%",
-    fontSize: 11,
-    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 15,
+    color: colors.textWhite55,
     textAlign: "center",
   },
 });

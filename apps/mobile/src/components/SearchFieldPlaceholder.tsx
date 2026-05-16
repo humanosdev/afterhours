@@ -12,9 +12,9 @@ export function SearchFieldPlaceholder({
   placeholder = "Search friends, places, venues…",
 }: SearchFieldPlaceholderProps) {
   return (
-    <GlassSurface style={styles.wrap} muted>
+    <GlassSurface style={styles.wrap}>
       <View style={styles.inner}>
-        <Ionicons name="search-outline" size={18} color="rgba(255,255,255,0.38)" />
+        <Ionicons name="search-outline" size={18} color={colors.textWhite42} />
         <Text style={styles.text}>{placeholder}</Text>
       </View>
     </GlassSurface>
@@ -25,17 +25,19 @@ const styles = StyleSheet.create({
   wrap: {
     borderRadius: 999,
     marginBottom: layout.sectionGap,
+    overflow: "hidden",
   },
   inner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
+    gap: 12,
+    paddingHorizontal: 18,
+    minHeight: 50,
     paddingVertical: 12,
   },
   text: {
     flex: 1,
     fontSize: 15,
-    color: "rgba(255, 255, 255, 0.38)",
+    color: colors.textWhite42,
   },
 });

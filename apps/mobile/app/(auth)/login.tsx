@@ -1,13 +1,14 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
+import { Image, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { AppTextField } from "../../src/components/AppTextField";
-import { IntencityWordmark } from "../../src/components/IntencityWordmark";
+import { GlassSurface } from "../../src/components/GlassSurface";
 import { PhaseBadge } from "../../src/components/PhaseBadge";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
 import { Screen } from "../../src/components/Screen";
 import { supabase } from "../../src/lib/supabase/client";
 import { colors } from "../../src/theme/colors";
+import { layout } from "../../src/theme/layout";
 
 function mapLoginError(raw: string) {
   const text = raw.toLowerCase();
@@ -60,10 +61,22 @@ export default function LoginScreen() {
       >
         <View style={styles.hero}>
           <PhaseBadge label="Sign in" />
-          <IntencityWordmark size="large" subtitle="Same account as web/PWA." />
+          <View style={styles.brand}>
+            <Image
+              accessibilityIgnoresInvertColors
+              source={require("../../assets/icon.png")}
+              style={styles.brandLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.brandWord}>Intencity</Text>
+            <Text style={styles.slogan}>
+              Live the city, feel the <Text style={styles.sloganAccent}>intencity</Text>.
+            </Text>
+            <Text style={styles.heroSub}>Same account as web/PWA.</Text>
+          </View>
         </View>
 
-        <View style={styles.card}>
+        <GlassSurface style={styles.card} muted>
           <Text style={styles.cardTitle}>Welcome back</Text>
           <Text style={styles.cardHint}>Use the same credentials as the web app.</Text>
 
@@ -94,9 +107,9 @@ export default function LoginScreen() {
           ) : null}
 
           <PrimaryButton label="Sign in" onPress={onLogin} loading={loading} />
-        </View>
+        </GlassSurface>
 
-        <Text style={styles.footer}>Production map and presence run on web/PWA.</Text>
+        <Text style={styles.footer}>Production map and presence stay on web/PWA.</Text>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -106,37 +119,73 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
     justifyContent: "center",
-    gap: 28,
+    gap: 24,
     paddingVertical: 12,
   },
   hero: {
     alignItems: "center",
     gap: 20,
   },
+  brand: {
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  brandLogo: {
+    width: 72,
+    height: 72,
+    marginBottom: 4,
+  },
+  brandWord: {
+    fontSize: 32,
+    fontWeight: "700",
+    letterSpacing: -0.8,
+    color: colors.textPrimary,
+  },
+  slogan: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: colors.textWhite55,
+    textAlign: "center",
+    lineHeight: 19,
+    maxWidth: 320,
+    marginTop: 2,
+  },
+  sloganAccent: {
+    fontWeight: "700",
+    color: colors.accentActive,
+  },
+  heroSub: {
+    fontSize: 13,
+    color: colors.textWhite42,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+  },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: 20,
+    borderRadius: layout.cardRadius,
+    padding: 22,
     gap: 14,
+    borderColor: colors.glassBorder,
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.textPrimary,
+    letterSpacing: -0.2,
   },
   cardHint: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textWhite42,
+    marginBottom: 2,
   },
   errorBox: {
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: layout.cardRadius,
     backgroundColor: colors.dangerMuted,
     borderWidth: 1,
-    borderColor: "rgba(255, 107, 122, 0.25)",
+    borderColor: "rgba(255, 107, 122, 0.28)",
   },
   error: {
     color: colors.danger,
@@ -144,10 +193,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   footer: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textWhite42,
     textAlign: "center",
-    paddingHorizontal: 8,
+    paddingHorizontal: 24,
+    marginBottom: 8,
   },
 });

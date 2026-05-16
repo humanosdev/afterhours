@@ -16,12 +16,12 @@ export function AppTextField(props: AppTextFieldProps) {
 const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: colors.glassBorder,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
     color: colors.textPrimary,
-    backgroundColor: colors.surface,
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
 });

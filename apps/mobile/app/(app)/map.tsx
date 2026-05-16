@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../../src/components/Screen";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { SectionHeader } from "../../src/components/SectionHeader";
@@ -12,11 +12,13 @@ import { colors } from "../../src/theme/colors";
 import { layout } from "../../src/theme/layout";
 
 const MAP_DOTS = [
-  { top: "22%", left: "28%" },
-  { top: "38%", left: "62%" },
-  { top: "55%", left: "44%" },
-  { top: "68%", left: "72%" },
+  { top: "24%", left: "30%" },
+  { top: "40%", left: "64%" },
+  { top: "54%", left: "46%" },
+  { top: "70%", left: "74%" },
 ];
+
+const FILTER_CHIPS = ["All", "Open", "Quiet", "Buzzing"];
 
 const PREVIEW_ROW_CAP = 14;
 
@@ -25,21 +27,23 @@ export default function MapTabScreen() {
   const { venues, loading, error } = useVenuesPreview(Boolean(user?.id));
   const previewRows = venues.slice(0, PREVIEW_ROW_CAP);
   const overflow = venues.length - previewRows.length;
+  const firstVenue = venues[0];
 
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset style={styles.screen}>
-      <ScreenHeader title="Map" subtitle="Going-out surface — preview without GPS" />
+      <ScreenHeader title="Map" subtitle="Live surface — preview without GPS" />
 
       <GlassSurface style={styles.notice} muted>
-        <Text style={styles.noticeTitle}>Static venue preview</Text>
+        <Text style={styles.noticeTitle}>Static preview</Text>
         <Text style={styles.noticeBody}>
-          Mapbox, live map tiles, and device location are a later phase. Below is the same read-only venue
-          list as Hub — not your current position.
+          Mapbox and device location come in a later phase. Filters and the card below mimic web layout; data is
+          read-only venue names.
         </Text>
       </GlassSurface>
 
       <View style={styles.canvas}>
-        <View style={styles.grid} />
+        <View style={styles.mapGradientTop} />
+        <View style={styles.mapGrid} />
         {MAP_DOTS.map((dot, i) => (
           <View
             key={i}
@@ -50,18 +54,39 @@ export default function MapTabScreen() {
             ]}
           />
         ))}
-        <GlassSurface style={styles.chipTop} muted>
-          <Text style={styles.chipText}>Venues · friends · heat</Text>
-        </GlassSurface>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterStrip}
+          contentContainerStyle={styles.filterContent}
+        >
+          {FILTER_CHIPS.map((label, i) => (
+            <GlassSurface key={label} style={[styles.filterChip, i === 0 && styles.filterChipOn]} muted>
+              <Text style={[styles.filterLabel, i === 0 && styles.filterLabelOn]}>{label}</Text>
+            </GlassSurface>
+          ))}
+        </ScrollView>
+
         <GlassSurface style={styles.chipBottom} muted>
-          <Text style={styles.chipHint}>Full map runs on web/PWA today</Text>
+          <Text style={styles.chipHint}>Full interactive map · web/PWA</Text>
         </GlassSurface>
+
+        {firstVenue ? (
+          <View style={styles.venuePeekWrap} pointerEvents="none">
+            <GlassSurface style={styles.venuePeek} muted>
+              <Text style={styles.peekName} numberOfLines={1}>
+                {firstVenue.name}
+              </Text>
+              <Text style={styles.peekMeta} numberOfLines={1}>
+                {formatVenueCategoryLabel(firstVenue.category)} · preview
+              </Text>
+            </GlassSurface>
+          </View>
+        ) : null}
       </View>
 
-      <SectionHeader
-        title="Places in app"
-        actionLabel={loading ? undefined : error ? undefined : `${venues.length} venues`}
-      />
+      <SectionHeader title="Places in app" actionLabel={loading ? undefined : error ? undefined : `${venues.length} venues`} />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading ? (
         <View style={styles.loadingBlock}>
@@ -114,34 +139,39 @@ const styles = StyleSheet.create({
   noticeBody: {
     fontSize: 12,
     lineHeight: 17,
-    color: colors.textMuted,
+    color: colors.textWhite42,
   },
   canvas: {
-    height: 240,
+    height: 280,
     borderRadius: layout.cardRadius,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    backgroundColor: "#0d1019",
+    backgroundColor: colors.bgLift,
     marginBottom: layout.sectionGap,
+    position: "relative",
   },
-  grid: {
+  mapGradientTop: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.35,
+    backgroundColor: "rgba(59,102,255,0.06)",
+  },
+  mapGrid: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.55,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.03)",
     backgroundColor: "transparent",
   },
   dot: {
     position: "absolute",
-    width: 10,
-    height: 10,
-    marginLeft: -5,
-    marginTop: -5,
-    borderRadius: 5,
-    backgroundColor: "rgba(255,255,255,0.25)",
+    width: 8,
+    height: 8,
+    marginLeft: -4,
+    marginTop: -4,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.35)",
+    borderColor: "rgba(255,255,255,0.28)",
   },
   dotLive: {
     backgroundColor: colors.accent,
@@ -151,35 +181,79 @@ const styles = StyleSheet.create({
     marginLeft: -6,
     marginTop: -6,
     borderRadius: 6,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
   },
-  chipTop: {
+  filterStrip: {
     position: "absolute",
     top: 12,
-    left: 12,
-    right: 12,
+    left: 0,
+    right: 0,
+    maxHeight: 40,
+  },
+  filterContent: {
+    gap: 8,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  filterChip: {
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    backgroundColor: "rgba(10,12,24,0.72)",
+    borderColor: colors.glassBorder,
+  },
+  filterChipOn: {
+    borderColor: colors.borderFocus,
+    backgroundColor: "rgba(59,102,255,0.28)",
+  },
+  filterLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textWhite78,
+  },
+  filterLabelOn: {
+    color: colors.textPrimary,
   },
   chipBottom: {
     position: "absolute",
-    bottom: 12,
+    bottom: 72,
     alignSelf: "center",
-    left: "18%",
-    right: "18%",
+    left: "14%",
+    right: "14%",
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
     alignItems: "center",
   },
-  chipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textAlign: "center",
-  },
   chipHint: {
     fontSize: 12,
+    color: colors.textWhite55,
+    textAlign: "center",
+  },
+  venuePeekWrap: {
+    position: "absolute",
+    bottom: 10,
+    left: 12,
+    right: 12,
+  },
+  venuePeek: {
+    borderRadius: layout.cardRadius,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderColor: colors.glassBorder,
+  },
+  peekName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  peekMeta: {
+    fontSize: 12,
+    marginTop: 3,
     color: colors.textMuted,
   },
   error: {

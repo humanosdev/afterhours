@@ -5,6 +5,8 @@ import { ChatThreadRow } from "../../src/components/ChatThreadRow";
 import { GlassSurface } from "../../src/components/GlassSurface";
 import { SearchFieldPlaceholder } from "../../src/components/SearchFieldPlaceholder";
 import { colors } from "../../src/theme/colors";
+import { glass } from "../../src/theme/glass";
+import { layout } from "../../src/theme/layout";
 
 const THREADS = [
   { name: "Maya Chen", preview: "See you at the bar?", time: "9:41 PM", unread: true },
@@ -18,15 +20,23 @@ export default function ChatTabScreen() {
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
       <ScreenHeader
         title="Messages"
+        subtitle="Chats sync on web/PWA — preview only here"
         trailing={
-          <Pressable style={styles.newButton} accessibilityRole="button" accessibilityLabel="New message">
+          <Pressable
+            style={styles.newButton}
+            accessibilityRole="button"
+            accessibilityLabel="New message"
+            accessibilityState={{ disabled: true }}
+            disabled
+          >
             <Text style={styles.newLabel}>New</Text>
           </Pressable>
         }
       />
+
       <SearchFieldPlaceholder placeholder="Search by username" />
 
-      <GlassSurface style={styles.list} muted>
+      <GlassSurface style={styles.listWrap} muted>
         {THREADS.map((thread, index) => (
           <ChatThreadRow
             key={thread.name}
@@ -38,27 +48,37 @@ export default function ChatTabScreen() {
           />
         ))}
       </GlassSurface>
+
+      <Text style={styles.footnote}>Real threads and realtime live on web/PWA.</Text>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   newButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    ...glass.iconWell,
+    opacity: 0.92,
   },
   newLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: colors.textSecondary,
+    color: colors.textWhite78,
   },
-  list: {
-    borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  listWrap: {
+    borderRadius: layout.cardRadius,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    marginTop: 2,
+  },
+  footnote: {
+    marginTop: 14,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textWhite42,
+    textAlign: "center",
+    paddingHorizontal: 16,
   },
 });

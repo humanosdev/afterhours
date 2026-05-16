@@ -38,17 +38,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
   },
   rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.borderSubtle,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.surfaceHover,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   },
   preview: {
     fontSize: 14,
-    color: colors.textMuted,
+    color: colors.textWhite42,
   },
   previewUnread: {
     color: colors.textSecondary,

@@ -33,14 +33,16 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
-    letterSpacing: -0.4,
+    fontSize: 20,
+    fontWeight: "600",
+    letterSpacing: -0.35,
     color: colors.textPrimary,
   },
   subtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.textWhite42,
+    marginTop: 2,
+    fontWeight: "400",
   },
 });

@@ -16,6 +16,7 @@ const ACTIONS = [
 export default function CreateTabScreen() {
   return (
     <Screen scroll edges={["top", "left", "right"]} tabBarInset>
+      <ScreenHeader title="Share" subtitle="Posting stays on web/PWA until a later phase." />
       <View style={styles.hero}>
         <View style={[styles.orb, glass.createButton]}>
           <Ionicons name="add" size={32} color="#fff" />
@@ -60,6 +61,6 @@ const styles = StyleSheet.create({
   },
   heroSub: {
     fontSize: 13,
-    color: colors.textMuted,
+    color: colors.textWhite42,
   },
 });

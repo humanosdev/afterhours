@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
 import { colors } from "../theme/colors";
 
 type PrimaryButtonProps = {
@@ -44,19 +44,32 @@ export function PrimaryButton({
 const styles = StyleSheet.create({
   base: {
     minHeight: 48,
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 13,
     alignItems: "center",
     justifyContent: "center",
   },
   primary: {
     backgroundColor: colors.accent,
+    borderRadius: 999,
+    minHeight: 50,
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.accent,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.28,
+        shadowRadius: 16,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
   },
   ghost: {
     backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: colors.glassBorder,
+    borderRadius: 999,
   },
   pressed: {
     opacity: 0.88,

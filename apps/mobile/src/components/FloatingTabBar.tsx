@@ -30,7 +30,7 @@ export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.host, { paddingBottom: bottom }]} pointerEvents="box-none">
-      <GlassSurface style={styles.bar}>
+      <GlassSurface style={styles.bar} muted>
         <View style={styles.row}>
           {state.routes.map((route, index) => {
             const config = TAB_CONFIG[route.name];
