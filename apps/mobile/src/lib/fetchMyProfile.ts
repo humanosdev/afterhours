@@ -11,7 +11,7 @@ export type FetchMyProfileResult = {
 
 /**
  * Read-only: current user's `profiles` row. Phase 2F.
- * Other reads (e.g. accepted friends — Phase 2K) live in dedicated modules.
+ * Other reads: accepted friends (2K), venues preview (2L), hub shares preview (2M) — dedicated modules.
  */
 export async function fetchMyProfile(userId: string): Promise<FetchMyProfileResult> {
   const { data, error } = await supabase
