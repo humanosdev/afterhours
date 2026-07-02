@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { appConfig } from "@/lib/appConfig";
+import { MarketingBrandMark } from "@/components/marketing/MarketingBrandMark";
 
 const legalLinks = [
   { href: "/terms", label: "Terms" },
@@ -29,9 +30,9 @@ export function MarketingSiteFooter() {
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-12">
         <div className="grid gap-8 sm:grid-cols-2">
           <div>
-            <p className="text-sm font-semibold text-white">{appConfig.appName}</p>
-            <p className="mt-2 max-w-xs text-sm leading-relaxed text-white/50">
-              Real-time nightlife awareness — see where friends are, what&apos;s active, and where the night is moving.
+            <MarketingBrandMark showSlogan={false} iconClassName="h-9 w-9" />
+            <p className="mt-3 max-w-xs text-sm leading-relaxed text-white/50">
+              iOS &amp; Android app. This site is policies and contact only.
             </p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2">
@@ -66,8 +67,19 @@ export function MarketingSiteFooter() {
             </div>
           </div>
         </div>
-        <p className="mt-10 border-t border-white/[0.06] pt-6 text-center text-xs text-white/35">
-          © {year} {appConfig.appName}. All rights reserved.
+        <p className="mt-10 border-t border-white/[0.06] pt-6 text-center text-xs leading-relaxed text-white/35">
+          © {year} {appConfig.appName}.{" "}
+          <Link href="/terms" className="underline underline-offset-2 hover:text-white/55">
+            Terms
+          </Link>
+          {" · "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-white/55">
+            Privacy
+          </Link>
+          {" · "}
+          <Link href="/guidelines" className="underline underline-offset-2 hover:text-white/55">
+            Guidelines
+          </Link>
         </p>
       </div>
     </footer>
