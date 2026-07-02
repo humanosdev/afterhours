@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   FRIEND_ONLINE_BADGE_MS,
+  HEAT_ACTIVITY_WINDOW_MS,
   MAP_ACTIVITY_WINDOW_MS,
   RECENT_WINDOW_MS,
 } from "./constants";
@@ -9,6 +10,7 @@ import {
   getPresenceFreshness,
   isFriendOnlineNow,
   isPresenceLive,
+  isPresenceLiveForHeat,
   isPresenceRecent,
 } from "./freshness";
 
@@ -56,5 +58,19 @@ describe("isPresenceLive / isPresenceRecent", () => {
     const recentAt = new Date(T0 - MAP_ACTIVITY_WINDOW_MS - 60_000).toISOString();
     assert.equal(isPresenceLive(recentAt, T0), false);
     assert.equal(isPresenceRecent(recentAt, T0), true);
+  });
+});
+
+describe("isPresenceLiveForHeat", () => {
+  it("is true within HEAT_ACTIVITY_WINDOW_MS", () => {
+    const updatedAt = new Date(T0 - HEAT_ACTIVITY_WINDOW_MS + 1).toISOString();
+    assert.equal(isPresenceLiveForHeat(updatedAt, T0), true);
+    assert.equal(isPresenceLive(updatedAt, T0), true);
+  });
+
+  it("is false beyond heat window but may still be socially live", () => {
+    const updatedAt = new Date(T0 - HEAT_ACTIVITY_WINDOW_MS - 60_000).toISOString();
+    assert.equal(isPresenceLiveForHeat(updatedAt, T0), false);
+    assert.equal(isPresenceLive(updatedAt, T0), true);
   });
 });

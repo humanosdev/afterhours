@@ -4,6 +4,9 @@
 
 **Related:** [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md), [SACRED_FILES_AND_RULES.md](./SACRED_FILES_AND_RULES.md), [MIGRATION_PHASES.md](./MIGRATION_PHASES.md)
 
+
+> **Doctrine:** eventual native **must match full production PWA surface area** with **exact user-facing equivalence** ([Native Product Equivalence Doctrine](./MIGRATION_PHASES.md#native-product-equivalence-doctrine)) — phased presence work is **one capability track**, never a parallel product.
+
 ---
 
 ## One-sentence rule
@@ -12,7 +15,7 @@
 
 ---
 
-## Current state (post–2N)
+## Current state (post–2O read-only ladder complete)
 
 | Layer | Owner |
 |-------|--------|
@@ -21,28 +24,42 @@
 | **Production write path** | `syncUserPresenceWithVenuesFromCoords` in `apps/web/src/lib/userPresenceVenueSync.ts` |
 | **Ghost writes** | `upsertUserPresenceGhostSafeCoords` in `apps/web/src/lib/userPresenceWrite.ts` |
 | **Geolocation** | `AppShell` (12s, **skips `/map`**), `map/page.tsx` (`watchPosition` + sync) |
-| **Mobile** | Auth + **read-only** `profiles`, **`friend_requests`**, **`blocks`**, **`venues`**, **`stories`** (Hub share preview), **`chats`**, **`messages`** (Chat **list previews** only — **2N**) — **no** `user_presence` read/write, no `expo-location` |
+| **Mobile** | Auth + **read-only** `profiles`, **`friend_requests`**, **`blocks`**, **`venues`**, **`stories`** (Hub share preview), **`chats`**, **`messages`** (Chat **list previews**); **2O** — **local-only** integrated search (**no** new Supabase) — **no** `user_presence` read/write, no `expo-location` |
 | **Mobile shared usage** | Display smoke on Hub tab (`MAP_ACTIVITY_WINDOW_MS`) — not production presence |
-| **Mobile navigation** | Phase 2H Hub/Map/Create/Chat/Profile; Profile hydrated in 2F; no fixed Search tab |
+| **Mobile navigation** | Tabs under **`(tabs)`**: Hub / Map / **Moments** (`create`) / Chat / Profile; **`VP-1`** adds **`Stack` pushes** (read-only placeholders + `/friends` roster). No fixed Search tab. |
 
 `apps/web` imports `computePresenceFromGps` from `@intencity/shared` for **live** presence. Mobile does **not** call `computePresenceFromGps` with GPS or live presence rows and does **not** read `user_presence`. Native **`venues`**, **`stories`**, **`chats`**, and **`messages`** reads are **social / UI preview** data only — **not** used as a physical location signal.
 
 **Phase 2N:** Read-only **`chats`** + **`messages`** + counterpart **`profiles`** for the Messages tab mirrors web `/chat` **initial load** semantics — **no** realtime **`messages`** subscriptions, **no** `notifications` mutations, **no** send path on native ([MIGRATION_PHASES.md](./MIGRATION_PHASES.md#phase-2n--read-only-chat-list-previews-)).
 
-**Phase 2J (documentation only):** Read-only data ladder **2K–2O** and gates are documented in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). **No change** to presence **ownership**: web/PWA remains the only production physical presence writer; native **must not** read `user_presence` through **2O** unless a **future** phase explicitly allows read-only presence display (not part of **2K–2O** as currently defined).
+**Era model:** [PRODUCTION_ERA_MODEL.md](./PRODUCTION_ERA_MODEL.md) — native may **read** `user_presence` in **Era 1 (Mirror)**; native **writes** only in **Era 2 (Cutover)** after full parity sign-off.
 
-**Product split:** Web/PWA = map, venues **with live presence/heat**, **full** stories/shares pipeline (likes, comments, realtime), **live** chat (compose, realtime, notifications) — **and** source of truth for navigation/UX. Mobile = read-only scaffold + profile + friends + venues + **static Hub share preview** + **snapshot Chat previews** ([NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md#ux-source-of-truth-critical)).
+### Post–2O plan pointer (checkpoint)
+
+**Mirror era (now):** **P2O-A/B/C** ✅ · **MAP-B/C** ✅ — web remains **sole writer**; native displays presence for map/hub/live-places.
+
+**Cutover era (later):** **`P2O-D`** — native becomes writer; web retires presence upserts for migrated cohort. **Deferred to final phase** — notifications ship first; web may stay full production for QA. See [P2O_D_PLACEHOLDER.md](./P2O_D_PLACEHOLDER.md).
+
+Details: [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) · [PRODUCTION_ERA_MODEL.md](./PRODUCTION_ERA_MODEL.md).
+
+**Product split today:** Web/PWA = production for **writes**, full chat/stories realtime, and navigation authority. Mobile = **mirror** toward full equivalence — map/presence **display** landed; **mutations** and **native writes** remain gated.
 
 ---
 
-## Future state (target)
+## Future state — Era 2 Cutover (target)
+
+**Gate:** [PRODUCTION_ERA_MODEL.md](./PRODUCTION_ERA_MODEL.md) — native **same or better** than PWA; explicit product sign-off.
 
 | Layer | Owner |
 |-------|--------|
 | **Deterministic rules** | Still `packages/shared` |
 | **Physical presence upserts** | **`apps/mobile`** (foreground → background) |
-| **Web** | **Read** `user_presence` for map/hub/friends; **no** shell/map GPS upserts for users on native writer path |
+| **Web** | **Overview / marketing only** — **no login**, product routes **inaccessible**; **no** shell/map GPS upserts |
 | **Notifications** | **Single writer** — not both web and mobile firing `friend_*` for the same transition |
+
+## Future state — Era 3 Evolve (after cutover stable)
+
+Break PWA platform limiters **one capability at a time** (continuous online, background location, confidence layers) — document semantic changes in [TRUTH_DRIFT_REGISTER.md](./TRUTH_DRIFT_REGISTER.md) when user-visible meaning shifts.
 
 Native presence should evolve toward **confidence-based** physical presence (accuracy, dwell, motion). That is **not** implemented in shared or web today.
 
@@ -135,13 +152,16 @@ AppShell’s `/map` skip exists for **web-vs-web** duplication; web-vs-mobile is
 
 | Step | Mobile writes? | Web writes? | Status |
 |------|----------------|-------------|--------|
-| 2A–2N | No | Yes | ✅ Through **2N** — **no** native `user_presence`; web sole physical presence writer |
-| 2K–2O read-only data | No | Yes | Future — staged reads per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — **still no** `user_presence` on native unless a later phase explicitly allows read-only display |
+| 2A–2O | No | Yes | ✅ Through **2O** — **no** native `user_presence`; web sole physical presence writer |
+| Post–2O **P2O-A** (Mapbox read-only `venues` pins) | No | Yes | **Complete** — catalog coords only; native still **not** a presence writer |
+| **VP-2** (visual identity — no presence I/O) | No | Yes | **Next** — **blocks `P2O-B`** |
+| Post–2O **P2O-B** (**`expo-location`**, still no `user_presence` writes by default) | No | Yes | **Paused** until **VP-2** — see [MIGRATION_PHASES.md](./MIGRATION_PHASES.md#post-2o-roadmap-checkpoint) |
+| Post–2O **P2O-C** (native `user_presence` read) | No | Yes | **Future** — requires named phase + RLS |
 | Post–2O presence beta | Beta only | Yes for non-beta | Future — beta flag + source metadata |
 | Later | Primary (cohort) | Reduced / gated | Background + confidence |
 | Final | Yes (target users) | **No** physical GPS upserts | Web viewer mode |
 
-**No mobile `user_presence` reads or writes through Phase 2O** as specified in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md). Phase 2F adds read-only own `profiles`; Phase **2K** adds read-only social graph tables; Phase **2L** adds read-only **`venues`**; Phase **2M** adds read-only **`stories`** (Hub share rows); Phase **2N** adds read-only **`chats`** / **`messages`** (conversation list previews only); no `expo-location`.
+**Era 1:** Native **reads** `user_presence` for display; **must not write** until Era 2 sign-off ([PRODUCTION_ERA_MODEL.md](./PRODUCTION_ERA_MODEL.md)). **P2O-D** requires single-writer controls + rollback — **never** convenience dual-write with web.
 
 ---
 
@@ -152,6 +172,8 @@ Presence-driven notifications today (web only), created inside `userPresenceVenu
 - `friend_online`
 - `friend_joined_venue`
 - `friend_nearby` (**300m** — literal in sync today; constant `NEARBY_THRESHOLD_M` exists in shared for future use)
+
+**Era placement:** Badges, toasts, push, and action-triggered **`createNotification`** ship in **Era 2 (NOTIF-3/2/4)** while web still writes presence. **Presence-driven** notification creation moves with **`P2O-D` (final)** — [NOTIF_ERA_PLAN.md](./NOTIF_ERA_PLAN.md).
 
 **Rule:** When mobile becomes a writer, notifications must be emitted from **one** place only (mobile orchestrator, DB trigger, or edge function) — **not** duplicated from web and mobile.
 

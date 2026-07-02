@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["IntencityMessageStickersModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.intencitymessagestickers.IntencityMessageStickersModule"]
+  }
+}

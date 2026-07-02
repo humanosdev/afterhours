@@ -1,95 +1,179 @@
-import { Ionicons } from "@expo/vector-icons";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import type { ComponentProps } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Home, Map, MessageCircle, Plus } from "lucide-react-native";
+import { Pressable, StyleSheet, useWindowDimensions, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useMyAvatar } from "../hooks/useMyAvatar";
+import { useCreateComposerOptional } from "../providers/CreateComposerProvider";
+import { useNotificationDeliveryOptional } from "../providers/NotificationDeliveryProvider";
+import { UnreadBadge } from "./ui/UnreadBadge";
+import { tabBarBarWidth, tabBarBottomOffset, tabBarMetrics } from "../shell/tabBarMetrics";
+import { emitTabScrollToTop, type TabScrollTarget } from "../lib/tabScrollToTop";
 import { GlassSurface } from "./GlassSurface";
+import { TabBarProfileAvatar } from "./TabBarProfileAvatar";
 import { colors } from "../theme/colors";
 import { glass } from "../theme/glass";
-import { layout } from "../theme/layout";
 
+const STROKE_ACTIVE = 2.25;
+const STROKE_INACTIVE = 2;
 const ICON_SIZE = 20;
-const CREATE_SIZE = 22;
-
-type IoniconName = ComponentProps<typeof Ionicons>["name"];
+const PLUS_SIZE = 21;
 
 const TAB_CONFIG: Record<
   string,
-  { label: string; outline: IoniconName; filled: IoniconName; isCreate?: boolean }
+  { label: string; isCreate?: boolean; isProfile?: boolean; Icon?: typeof Home }
 > = {
-  hub: { label: "Hub", outline: "home-outline", filled: "home" },
-  map: { label: "Map", outline: "map-outline", filled: "map" },
-  create: { label: "Create", outline: "add-outline", filled: "add", isCreate: true },
-  chat: { label: "Chat", outline: "chatbubbles-outline", filled: "chatbubbles" },
-  profile: { label: "Profile", outline: "person-outline", filled: "person" },
+  hub: { label: "Hub", Icon: Home },
+  map: { label: "Map", Icon: Map },
+  create: { label: "New moment", isCreate: true },
+  chat: { label: "Chat", Icon: MessageCircle },
+  profile: { label: "Profile", isProfile: true },
 };
 
-export function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
+/** Strip RN default tab-bar chrome that causes the hairline under the floater. */
+export const TAB_BAR_SCREEN_STYLE: ViewStyle = {
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "transparent",
+  borderTopWidth: 0,
+  borderTopColor: "transparent",
+  borderWidth: 0,
+  elevation: 0,
+  shadowOpacity: 0,
+  shadowRadius: 0,
+  shadowOffset: { width: 0, height: 0 },
+  paddingTop: 0,
+  paddingBottom: 0,
+  height: undefined,
+};
+
+type FloatingTabBarProps = BottomTabBarProps;
+
+/**
+ * PWA `BottomNav.tsx` — glass pill, clustered side tabs, center create anchor.
+ */
+export function FloatingTabBar({ state, navigation, descriptors }: FloatingTabBarProps) {
   const insets = useSafeAreaInsets();
-  const bottom = Math.max(insets.bottom, Platform.OS === "android" ? 8 : 4);
+  const { width: screenWidth } = useWindowDimensions();
+  const { avatarUrl, label } = useMyAvatar();
+  const composer = useCreateComposerOptional();
+  const delivery = useNotificationDeliveryOptional();
+  const chatUnread = delivery?.chatMessageUnread ?? 0;
+  const floatBottom = tabBarBottomOffset(insets);
+  const barWidth = tabBarBarWidth(screenWidth);
+  const focusedRoute = state.routes[state.index];
+  const tabBarStyle = descriptors[focusedRoute.key].options.tabBarStyle as ViewStyle | undefined;
+
+  if (tabBarStyle?.display === "none" || composer?.overlayOpen) {
+    return null;
+  }
 
   return (
-    <View style={[styles.host, { paddingBottom: bottom }]} pointerEvents="box-none">
-      <GlassSurface style={styles.bar} muted>
+    <View style={styles.host} pointerEvents="box-none">
+      <GlassSurface
+        preset="bar"
+        style={[
+          styles.bar,
+          { width: barWidth, marginBottom: floatBottom, borderRadius: tabBarMetrics.barRadius },
+        ]}
+        sheen
+      >
         <View style={styles.row}>
-          {state.routes.map((route, index) => {
-            const config = TAB_CONFIG[route.name];
-            if (!config) return null;
-
-            const focused = state.index === index;
-            const color = focused ? colors.accentActive : "rgba(255, 255, 255, 0.62)";
-
-            const onPress = () => {
-              const event = navigation.emit({
-                type: "tabPress",
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!focused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
-
-            if (config.isCreate) {
-              return (
-                <Pressable
-                  key={route.key}
-                  onPress={onPress}
-                  accessibilityRole="button"
-                  accessibilityLabel={config.label}
-                  accessibilityState={{ selected: focused }}
-                  style={styles.createHit}
-                >
-                  <View style={[styles.createOrb, glass.createButton, focused && styles.createOrbFocused]}>
-                    <Ionicons name={focused ? config.filled : config.outline} size={CREATE_SIZE} color="#fff" />
-                  </View>
-                </Pressable>
-              );
-            }
-
-            return (
-              <Pressable
-                key={route.key}
-                onPress={onPress}
-                accessibilityRole="button"
-                accessibilityLabel={config.label}
-                accessibilityState={{ selected: focused }}
-                style={styles.tabHit}
-              >
-                <View style={[styles.iconWell, focused && glass.iconWellActive]}>
-                  <Ionicons
-                    name={focused ? config.filled : config.outline}
-                    size={ICON_SIZE}
-                    color={color}
-                  />
-                </View>
-              </Pressable>
-            );
-          })}
+          <View style={styles.sideLeft}>
+            {state.routes.slice(0, 2).map((route, index) => renderTab(route, index))}
+          </View>
+          {renderTab(state.routes[2], 2)}
+          <View style={styles.sideRight}>
+            {state.routes.slice(3).map((route, index) => renderTab(route, index + 3))}
+          </View>
         </View>
       </GlassSurface>
     </View>
   );
+
+  function renderTab(route: (typeof state.routes)[number] | undefined, index: number) {
+    if (!route) return null;
+    const config = TAB_CONFIG[route.name];
+    if (!config) return null;
+
+    const focused = state.index === index;
+    const iconColor = focused ? colors.accentActive : colors.textWhite65;
+
+    const onPress = () => {
+      const event = navigation.emit({
+        type: "tabPress",
+        target: route.key,
+        canPreventDefault: true,
+      });
+      if (focused && !event.defaultPrevented) {
+        if (route.name === "hub" || route.name === "chat" || route.name === "profile") {
+          emitTabScrollToTop(route.name as TabScrollTarget);
+        }
+        return;
+      }
+      if (!focused && !event.defaultPrevented) {
+        navigation.navigate(route.name);
+      }
+    };
+
+    if (config.isCreate) {
+      return (
+        <Pressable
+          key={route.key}
+          onPress={() => composer?.openCreateComposer({ mode: "both", tab: "moments" })}
+          accessibilityRole="button"
+          accessibilityLabel={config.label}
+          accessibilityState={{ selected: focused }}
+          style={({ pressed }) => [styles.createHit, pressed && styles.pressed]}
+        >
+          <View style={[styles.createOrb, glass.createButton]}>
+            <Plus size={PLUS_SIZE} color="#fff" strokeWidth={2.5} />
+          </View>
+        </Pressable>
+      );
+    }
+
+    if (config.isProfile) {
+      return (
+        <Pressable
+          key={route.key}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel={config.label}
+          accessibilityState={{ selected: focused }}
+          style={styles.tabHit}
+        >
+          <TabBarProfileAvatar avatarUrl={avatarUrl} label={label} active={focused} />
+        </Pressable>
+      );
+    }
+
+    const Icon = config.Icon!;
+    const isChat = route.name === "chat";
+
+    return (
+      <Pressable
+        key={route.key}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isChat && chatUnread > 0 ? `${config.label}, ${chatUnread} unread` : config.label
+        }
+        accessibilityState={{ selected: focused }}
+        style={styles.tabHit}
+      >
+        <View style={[styles.iconWell, !focused && styles.iconWellIdle, focused && styles.iconWellActive]}>
+          <Icon
+            size={ICON_SIZE}
+            color={iconColor}
+            strokeWidth={focused ? STROKE_ACTIVE : STROKE_INACTIVE}
+          />
+          {isChat ? <UnreadBadge count={chatUnread} style={styles.tabBadge} /> : null}
+        </View>
+      </Pressable>
+    );
+  }
 }
 
 const styles = StyleSheet.create({
@@ -98,49 +182,83 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: layout.screenPaddingX,
+    paddingHorizontal: tabBarMetrics.hostPaddingX,
     alignItems: "center",
+    justifyContent: "flex-end",
+    backgroundColor: "transparent",
+    zIndex: tabBarMetrics.zIndex,
+    elevation: 0,
   },
   bar: {
-    width: "100%",
-    maxWidth: 360,
-    borderRadius: layout.glassRadius,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
+    paddingHorizontal: tabBarMetrics.barPaddingX,
+    paddingVertical: tabBarMetrics.barPaddingY,
+    overflow: "hidden",
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    gap: tabBarMetrics.rowGap,
+  },
+  sideLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: tabBarMetrics.sideTabGap,
+    paddingRight: tabBarMetrics.sideInsetTowardCenter,
+  },
+  sideRight: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: tabBarMetrics.sideTabGap,
+    paddingLeft: tabBarMetrics.sideInsetTowardCenter,
   },
   tabHit: {
-    flex: 1,
+    width: tabBarMetrics.iconWellSize,
+    height: tabBarMetrics.iconWellSize,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 40,
+  },
+  pressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.98 }],
   },
   iconWell: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: tabBarMetrics.iconWellSize,
+    height: tabBarMetrics.iconWellSize,
+    borderRadius: tabBarMetrics.iconWellRadius,
     alignItems: "center",
     justifyContent: "center",
-    ...glass.iconWell,
+    borderWidth: 1,
+  },
+  iconWellIdle: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderColor: "transparent",
+  },
+  iconWellActive: {
+    backgroundColor: "transparent",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  tabBadge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
   },
   createHit: {
-    flex: 1,
+    width: tabBarMetrics.createSize,
+    height: tabBarMetrics.createSize,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 40,
+    zIndex: 1,
   },
   createOrb: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: tabBarMetrics.createSize,
+    height: tabBarMetrics.createSize,
+    borderRadius: tabBarMetrics.createRadius,
     alignItems: "center",
     justifyContent: "center",
-  },
-  createOrbFocused: {
-    backgroundColor: "rgba(59, 102, 255, 0.5)",
   },
 });

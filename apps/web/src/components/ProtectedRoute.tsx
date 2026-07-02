@@ -1,15 +1,12 @@
 "use client";
 
-import { createPortal } from "react-dom";
-import { useCallback, useEffect, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { BrandedSplashLogo } from "@/components/BrandedSplashLogo";
 import { useClientAuth } from "@/contexts/ClientAuthContext";
+import { isMarketingSite } from "@/lib/webSiteMode";
+import { createPortal } from "react-dom";
 
-/**
- * Full-screen layer above AppShell while sending the user to `/login`.
- * Unmounts when `router.replace` completes and this route is no longer active.
- */
 function SignedOutRedirectHold() {
   if (typeof document === "undefined") {
     return (
@@ -36,10 +33,6 @@ function SignedOutRedirectHold() {
   );
 }
 
-/**
- * Uses `AppShell`’s session snapshot so client-side tab switches skip the branded “checking”
- * screen and go straight to page skeletons / content when the session is already known.
- */
 export default function ProtectedRoute({
   children,
 }: {
@@ -49,14 +42,22 @@ export default function ProtectedRoute({
   const pathname = usePathname();
   const { sessionResolved, userId } = useClientAuth();
   const kickOnceRef = useRef(false);
+  const marketingSite = isMarketingSite();
 
-  const loginWithReturn = useCallback(() => {
+  useEffect(() => {
+    if (marketingSite) {
+      router.replace("/");
+    }
+  }, [marketingSite, router]);
+
+  const loginWithReturn = () => {
     const qs = typeof window !== "undefined" ? window.location.search : "";
     const next = encodeURIComponent(`${pathname}${qs}`);
     router.replace(`/login?next=${next}`);
-  }, [router, pathname]);
+  };
 
   useEffect(() => {
+    if (marketingSite) return;
     if (!sessionResolved || userId) {
       kickOnceRef.current = false;
       return;
@@ -64,7 +65,19 @@ export default function ProtectedRoute({
     if (kickOnceRef.current) return;
     kickOnceRef.current = true;
     loginWithReturn();
-  }, [sessionResolved, userId, loginWithReturn]);
+  }, [marketingSite, sessionResolved, userId, pathname, router]);
+
+  if (marketingSite) {
+    return (
+      <div
+        className="flex min-h-[100dvh] w-screen flex-col items-center justify-center bg-primary px-4"
+        aria-busy="true"
+        aria-label="Redirecting"
+      >
+        <BrandedSplashLogo />
+      </div>
+    );
+  }
 
   if (!sessionResolved) {
     return (

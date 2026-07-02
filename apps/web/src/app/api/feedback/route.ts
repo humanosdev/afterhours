@@ -30,11 +30,17 @@ function getSupabase(req: NextRequest, res: NextResponse) {
 export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
   const supabase = getSupabase(req, res);
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-  if (authError || !user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const authHeader = req.headers.get("authorization");
+  const bearer =
+    authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : null;
+
+  const sessionResult = await supabase.auth.getSession();
+  let user = sessionResult.data.session?.user ?? null;
+  if (!user && bearer) {
+    const { data, error } = await supabase.auth.getUser(bearer);
+    if (!error && data.user) user = data.user;
+  }
+  if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
   const body = (await req.json()) as FeedbackBody;
   const category = body?.category ?? "general";

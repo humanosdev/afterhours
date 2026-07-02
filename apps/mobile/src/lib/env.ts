@@ -19,3 +19,20 @@ export function hasSupabaseConfig(): boolean {
     process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim()
   );
 }
+
+export { getSupabaseUrlMisconfigHint } from "./networkErrors";
+
+/** Public Mapbox token (`pk.*`) for **P2O-A** map shell. Optional — without it the Map tab uses the static preview. */
+export function getMapboxAccessToken(): string | null {
+  const v = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
+  return v || null;
+}
+
+const DEFAULT_WEB_ORIGIN = "https://getintencity.com";
+
+/** Deployed PWA origin for server routes (feedback API). Override for local web dev. */
+export function getWebOrigin(): string | null {
+  const v = process.env.EXPO_PUBLIC_WEB_ORIGIN?.trim();
+  if (v) return v.replace(/\/+$/, "");
+  return DEFAULT_WEB_ORIGIN;
+}

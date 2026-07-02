@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { colors } from "../theme/colors";
+import { chrome } from "../theme/chrome";
 
 type ChatThreadRowProps = {
   name: string;
@@ -9,9 +10,10 @@ type ChatThreadRowProps = {
   unread?: boolean;
   isLast?: boolean;
   avatarUrl?: string | null;
+  onPress?: () => void;
 };
 
-const AVATAR_SIZE = 52;
+const AVATAR_SIZE = 56;
 
 export function ChatThreadRow({
   name,
@@ -20,9 +22,10 @@ export function ChatThreadRow({
   unread = false,
   isLast = false,
   avatarUrl,
+  onPress,
 }: ChatThreadRowProps) {
-  return (
-    <View style={[styles.row, !isLast && styles.rowBorder]}>
+  const body = (
+    <>
       <ProfileAvatar avatarUrl={avatarUrl ?? null} label={name} size={AVATAR_SIZE} />
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={1}>
@@ -36,8 +39,23 @@ export function ChatThreadRow({
         <Text style={styles.time}>{time}</Text>
         {unread ? <View style={styles.unreadDot} /> : <View style={styles.unreadSpacer} />}
       </View>
-    </View>
+    </>
   );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityHint="Opens conversation"
+        style={({ pressed }) => [styles.row, !isLast && styles.rowBorder, pressed && styles.pressed]}
+      >
+        {body}
+      </Pressable>
+    );
+  }
+
+  return <View style={[styles.row, !isLast && styles.rowBorder]}>{body}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -45,26 +63,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
   },
   rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle,
+    borderBottomColor: chrome.listDivider,
+  },
+  pressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
   },
   body: {
     flex: 1,
-    gap: 2,
     minWidth: 0,
+    gap: 3,
   },
   name: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
     color: colors.textPrimary,
   },
   preview: {
     fontSize: 14,
-    color: colors.textWhite42,
+    lineHeight: 18,
+    color: colors.textWhite55,
   },
   previewUnread: {
     color: colors.textSecondary,
@@ -77,16 +100,16 @@ const styles = StyleSheet.create({
   },
   time: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: colors.textWhite45,
   },
   unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accentActive,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#38bdf8",
   },
   unreadSpacer: {
-    width: 8,
-    height: 8,
+    width: 10,
+    height: 10,
   },
 });

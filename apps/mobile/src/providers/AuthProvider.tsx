@@ -1,5 +1,8 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { clearSessionCaches } from "../lib/clearSessionCaches";
+import { unregisterNativePushSubscriptions } from "../lib/nativePushSubscription";
+import { clearUserPresenceOnSignOut } from "../lib/userPresenceWrite";
 import { supabase } from "../lib/supabase/client";
 
 type AuthContextValue = {
@@ -17,12 +20,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-
-    supabase.auth.getSession().then(({ data }) => {
+    const bootTimeout = setTimeout(() => {
       if (!mounted) return;
-      setSession(data.session ?? null);
       setLoading(false);
-    });
+    }, 8_000);
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mounted) return;
+        setSession(data.session ?? null);
+        setLoading(false);
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          console.warn("[auth] getSession failed:", error);
+        }
+        if (!mounted) return;
+        setSession(null);
+        setLoading(false);
+      });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
@@ -31,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(bootTimeout);
       subscription.subscription.unsubscribe();
     };
   }, []);
@@ -41,8 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       loading,
       signOut: async () => {
+        const uid = session?.user?.id;
+        if (uid) {
+          await clearUserPresenceOnSignOut(uid);
+          await unregisterNativePushSubscriptions(uid);
+        }
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
+        clearSessionCaches();
       },
     }),
     [session, loading]

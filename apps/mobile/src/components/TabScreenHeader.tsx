@@ -1,37 +1,91 @@
+import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { PhaseBadge } from "./PhaseBadge";
 import { colors } from "../theme/colors";
+import { chrome } from "../theme/chrome";
 
 type TabScreenHeaderProps = {
   title: string;
-  subtitle: string;
-  phaseLabel?: string;
+  subtitle?: ReactNode;
+  centerSlot?: ReactNode;
+  rightSlot?: ReactNode;
 };
 
-export function TabScreenHeader({ title, subtitle, phaseLabel }: TabScreenHeaderProps) {
+/** Hub / Messages / Profile tab titles — shared divider + typography. */
+export function TabScreenHeader({ title, subtitle, centerSlot, rightSlot }: TabScreenHeaderProps) {
   return (
     <View style={styles.wrap}>
-      <PhaseBadge label={phaseLabel} />
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.subtitle}>{subtitle}</Text>
+      <View style={[styles.row, centerSlot != null && styles.rowWithCenter]}>
+        <View style={styles.textCol}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          {subtitle != null ? (
+            typeof subtitle === "string" ? (
+              <Text style={styles.subtitle} numberOfLines={2}>
+                {subtitle}
+              </Text>
+            ) : (
+              subtitle
+            )
+          ) : null}
+        </View>
+        {centerSlot != null ? (
+          <View style={styles.center} pointerEvents="box-none">
+            {centerSlot}
+          </View>
+        ) : null}
+        {rightSlot ? <View style={styles.right}>{rightSlot}</View> : null}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 10,
-    marginBottom: 20,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: chrome.hairlineWidth,
+    borderBottomColor: chrome.pageHeaderBorder,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    minHeight: 44,
+  },
+  rowWithCenter: {
+    position: "relative",
+  },
+  textCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  center: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
   },
   title: {
-    fontSize: 26,
+    fontSize: 20,
     fontWeight: "700",
-    letterSpacing: -0.5,
+    letterSpacing: -0.35,
     color: colors.textPrimary,
   },
   subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textWhite42,
+  },
+  right: {
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 44,
+    minHeight: 44,
+    zIndex: 1,
   },
 });

@@ -1,5 +1,7 @@
 import type { HubShareFeedItem } from "../types/hubFeed";
+import { normalizeShareAspect } from "./shareAspect";
 import { isStoryRowShareFlag } from "./hubFeedSemantics";
+import { profileUsernameLabel } from "./profileDisplay";
 import { supabase } from "./supabase/client";
 
 /**
@@ -7,8 +9,10 @@ import { supabase } from "./supabase/client";
  * Phase 2M — no writes, no `user_presence`, no realtime.
  * Production `stories` uses `image_url` only — do not select `media_url` (column may not exist in DB).
  */
-const STORY_COLUMNS =
-  "id, user_id, image_url, created_at, expires_at, is_share, share_visible, share_hidden" as const;
+const STORY_COLUMN_VARIANTS = [
+  "id, user_id, image_url, created_at, expires_at, is_share, share_visible, share_hidden, share_aspect",
+  "id, user_id, image_url, created_at, expires_at, is_share, share_visible, share_hidden",
+] as const;
 
 const PROFILE_COLUMNS = "id, username, display_name, avatar_url" as const;
 const STORY_LIMIT = 200;
@@ -28,6 +32,7 @@ type RawStory = {
   is_share?: unknown;
   share_visible?: boolean | null;
   share_hidden?: boolean | null;
+  share_aspect?: string | null;
 };
 
 function shareImageUrlFromRow(row: RawStory): string {
@@ -41,38 +46,44 @@ type ProfileRow = {
   avatar_url: string | null;
 };
 
-function displayHandle(p: ProfileRow): string {
-  const d = p.display_name?.trim();
-  if (d) return d;
-  const u = p.username?.trim();
-  if (u) return `@${u}`;
-  return "Member";
-}
-
 export async function fetchHubFeedPreview(meId: string, friendIds: string[]): Promise<FetchHubFeedPreviewResult> {
   const allowedIds = Array.from(new Set([meId, ...friendIds]));
   if (allowedIds.length === 0) {
     return { shares: [], error: null };
   }
 
-  const { data, error } = await supabase
-    .from("stories")
-    .select(STORY_COLUMNS)
-    .in("user_id", allowedIds)
-    .order("created_at", { ascending: false })
-    .limit(STORY_LIMIT);
+  let rows: RawStory[] = [];
+  let fetchError: string | null = null;
 
-  if (error) {
-    return { shares: [], error: error.message };
+  for (const columns of STORY_COLUMN_VARIANTS) {
+    const { data, error } = await supabase
+      .from("stories")
+      .select(columns)
+      .in("user_id", allowedIds)
+      .order("created_at", { ascending: false })
+      .limit(STORY_LIMIT);
+
+    if (!error) {
+      rows = (data ?? []) as unknown as RawStory[];
+      fetchError = null;
+      break;
+    }
+    fetchError = error.message;
+    if (!/column\s+.+\s+does not exist/i.test(fetchError)) {
+      return { shares: [], error: fetchError };
+    }
   }
 
-  const rows = (data ?? []) as RawStory[];
+  if (fetchError) {
+    return { shares: [], error: fetchError };
+  }
 
   const shareRows = rows.filter((row) => {
     if (!row?.id || !row.user_id) return false;
     if (!isStoryRowShareFlag(row.is_share)) return false;
     if (row.share_hidden === true) return false;
-    if (row.share_visible === false) return false;
+    const isOwn = row.user_id === meId;
+    if (!isOwn && row.share_visible === false) return false;
     const img = shareImageUrlFromRow(row);
     return !!img;
   });
@@ -102,8 +113,11 @@ export async function fetchHubFeedPreview(meId: string, friendIds: string[]): Pr
       user_id: row.user_id,
       image_url: shareImageUrlFromRow(row),
       created_at: row.created_at,
-      username: prof ? displayHandle(prof) : "Member",
+      username: prof ? profileUsernameLabel(prof, "Member") : "Member",
       avatar_url: prof?.avatar_url ?? null,
+      share_hidden: row.share_hidden === true,
+      share_aspect: normalizeShareAspect(row.share_aspect),
+      profile_slug: prof?.username?.trim().replace(/^@/, "") ?? null,
     };
   });
 

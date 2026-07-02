@@ -6,6 +6,7 @@ import {
   getNotificationPreferences,
 } from "@/lib/notifications";
 import { isFriendOnlineNow, isPresenceLive, isValidCoordinatePair } from "@/lib/presence";
+import { maybeEarnProfileVenue } from "@/lib/profileVenues";
 import { upsertUserPresenceGhostSafeCoords } from "@/lib/userPresenceWrite";
 
 export type VenueForPresenceSync = {
@@ -106,6 +107,13 @@ export async function syncUserPresenceWithVenuesFromCoords(
   if (upErr) {
     return { error: new Error(upErr.message) };
   }
+
+  await maybeEarnProfileVenue(supabase, {
+    userId,
+    venueId,
+    zoneType,
+    enteredInnerAt,
+  });
 
   let actorLabel =
     typeof args.actorLabel === "string" && args.actorLabel.trim()

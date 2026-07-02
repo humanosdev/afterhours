@@ -1,8 +1,10 @@
 import { StyleSheet, TextInput, type TextInputProps } from "react-native";
 import { colors } from "../theme/colors";
+import { layout } from "../theme/layout";
 
 type AppTextFieldProps = TextInputProps;
 
+/** PWA auth input — `rounded-xl bg-white/5 border-white/10 p-3`. */
 export function AppTextField(props: AppTextFieldProps) {
   return (
     <TextInput
@@ -16,12 +18,12 @@ export function AppTextField(props: AppTextFieldProps) {
 const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
-    borderColor: colors.glassBorder,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderColor: colors.inputBorder,
+    borderRadius: layout.inputRadius,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     fontSize: 16,
     color: colors.textPrimary,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: colors.inputBg,
   },
 });

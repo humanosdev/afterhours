@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { checkUsernameAvailable } from "@/lib/checkUsernameAvailable";
 import { ensureProfileExists } from "@/lib/ensureProfile";
 import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
 import { AuthScreenShell } from "@/components/AuthScreenShell";
@@ -52,16 +53,17 @@ export default function UsernameOnboardingPage() {
 
     let cancelled = false;
     setChecking(true);
+    setMsg(null);
 
     (async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id")
-        .ilike("username", username)
-        .limit(1);
-
+      if (!userId) {
+        if (!cancelled) setChecking(false);
+        return;
+      }
+      const { available: free, error } = await checkUsernameAvailable(username, userId);
       if (!cancelled) {
-        setAvailable(!data || data.length === 0);
+        setAvailable(error ? null : free);
+        if (error) setMsg("Could not check username. Try again.");
         setChecking(false);
       }
     })();
@@ -69,7 +71,7 @@ export default function UsernameOnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [username]);
+  }, [username, userId]);
 
   async function saveUsername() {
     if (!userId || !available) return;
@@ -89,7 +91,7 @@ export default function UsernameOnboardingPage() {
       );
 
     if (error) {
-      setMsg("Username already taken.");
+      setMsg(error.code === "23505" ? "Username already taken." : "Could not save username. Try again.");
       setSaving(false);
       return;
     }
@@ -119,7 +121,7 @@ export default function UsernameOnboardingPage() {
           <span className="text-green-400">Available</span>
         )}
         {!checking && available === false && (
-          <span className="text-red-400">Taken</span>
+          <span className="text-red-400">Not available</span>
         )}
       </div>
 

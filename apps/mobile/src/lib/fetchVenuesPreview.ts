@@ -4,7 +4,8 @@ import { supabase } from "./supabase/client";
 /** Keep payload small; order is stable for UI. RLS decides visibility per project. */
 const VENUE_LIMIT = 60;
 
-const VENUE_COLUMNS = "id, name, category, lat, lng" as const;
+const VENUE_COLUMNS =
+  "id, name, category, lat, lng, image_url, photo_url, cover_image_url, context_copy, inner_radius_m, outer_radius_m" as const;
 
 export type FetchVenuesPreviewResult = {
   venues: VenuePublic[];
@@ -17,6 +18,12 @@ type VenueRow = {
   category?: string | null;
   lat?: number | null;
   lng?: number | null;
+  image_url?: string | null;
+  photo_url?: string | null;
+  cover_image_url?: string | null;
+  context_copy?: unknown;
+  inner_radius_m?: number | null;
+  outer_radius_m?: number | null;
 };
 
 function normalizeRow(row: VenueRow): VenuePublic | null {
@@ -29,6 +36,18 @@ function normalizeRow(row: VenueRow): VenuePublic | null {
     category: row.category == null ? null : String(row.category),
     lat: typeof row.lat === "number" && Number.isFinite(row.lat) ? row.lat : null,
     lng: typeof row.lng === "number" && Number.isFinite(row.lng) ? row.lng : null,
+    image_url: row.image_url == null ? null : String(row.image_url),
+    photo_url: row.photo_url == null ? null : String(row.photo_url),
+    cover_image_url: row.cover_image_url == null ? null : String(row.cover_image_url),
+    context_copy: row.context_copy ?? null,
+    inner_radius_m:
+      typeof row.inner_radius_m === "number" && Number.isFinite(row.inner_radius_m)
+        ? row.inner_radius_m
+        : undefined,
+    outer_radius_m:
+      typeof row.outer_radius_m === "number" && Number.isFinite(row.outer_radius_m)
+        ? row.outer_radius_m
+        : undefined,
   };
 }
 
@@ -36,12 +55,12 @@ function normalizeRow(row: VenueRow): VenuePublic | null {
  * Phase 2L — read-only `venues` rows for Hub / Map shells.
  * No writes, no `user_presence`, no device location.
  */
-export async function fetchVenuesPreview(): Promise<FetchVenuesPreviewResult> {
+async function fetchVenuesWithLimit(limit: number): Promise<FetchVenuesPreviewResult> {
   const { data, error } = await supabase
     .from("venues")
     .select(VENUE_COLUMNS)
     .order("name", { ascending: true })
-    .limit(VENUE_LIMIT);
+    .limit(limit);
 
   if (error) {
     return { venues: [], error: error.message };
@@ -54,4 +73,14 @@ export async function fetchVenuesPreview(): Promise<FetchVenuesPreviewResult> {
   }
 
   return { venues, error: null };
+}
+
+/** Phase 2L — read-only `venues` rows for Hub / Map shells. */
+export async function fetchVenuesPreview(): Promise<FetchVenuesPreviewResult> {
+  return fetchVenuesWithLimit(VENUE_LIMIT);
+}
+
+/** PWA `/live-places` — full catalog for heat-ranked leaderboard. */
+export async function fetchVenuesCatalog(): Promise<FetchVenuesPreviewResult> {
+  return fetchVenuesWithLimit(500);
 }

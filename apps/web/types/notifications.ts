@@ -32,6 +32,7 @@ export type NotificationWithMeta = NotificationRow & {
   actor_label?: string | null;
   actor_avatar_url?: string | null;
   venue_name?: string | null;
+  story_is_share?: boolean | null;
   /** Synthetic grouped row: underlying notification ids */
   grouped_row_ids?: string[];
   /** Up to three distinct actors in a grouped bundle (for avatar stack) */

@@ -1,12 +1,14 @@
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from "react-native";
 import { colors } from "../theme/colors";
+import { layout } from "../theme/layout";
 
 type PrimaryButtonProps = {
   label: string;
   onPress: () => void;
   loading?: boolean;
   disabled?: boolean;
-  variant?: "primary" | "ghost";
+  /** `auth` = PWA white pill; `accent` = brand violet; `ghost` = outline */
+  variant?: "auth" | "accent" | "ghost";
 };
 
 export function PrimaryButton({
@@ -14,9 +16,10 @@ export function PrimaryButton({
   onPress,
   loading = false,
   disabled = false,
-  variant = "primary",
+  variant = "accent",
 }: PrimaryButtonProps) {
   const isDisabled = disabled || loading;
+  const isAuth = variant === "auth";
   const isGhost = variant === "ghost";
 
   return (
@@ -27,15 +30,17 @@ export function PrimaryButton({
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.base,
-        isGhost ? styles.ghost : styles.primary,
+        isAuth && styles.auth,
+        !isAuth && !isGhost && styles.accent,
+        isGhost && styles.ghost,
         pressed && !isDisabled && styles.pressed,
         isDisabled && styles.disabled,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={isGhost ? colors.textPrimary : colors.textPrimary} />
+        <ActivityIndicator color={isAuth ? "#0a0c18" : colors.textPrimary} />
       ) : (
-        <Text style={[styles.label, isGhost && styles.ghostLabel]}>{label}</Text>
+        <Text style={[styles.label, isAuth && styles.authLabel, isGhost && styles.ghostLabel]}>{label}</Text>
       )}
     </Pressable>
   );
@@ -44,16 +49,26 @@ export function PrimaryButton({
 const styles = StyleSheet.create({
   base: {
     minHeight: 48,
-    borderRadius: 999,
+    borderRadius: layout.inputRadius,
     paddingHorizontal: 20,
-    paddingVertical: 13,
+    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  primary: {
+  auth: {
+    backgroundColor: "#ffffff",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#fff",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.12,
+        shadowRadius: 0,
+      },
+      default: {},
+    }),
+  },
+  accent: {
     backgroundColor: colors.accent,
-    borderRadius: 999,
-    minHeight: 50,
     ...Platform.select({
       ios: {
         shadowColor: colors.accent,
@@ -69,18 +84,21 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: colors.glassBorder,
-    borderRadius: 999,
   },
   pressed: {
-    opacity: 0.88,
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
   },
   disabled: {
-    opacity: 0.55,
+    opacity: 0.6,
   },
   label: {
     color: colors.textPrimary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
+  },
+  authLabel: {
+    color: "#000000",
   },
   ghostLabel: {
     color: colors.textSecondary,

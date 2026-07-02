@@ -1,10 +1,26 @@
 "use client";
 
-import { appConfig } from "@/lib/appConfig";
+import { isMarketingSite } from "@/lib/webSiteMode";
+import { MarketingDocumentPage } from "@/components/marketing/MarketingDocumentPage";
+import { privacyLastUpdated, privacySections } from "@/content/legalCopy";
 import { useRouter } from "next/navigation";
 import { navigateBack, SubpageBackButton } from "@/components/AppSubpageHeader";
 
 export default function PrivacyPage() {
+  if (isMarketingSite()) {
+    return (
+      <MarketingDocumentPage
+        title="Privacy Policy"
+        lastUpdated={privacyLastUpdated}
+        sections={privacySections}
+      />
+    );
+  }
+
+  return <AppPrivacyPage />;
+}
+
+function AppPrivacyPage() {
   const router = useRouter();
 
   return (
@@ -14,39 +30,21 @@ export default function PrivacyPage() {
           <SubpageBackButton onBack={() => navigateBack(router, "/settings")} />
           <h1 className="min-w-0 flex-1 text-[1.25rem] font-bold tracking-tight">Privacy Policy</h1>
         </div>
-        <p className="mt-3 text-sm text-white/60">
-          Last updated: {new Date().toLocaleDateString()}
-        </p>
+        <p className="mt-3 text-sm text-white/60">Last updated: {privacyLastUpdated}</p>
 
         <div className="mt-8 space-y-6 text-sm leading-relaxed text-white/85">
-          <section>
-            <h2 className="text-white font-semibold mb-2">What we collect</h2>
-            <p>
-              {appConfig.appName} uses profile, presence, and social graph data to power real-time nightlife
-              awareness. We collect account info, profile details, and location presence needed to show live
-              venue activity.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-white font-semibold mb-2">How data is used</h2>
-            <p>
-              We use your data to show where friends are active, generate venue activity, and power chat and
-              notifications. We do not sell personal data.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-white font-semibold mb-2">Controls</h2>
-            <p>
-              You can edit your profile, block users, and manage notification preferences in settings. For
-              support requests, contact {appConfig.supportEmail}. For general questions about this policy,
-              contact {appConfig.contactEmail}.
-            </p>
-          </section>
+          {privacySections.map((section, i) => (
+            <section key={i}>
+              {section.heading ? (
+                <h2 className="mb-2 font-semibold text-white">{section.heading}</h2>
+              ) : null}
+              {section.paragraphs.map((p, j) => (
+                <p key={j}>{p}</p>
+              ))}
+            </section>
+          ))}
         </div>
       </div>
     </div>
   );
 }
-

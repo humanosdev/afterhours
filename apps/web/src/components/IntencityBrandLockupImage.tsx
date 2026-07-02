@@ -20,8 +20,8 @@ export function IntencityBrandLockupImage({
 }) {
   const sizeClass =
     variant === "splash"
-      ? "w-full max-w-[min(98vw,48rem)] sm:max-w-[min(96vw,60rem)] max-h-[min(72dvh,48rem)] sm:max-h-[min(78dvh,54rem)]"
-      : "w-full max-w-[min(98vw,44rem)] sm:max-w-[min(96vw,54rem)] max-h-[min(58dvh,40rem)] sm:max-h-[min(64dvh,44rem)]";
+      ? "w-full max-w-[min(98vw,52rem)] sm:max-w-[min(96vw,60rem)] max-h-[min(76dvh,50rem)] sm:max-h-[min(80dvh,54rem)]"
+      : "w-full max-w-[min(98vw,44rem)] sm:max-w-[min(96vw,54rem)] max-h-[min(62dvh,42rem)] sm:max-h-[min(66dvh,44rem)]";
 
   return (
     // eslint-disable-next-line @next/next/no-img-element -- static public PNG; avoids next/image remote config

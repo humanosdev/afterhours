@@ -1,9 +1,26 @@
 "use client";
 
+import { isMarketingSite } from "@/lib/webSiteMode";
+import { MarketingDocumentPage } from "@/components/marketing/MarketingDocumentPage";
+import { guidelinesSections } from "@/content/legalCopy";
 import { useRouter } from "next/navigation";
 import { navigateBack, SubpageBackButton } from "@/components/AppSubpageHeader";
 
 export default function GuidelinesPage() {
+  if (isMarketingSite()) {
+    return (
+      <MarketingDocumentPage
+        title="Community Guidelines"
+        subtitle="Keep Intencity safe, social, and respectful."
+        sections={guidelinesSections}
+      />
+    );
+  }
+
+  return <AppGuidelinesPage />;
+}
+
+function AppGuidelinesPage() {
   const router = useRouter();
 
   return (
@@ -16,11 +33,9 @@ export default function GuidelinesPage() {
         <p className="text-sm text-white/60">Keep Intencity safe, social, and respectful.</p>
 
         <div className="mt-8 space-y-5 text-sm leading-relaxed text-white/85">
-          <p>Respect other people’s privacy and boundaries.</p>
-          <p>No harassment, threats, or hateful behavior.</p>
-          <p>No fake accounts, impersonation, or manipulative activity.</p>
-          <p>Report unsafe behavior and use block features when needed.</p>
-          <p>Repeated violations may result in account restrictions.</p>
+          {guidelinesSections.flatMap((s) => s.paragraphs).map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
         </div>
       </div>
     </div>

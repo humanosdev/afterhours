@@ -75,6 +75,8 @@ export default function StoryCameraModal({
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [cameraUnavailable, setCameraUnavailable] = useState(false);
+  /** True only after `getUserMedia` stream is attached and `video.play()` succeeds — never overlap with unavailable UI. */
+  const [streamReady, setStreamReady] = useState(false);
 
   const [cropEditUrl, setCropEditUrl] = useState<string | null>(null);
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
@@ -113,7 +115,11 @@ export default function StoryCameraModal({
   async function startCamera(nextMode: FacingMode) {
     if (!open) return;
     setStarting(true);
+    setStreamReady(false);
     stopStream();
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
 
     try {
       if (
@@ -122,6 +128,7 @@ export default function StoryCameraModal({
         typeof navigator.mediaDevices.getUserMedia !== "function"
       ) {
         setCameraUnavailable(true);
+        setStreamReady(false);
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -129,13 +136,19 @@ export default function StoryCameraModal({
         audio: false,
       });
       streamRef.current = stream;
-      setCameraUnavailable(false);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      setCameraUnavailable(false);
+      setStreamReady(true);
     } catch (err) {
       console.error("camera start error:", err);
+      stopStream();
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      setStreamReady(false);
       setCameraUnavailable(true);
     } finally {
       setStarting(false);
@@ -149,6 +162,7 @@ export default function StoryCameraModal({
     setCapturedUrl(null);
     revokeCropEditUrl();
     setCameraUnavailable(false);
+    setStreamReady(false);
     setFilterId("none");
     startCamera(facingMode);
 
@@ -231,6 +245,7 @@ export default function StoryCameraModal({
   function cancelCropStage() {
     revokeCropEditUrl();
     setCameraUnavailable(false);
+    setStreamReady(false);
     startCamera(facingMode);
   }
 
@@ -253,6 +268,7 @@ export default function StoryCameraModal({
     setCapturedUrl(null);
     revokeCropEditUrl();
     setCameraUnavailable(false);
+    setStreamReady(false);
     startCamera(facingMode);
   }
 
@@ -350,7 +366,7 @@ export default function StoryCameraModal({
 
   if (!open) return null;
 
-  const showLiveCamera = !cropEditUrl && !capturedUrl && !cameraUnavailable;
+  const showLiveCamera = !cropEditUrl && !capturedUrl && !cameraUnavailable && streamReady;
   const modeLabel = mode === "shares" ? "Share" : "Moment";
 
   return (
@@ -445,7 +461,7 @@ export default function StoryCameraModal({
               </button>
             </div>
           </div>
-        ) : (
+        ) : streamReady ? (
           <video
             ref={videoRef}
             playsInline
@@ -455,6 +471,8 @@ export default function StoryCameraModal({
               filter: activeFilterCss,
             }}
           />
+        ) : (
+          <div className="h-full w-full bg-black" aria-hidden />
         )}
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black/75 to-transparent"

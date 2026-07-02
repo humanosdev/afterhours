@@ -295,7 +295,7 @@ export default function LivePlacesPage() {
           <div className="min-w-0 flex-1 pt-0.5">
             <div className="flex items-center gap-2">
               <MapPin className="shrink-0 text-accent-violet-active/95" size={20} strokeWidth={2.2} aria-hidden />
-              <h1 className="text-[1.2rem] font-bold leading-tight tracking-tight">Live Places</h1>
+              <h1 className="text-[1.2rem] font-bold leading-tight tracking-tight">Live Venues</h1>
             </div>
             <p className="mt-1.5 pl-[2px] text-[12px] font-medium leading-snug text-white/44">
               Pins ranked by heat — your crew lifts a venue in the stack.

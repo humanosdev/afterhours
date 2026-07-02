@@ -1,25 +1,20 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Image, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { AppTextField } from "../../src/components/AppTextField";
-import { GlassSurface } from "../../src/components/GlassSurface";
-import { PhaseBadge } from "../../src/components/PhaseBadge";
+import { AuthBackButton } from "../../src/components/AuthBackButton";
+import { AuthFormLayout } from "../../src/components/AuthFormLayout";
+import { AuthTextLink } from "../../src/components/AuthTextLink";
+import { IntencityBrandLockup } from "../../src/components/IntencityBrandLockup";
+import { LegalTextLinks } from "../../src/components/LegalTextLinks";
 import { PrimaryButton } from "../../src/components/PrimaryButton";
-import { Screen } from "../../src/components/Screen";
+import { resolvePostAuthHref } from "../../src/lib/authRouting";
+import { mapLoginError } from "../../src/lib/authValidation";
+import { ensureProfileExists } from "../../src/lib/ensureProfile";
 import { supabase } from "../../src/lib/supabase/client";
+import { authBrandSpacing } from "../../src/theme/brandLockup";
 import { colors } from "../../src/theme/colors";
-import { layout } from "../../src/theme/layout";
-
-function mapLoginError(raw: string) {
-  const text = raw.toLowerCase();
-  if (text.includes("invalid login credentials")) {
-    return "Email or password is incorrect.";
-  }
-  if (text.includes("email not confirmed")) {
-    return "Please verify your email before logging in.";
-  }
-  return "Unable to log in right now. Please try again.";
-}
+import { typography } from "../../src/theme/typography";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -27,6 +22,15 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(async ({ data }) => {
+      const session = data.session;
+      if (!session?.user?.id) return;
+      const dest = await resolvePostAuthHref(session.user.id);
+      router.replace(dest);
+    });
+  }, [router]);
 
   async function onLogin() {
     const trimmedEmail = email.trim();
@@ -46,158 +50,122 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (error) {
-      setMessage(mapLoginError(error.message));
+      setMessage(mapLoginError(error));
       return;
     }
 
-    router.replace("/hub");
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+    if (!session?.user?.id) {
+      setMessage("Please verify your email before logging in.");
+      return;
+    }
+
+    await ensureProfileExists(session.user.id);
+    try {
+      await supabase.rpc("reactivate_my_account_after_login");
+    } catch {
+      /* RPC optional — mirrors web login when unavailable */
+    }
+
+    const dest = await resolvePostAuthHref(session.user.id);
+    router.replace(dest);
   }
 
   return (
-    <Screen scroll>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <View style={styles.hero}>
-          <PhaseBadge label="Sign in" />
-          <View style={styles.brand}>
-            <Image
-              accessibilityIgnoresInvertColors
-              source={require("../../assets/icon.png")}
-              style={styles.brandLogo}
-              resizeMode="contain"
-            />
-            <Text style={styles.brandWord}>Intencity</Text>
-            <Text style={styles.slogan}>
-              Live the city, feel the <Text style={styles.sloganAccent}>intencity</Text>.
-            </Text>
-            <Text style={styles.heroSub}>Same account as web/PWA.</Text>
-          </View>
+    <AuthFormLayout
+      header={
+        <>
+          <AuthBackButton onPress={() => router.replace("/")} />
+          <IntencityBrandLockup variant="auth" style={styles.lockup} />
+          <Text style={typography.authTitle}>Log in</Text>
+        </>
+      }
+    >
+      <View style={styles.form}>
+        <AppTextField
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          editable={!loading}
+        />
+        <AppTextField
+          autoCapitalize="none"
+          autoComplete="password"
+          placeholder="Password"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          editable={!loading}
+          onSubmitEditing={onLogin}
+        />
+
+        <View style={styles.forgotRow}>
+          <AuthTextLink label="Forgot password?" onPress={() => router.push("/forgot-password")} />
         </View>
 
-        <GlassSurface style={styles.card} muted>
-          <Text style={styles.cardTitle}>Welcome back</Text>
-          <Text style={styles.cardHint}>Use the same credentials as the web app.</Text>
+        {message ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.error}>{message}</Text>
+          </View>
+        ) : null}
 
-          <AppTextField
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            editable={!loading}
-          />
-          <AppTextField
-            autoCapitalize="none"
-            autoComplete="password"
-            placeholder="Password"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            editable={!loading}
-            onSubmitEditing={onLogin}
-          />
+        <PrimaryButton
+          label={loading ? "Logging in…" : "Log in"}
+          variant="auth"
+          onPress={onLogin}
+          loading={loading}
+        />
 
-          {message ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.error}>{message}</Text>
-            </View>
-          ) : null}
+        <Text style={styles.signupLine}>
+          Don&apos;t have an account?{" "}
+          <Text style={styles.signupLink} onPress={() => router.push("/signup")}>
+            Sign up
+          </Text>
+        </Text>
 
-          <PrimaryButton label="Sign in" onPress={onLogin} loading={loading} />
-        </GlassSurface>
-
-        <Text style={styles.footer}>Production map and presence stay on web/PWA.</Text>
-      </KeyboardAvoidingView>
-    </Screen>
+        <LegalTextLinks prefix="By continuing, you agree to our " />
+      </View>
+    </AuthFormLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    justifyContent: "center",
-    gap: 24,
-    paddingVertical: 12,
+  lockup: {
+    marginBottom: authBrandSpacing.lockupMarginBottom,
   },
-  hero: {
-    alignItems: "center",
-    gap: 20,
+  form: {
+    marginTop: authBrandSpacing.titleToFormGap,
+    gap: 16,
+    width: "100%",
   },
-  brand: {
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  brandLogo: {
-    width: 72,
-    height: 72,
-    marginBottom: 4,
-  },
-  brandWord: {
-    fontSize: 32,
-    fontWeight: "700",
-    letterSpacing: -0.8,
-    color: colors.textPrimary,
-  },
-  slogan: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: colors.textWhite55,
-    textAlign: "center",
-    lineHeight: 19,
-    maxWidth: 320,
-    marginTop: 2,
-  },
-  sloganAccent: {
-    fontWeight: "700",
-    color: colors.accentActive,
-  },
-  heroSub: {
-    fontSize: 13,
-    color: colors.textWhite42,
-    textAlign: "center",
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  card: {
-    borderRadius: layout.cardRadius,
-    padding: 22,
-    gap: 14,
-    borderColor: colors.glassBorder,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    letterSpacing: -0.2,
-  },
-  cardHint: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textWhite42,
-    marginBottom: 2,
+  forgotRow: {
+    alignItems: "flex-end",
+    marginTop: -4,
   },
   errorBox: {
     padding: 12,
-    borderRadius: layout.cardRadius,
-    backgroundColor: colors.dangerMuted,
+    borderRadius: 14,
+    backgroundColor: colors.errorMuted,
     borderWidth: 1,
-    borderColor: "rgba(255, 107, 122, 0.28)",
+    borderColor: "rgba(248, 113, 113, 0.3)",
   },
   error: {
-    color: colors.danger,
+    color: colors.errorText,
     fontSize: 14,
     lineHeight: 20,
   },
-  footer: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.textWhite42,
+  signupLine: {
+    fontSize: 14,
+    color: colors.textSecondary,
     textAlign: "center",
-    paddingHorizontal: 24,
-    marginBottom: 8,
+    marginTop: 4,
+  },
+  signupLink: {
+    fontWeight: "500",
+    color: colors.accent,
   },
 });

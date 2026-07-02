@@ -12,6 +12,16 @@ import { Trash2 } from "lucide-react";
 import {
   decodeFriendRequestNotificationPreview,
 } from "@/lib/notifications";
+import { groupNotificationFeedItems } from "@/lib/groupNotificationFeed";
+import {
+  isGroupedStoryEngagementFeedRow,
+  isStoryEngagementGroupType,
+  storyEngagementCommentLine,
+  storyEngagementGroupedSubtext,
+  storyEngagementLikeLine,
+  storyEngagementSurfaceFromShareFlag,
+} from "@intencity/shared";
+import { isStoryRowShareFlag } from "@/lib/storyRowShare";
 import { profileHref } from "@/lib/profileRoutes";
 import { getPairBlockStatus, getBlockDirections, idsBlockedWithMe } from "@/lib/pairBlockStatus";
 import {
@@ -43,6 +53,13 @@ async function enrichNotificationRows(rows: RawNotification[], meId: string): Pr
   if (rows.length === 0) return [];
   const actorIds = Array.from(new Set(rows.map((n) => n.actor_user_id).filter(Boolean)));
   const venueIds = Array.from(new Set(rows.map((n) => n.venue_id).filter(Boolean)));
+  const storyIds = Array.from(
+    new Set(
+      rows
+        .filter((n) => (n.type === "story_like" || n.type === "story_comment") && n.story_id)
+        .map((n) => n.story_id as string)
+    )
+  );
   const { theyBlockedMe, iBlockedThem } = await getBlockDirections(supabase, meId);
 
   const actorLabelFor = (actorId: string, meta: { username: string | null; display_name: string | null }) => {
@@ -74,6 +91,14 @@ async function enrichNotificationRows(rows: RawNotification[], meId: string): Pr
     });
   }
 
+  const storyShareById: Record<string, boolean> = {};
+  if (storyIds.length) {
+    const { data: storyRows } = await supabase.from("stories").select("id, is_share").in("id", storyIds);
+    (storyRows ?? []).forEach((row: { id: string; is_share?: boolean | null }) => {
+      storyShareById[row.id] = isStoryRowShareFlag(row.is_share);
+    });
+  }
+
   return rows.map((n) => {
     const meta = actorById[n.actor_user_id] ?? { username: null, display_name: null, avatar_url: null };
     const friendReqType = n.type === "friend_request_received" || n.type === "friend_request_accepted";
@@ -97,6 +122,10 @@ async function enrichNotificationRows(rows: RawNotification[], meId: string): Pr
       actor_avatar_url: merged.avatar_url ?? null,
       actor_label,
       venue_name: n.venue_id ? venueById[n.venue_id] ?? null : null,
+      story_is_share:
+        n.story_id && (n.type === "story_like" || n.type === "story_comment")
+          ? (storyShareById[n.story_id] ?? null)
+          : null,
     };
   });
 }
@@ -328,71 +357,7 @@ export default function NotificationsPage() {
     };
   }, [meId, loadFriendRequestStrip]);
 
-  const groupedItems = useMemo(() => {
-    const bundleMap = new Map<string, NotificationWithMeta[]>();
-    const passthrough: NotificationWithMeta[] = [];
-    for (const n of items) {
-      if ((n.type === "story_like" || n.type === "story_comment") && n.story_id) {
-        const key = `${n.type}:${n.story_id}`;
-        const arr = bundleMap.get(key) ?? [];
-        arr.push(n);
-        bundleMap.set(key, arr);
-      } else {
-        passthrough.push(n);
-      }
-    }
-    const bundles: NotificationWithMeta[] = [];
-    for (const [key, arr] of bundleMap.entries()) {
-      const distinctActors = Array.from(new Set(arr.map((x) => x.actor_user_id)));
-      if (distinctActors.length >= 3) {
-        const sorted = arr.slice().sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-        const latest = sorted[0];
-        const previewIds = distinctActors.slice(0, 3);
-        const group_preview_avatars = previewIds.map((id) => {
-          const hit = arr.find((r) => r.actor_user_id === id);
-          return hit?.actor_avatar_url ?? null;
-        });
-        const group_preview_usernames = previewIds.map((id) => {
-          const hit = arr.find((r) => r.actor_user_id === id);
-          return hit?.actor_username ?? hit?.actor_display_name ?? null;
-        });
-        const anyUnread = arr.some((r) => !r.read);
-        const namesForHeadline = previewIds
-          .map((id) => {
-            const hit = arr.find((r) => r.actor_user_id === id);
-            return (
-              hit?.actor_label?.trim() ||
-              hit?.actor_display_name?.trim() ||
-              hit?.actor_username?.trim() ||
-              null
-            );
-          })
-          .filter(Boolean) as string[];
-        const headline =
-          namesForHeadline.length >= 2
-            ? `${namesForHeadline[0]}, ${namesForHeadline[1]}${
-                distinctActors.length > 2 ? ` +${distinctActors.length - 2}` : ""
-              }`
-            : `${distinctActors.length} friends`;
-
-        bundles.push({
-          ...latest,
-          id: `group:${key}`,
-          read: !anyUnread,
-          grouped_row_ids: arr.map((r) => r.id),
-          group_preview_avatars,
-          group_preview_usernames,
-          group_actor_count: distinctActors.length,
-          actor_display_name: headline,
-          actor_username: null,
-          actor_avatar_url: group_preview_avatars[0] ?? null,
-        });
-      } else {
-        bundles.push(...arr);
-      }
-    }
-    return [...passthrough, ...bundles].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-  }, [items]);
+  const groupedItems = useMemo(() => groupNotificationFeedItems(items), [items]);
 
   const navigateForNotification = useCallback(
     (n: NotificationWithMeta) => {
@@ -405,12 +370,22 @@ export default function NotificationsPage() {
         openShareCommentsSheet(n.story_id);
         return;
       }
-      if ((n.type === "story_like" || n.type === "friend_story") && n.story_id) {
-        router.push(`/moments/${encodeURIComponent(n.story_id)}`);
+      if (n.type === "story_like" && n.story_id) {
+        const surface = storyEngagementSurfaceFromShareFlag(n.story_is_share);
+        if (surface === "share") {
+          router.push(`/moments/${encodeURIComponent(n.story_id)}`);
+        } else {
+          router.push("/hub");
+        }
         return;
       }
       if (n.type === "friend_story") {
-        router.push("/stories");
+        const username = n.actor_username?.trim();
+        if (username) {
+          router.push(profileHref(n.actor_username, n.actor_user_id));
+        } else {
+          router.push("/hub");
+        }
         return;
       }
       if (n.type === "friend_online" || n.type === "friend_nearby" || n.type === "friends_active_bundle") {
@@ -482,32 +457,40 @@ export default function NotificationsPage() {
     return (
       <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
         {groupedItems.map((n) => {
-          const isGrouped = !!(n.grouped_row_ids && n.grouped_row_ids.length >= 3);
+          const isGrouped = isGroupedStoryEngagementFeedRow(n);
           const actorName = n.actor_label || n.actor_display_name || n.actor_username || "Someone";
           const message =
-            n.type === "friend_online"
-              ? `${actorName} went online`
-              : n.type === "friend_nearby"
-                ? `${actorName} is nearby`
-                : n.type === "friend_joined_venue"
-                  ? `${actorName} is at ${n.venue_name ?? "a venue"}`
-                  : n.type === "friend_story"
-                    ? `${actorName} posted a new Moment`
-                    : n.type === "friend_request_received"
-                      ? `${actorName} sent you a friend request`
-                      : n.type === "friend_request_accepted"
-                        ? `You and ${actorName} are now connected`
-                        : n.type === "friends_active_bundle"
-                          ? `${actorName} and friends are out right now`
-                          : n.type === "story_like"
-                            ? isGrouped
-                              ? `${n.group_actor_count ?? 3} friends liked your post`
-                              : `${actorName} liked your post`
-                            : n.type === "story_comment"
-                              ? isGrouped
-                                ? `${n.group_actor_count ?? 3} friends commented on your post`
-                                : `${actorName} commented on your post${n.message_preview ? `: "${n.message_preview}"` : ""}`
-                              : `${n.venue_name ?? "A venue"} is heating up`;
+            isGrouped && isStoryEngagementGroupType(n.type)
+              ? storyEngagementGroupedSubtext(
+                  n.type,
+                  storyEngagementSurfaceFromShareFlag(n.story_is_share)
+                )
+              : n.type === "friend_online"
+                ? `${actorName} went online`
+                : n.type === "friend_nearby"
+                  ? `${actorName} is nearby`
+                  : n.type === "friend_joined_venue"
+                    ? `${actorName} is at ${n.venue_name ?? "a venue"}`
+                    : n.type === "friend_story"
+                      ? `${actorName} posted a new Moment`
+                      : n.type === "friend_request_received"
+                        ? `${actorName} sent you a friend request`
+                        : n.type === "friend_request_accepted"
+                          ? `You and ${actorName} are now connected`
+                          : n.type === "friends_active_bundle"
+                            ? `${actorName} and friends are out right now`
+                            : n.type === "story_like"
+                              ? storyEngagementLikeLine(
+                                  actorName,
+                                  storyEngagementSurfaceFromShareFlag(n.story_is_share)
+                                )
+                              : n.type === "story_comment"
+                                ? storyEngagementCommentLine(
+                                    actorName,
+                                    storyEngagementSurfaceFromShareFlag(n.story_is_share),
+                                    n.message_preview
+                                  )
+                                : `${n.venue_name ?? "A venue"} is heating up`;
 
           return (
             <div

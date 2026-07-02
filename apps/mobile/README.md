@@ -1,204 +1,231 @@
-# Intencity mobile (Phase 2N — read-only Chat previews)
+# Intencity mobile (Era 1 — **Mirror** PWA)
 
-Expo native app — **phased read-only scaffold** through Phase **2I** shell + **2K** friends + **2L** venues + **2M** Hub **`stories`** + **2N** **`chats`** / **`messages`** (Messages list previews). **Not** production.
+Expo native app — **Phase 2 cutover:** native is the **sole `user_presence` writer** when the app is foregrounded ([NATIVE_CUTOVER.md](../../docs/NATIVE_CUTOVER.md)). Web product presence upserts are disabled; use native for location.
 
-**Web/PWA** (`apps/web`) owns live presence, map engine, realtime shares inbox, **live** messaging (subscriptions, send, notifications). Native mirrors web **chat list initial load** using read-only **`chats`**, **`messages`**, and counterpart **`profiles`** only.
+> **Doctrine:** Native must eventually do **everything** the production PWA does, with the **same visual identity** and equal-or-better feel — **parity = exact user-facing equivalence**, not rough similarity ([Native Product Equivalence Doctrine](../../docs/MIGRATION_PHASES.md#native-product-equivalence-doctrine), [audit §11](../../docs/PWA_NATIVE_PARITY_AUDIT.md#11-full-parity-backlog-master)). **`VP-1` and `P2O-A` are scaffolds/engine only — not visual or product parity.**
 
-## Approved Supabase `.from()` (post–2N)
+**VP-1 parity routes:** see [PWA_NATIVE_PARITY_AUDIT.md §20–§21.2](../../docs/PWA_NATIVE_PARITY_AUDIT.md#20--vp-2-re-audit-remaining-native-parity-debt-2026-05-17). **`/search-discovery`** + **map tab** received VP-2 flagship chrome pass (2026-05-17). **6** `ParityPlaceholderScreen` routes remain.
+
+Open **Profile → ⋯** for shortcuts; Hub share cards open **`/moments/[id]`**; Messages rows open **`/chat/[id]`** (READ-SOCIAL-1 read-only history — no send yet). After pulling thread changes, run **`npx expo start --clear`** so Metro does not serve the old placeholder shell.
+
+**Era model:** [PRODUCTION_ERA_MODEL.md](../../docs/PRODUCTION_ERA_MODEL.md) — **`P2O-D` (writes) = Era 2 only**, after you sign off native ≥ PWA.
+
+**Implementation gate:** **`CHAT-1`✅** · **`REALTIME-1`✅** · **`NOTIF-1`✅** · **`MEDIA-1`✅** · **`SETTINGS-1`✅** · **`BLOCKS-1`✅**. Next Era 1: sign-off → Era 2 cutover. Notifications authority: **`NOTIF-2/3`** with **`P2O-D`** ([NOTIF_ERA_PLAN.md](../../docs/NOTIF_ERA_PLAN.md)).
+
+## Approved Supabase `.from()` (through **VP-2** reads/writes in use)
+
+**`P2O-A`** reuses **`fetchVenuesPreview.ts`** — same **`venues`** projection as Hub / Map list.
+
+**VP-2 social interactions** (Hub shares + `/moments/[id]`): **`story_likes`**, **`story_comments`** — read/write for likes, comments, hide/delete on **`stories`** only.
 
 | Table | Scope | Module |
 |-------|--------|--------|
 | **`profiles`** | Own row + accepted friends + chat counterpart hydrate | `fetchMyProfile.ts`, `fetchAcceptedFriends.ts`, `fetchHubFeedPreview.ts`, `fetchChatPreviews.ts` |
 | **`friend_requests`** | `status = accepted` edges where current user is requester or addressee | `fetchAcceptedFriends.ts` |
 | **`blocks`** | Rows involving current user (blocker or blocked) | `fetchAcceptedFriends.ts` |
-| **`venues`** | Read-only preview: `id, name, category, lat, lng` (ordered, capped) — Hub + Map | `fetchVenuesPreview.ts` |
-| **`stories`** | Read-only Hub **Shares**: same column filter semantics as web `loadHubFriendShares` (`user_id` in me ∪ friends, `is_share`, visibility flags), limit 200 | `fetchHubFeedPreview.ts` |
-| **`chats`** | Rows where **`user1_id`** or **`user2_id`** = signed-in user; pair dedupe like web | `fetchChatPreviews.ts` |
-| **`messages`** | Read-only: `id, chat_id, sender_id, receiver_id, content, seen, created_at` — latest **`created_at`** per **`chat_id`** for user’s chats (batched `.in()`, chunked) | `fetchChatPreviews.ts` |
-| **Auth** | Session | Supabase Auth APIs — **not** `.from()` |
+| **`venues`** | `id, name, category, lat, lng` (ordered, capped) — Hub rail + Map list + **`P2O-A`** map pins | `fetchVenuesPreview.ts` |
+| **`stories`** | Hub shares + moment detail; hide/delete owner shares | `fetchHubFeedPreview.ts`, `fetchMomentDetail.ts`, `hubShareMutations.ts` |
+| **`story_likes`** | Hub + moment detail like counts/state | `storyFeedInteractions.ts`, `hubShareMutations.ts` |
+| **`story_comments`** | Hub previews + comments sheet + moment detail | `storyFeedInteractions.ts`, `ShareCommentsBottomSheet.tsx` |
+| **`chats`** | Chats where the signed-in user is **`user1_id`** or **`user2_id`** | `fetchChatPreviews.ts` |
+| **`messages`** | List previews + thread history + **send** insert | `fetchChatPreviews.ts`, `fetchChatThread.ts`, `sendChatMessage.ts` |
+| **`notifications`** | Feed browse (NOTIF-1); native creates likes, comments, FR accepted, DMs (NOTIF-2/CHAT-1) | `createNotification.ts`, `fetchNotificationFeed.ts` |
+| **`user_presence`** | Read-only rows for map/hub/live-places (**P2O-C**) | `fetchUserPresence.ts` |
+| **Auth** | Session | Supabase Auth — **not** `.from()` |
 
-**Still forbidden:** `user_presence` (read/write through **2O** as documented), `expo-location`, Mapbox, writes beyond auth, subscriptions/realtime, any table **not** unlocked without updating [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md).
+**Forbidden in Era 1:** **`user_presence` writes** (**`P2O-D` / Era 2**), unsolicited **new** `.from(...)` without a named slice, dual-write with web.
 
-**Presence windows** (unchanged in `packages/shared`):
+**Allowed in Era 1:** **`user_presence` read**, **`expo-location`**, map/presence **display**, gated product writes per slice (stories, likes, …).
+
+**Phase 2O client helpers** (no `.from()`): **`localSearch`**, **`useLocalSearchQuery`**, **`useDebouncedValue`**.
+
+**Presence windows** (P2O-D in `packages/shared` — see [PRESENCE_WINDOWS_P2O_D.md](../../docs/PRESENCE_WINDOWS_P2O_D.md)):
 
 | Constant | Value |
 |----------|--------|
-| `MAP_ACTIVITY_WINDOW_MS` | 20 minutes |
-| `RECENT_WINDOW_MS` | 60 minutes |
-| `FRIEND_ONLINE_BADGE_MS` | 4 minutes |
+| `FRIEND_ONLINE_BADGE_MS` | 2 minutes |
+| `HEAT_ACTIVITY_WINDOW_MS` | 8 minutes |
+| `MAP_ACTIVITY_WINDOW_MS` | 12 minutes |
+| `RECENT_WINDOW_MS` | 30 minutes |
+| `INNER_CONFIRM_MS` | 90 seconds |
 
-## Planned read-only ladder (next)
+**Read polls** (Phase 3 — `backgroundReadPolicy.ts`): hub 20s / map 3s / clocks 10s / chat+unread 15s / live places 20s.
 
-| Phase | Focus |
+### Implementation roadmap (strict order)
+
+| Slice | Focus |
 |-------|--------|
-| **2O** | Integrated search — read-only |
+| **`P2O-A/B/C`** | Map engine + GPS + presence **read** — **done** ✅ |
+| **`MAP-B/C`** | Friends, heat, venue sheet, polish — **done** ✅ |
+| **CHAT-1** | Thread send — **done** ✅ |
+| **REALTIME-1** | Chat live thread + list — **done** ✅ |
+| **MEDIA-1** | Moment/share interactive crop + profile avatar upload — **done** ✅ |
+| **SETTINGS-1** | Supabase notification prefs + private account + pause/delete — **done** ✅ |
+| **BLOCKS-1** | Unblock on `/blocks` — **done** ✅ |
+| **NOTIF-1** | Notifications feed **browse** — **not** system parity |
+| **`NOTIF-2/3`** | Notification authority + badges/toasts — **Era 2** with **`P2O-D`** |
+| **`NOTIF-4`** | Device push — **Era 3** |
+| **`P2O-D`** | **`user_presence` writes** — **Era 2 only** ([PRODUCTION_ERA_MODEL.md](../../docs/PRODUCTION_ERA_MODEL.md)) |
 
-**Post–2O:** Mapbox, GPS, `user_presence` — explicit approval only.
+## Bottom navigation (**`VP-1`** + **2O** data)
 
-## Bottom navigation (Phase 2H / 2I)
-
-Floating glass-style tab bar aligned with web/PWA. Icon-only; Create is center-emphasized.
+Floating glass-style tab bar (icon-first). Center tab is branded **Moments** on-device (Expo route file: `create`).
 
 | Tab | Status |
 |-----|--------|
-| **Hub** | **2K** + **2L** + **2M** — Moments, Active friends, Live places, **Shares** (read-only) + shared smoke |
-| **Map** | Decorative canvas + **2L** venue name list — **no** Mapbox, GPS, or permissions |
-| **Create** | Share hero shell — no camera, upload, or stories pipeline |
-| **Chat** | **2N** — read-only conversation previews — **no** thread, send, or realtime |
-| **Profile** | Read-only `profiles` (2F) + **Friends count** (2K) + sign out |
+| **Hub** | **2K** + **2L** + **2M** + **2O** search — Moments rail, Active friends, Live places, Shares |
+| **Map** | Mapbox + GPS + presence markers + heat/glow + venue sheet (**dev build** for Mapbox) |
+| **Moments** | Center (`create.tsx`) → composer — **MEDIA-0.1** library pick + upload (no live camera; MEDIA-1) |
+| **Chat** | **2N** + **2O** search → **`/chat/[id]`** scaffold (**no realtime / send**) |
+| **Profile** | **2F** + **Friends** (**2K**) + overflow shells + sign-out |
 
-**Search** is **not** a permanent bottom tab. Integrated search data is **2O**.
+Integrated **2O** search on Hub · Chat · Map — **no** standalone Search tab requirement.
 
-Signed-in users land on **Hub** (`/hub`). Production map, live heat, chat, stories, moments, and presence remain on web/PWA.
+Signed-in **`(app)`** uses **`expo-router` `Stack`**: **`(tabs)`** + parity siblings (`/friends`, legal shells, etc.) mirroring web IA without implying parity-complete behavior (**`ParityPlaceholderScreen`** where noted).
 
-Does not write `user_presence`, read `user_presence`, or use device location.
+Signed-in landing: **Map** (`/map`). Hub remains available from the tab bar.
 
 ## Environment
 
-1. Copy the example file:
-
-```bash
-cp apps/mobile/.env.example apps/mobile/.env
-```
-
-2. Open root `.env.local` and copy the **same** Supabase values into `apps/mobile/.env`:
+1. **`cp apps/mobile/.env.example apps/mobile/.env`**
+2. Copy root **`.env.local`** Supabase vars:
 
 | Root `.env.local` (web) | `apps/mobile/.env` (Expo) |
 |-------------------------|---------------------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | `EXPO_PUBLIC_SUPABASE_URL` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `EXPO_PUBLIC_SUPABASE_ANON_KEY` |
 
-**Required variables:**
+**Required**
 
 ```bash
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-- Use the **same** Supabase project as web.
-- **Never** put `SUPABASE_SERVICE_ROLE_KEY` or other secrets in mobile env.
-- `apps/mobile/.env` and `apps/mobile/.env.local` are gitignored.
+### Mapbox (`P2O-A`)
 
-## Local testing on your phone (Expo Go)
+```bash
+# Public Mapbox token (starts with pk.) — same style of token as typical Mapbox GL / web setups.
+EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.…your_token…
+```
 
-From the **repository root**:
+- Without this variable, **Map** keeps the **static / decorative preview** (still **`venues`** list from Supabase).
+- **Never** commit service tokens or secrets intended for downloads CI unless your team explicitly wires that flow (prefer env + EAS secrets).
+- **`@rnmapbox/maps`** **Expo config plugin** is registered in **`app.config.ts`**. Changing native Mapbox wiring requires **`npx expo prebuild`** (clean ios/android dirs) whenever you regenerate native projects.
+
+### Optional CI / Gradle (downloads)
+
+Some Mapbox Android builds still respect **`RNMAPBOX_MAPS_DOWNLOAD_TOKEN`** / **`MAPBOX_DOWNLOADS_TOKEN`** env / `gradle.properties` entries if your workspace policy requires authenticated downloads — see **`@rnmapbox/maps`** install notes. Not required for all accounts; keep tokens out of git.
+
+---
+
+## Expo Go (**shell + reads**)
+
+From repo root:
 
 ```bash
 npm install
 npm run dev:mobile
 ```
 
-On your **iPhone**:
+**Expo Go** bundles **none** of the **`@rnmapbox/maps`** native libraries — **`RNMBXModule` is absent** → the JS wrapper **never loads** Mapbox (**by design**) so Expo Go stays stable. Expect the **glass Map chrome + venue list** with the **fallback canvas** ribbon.
 
-1. Install **Expo Go** from the App Store.
-2. Ensure your phone and Mac are on the **same Wi‑Fi**.
-3. Scan the **QR code** shown in the terminal (Camera app or Expo Go).
-4. Test: **login** → **Hub** (friends, venues, **Shares** list) → **Map** (venue list, no location prompt) → **Chat** (real previews when you have chats on web/PWA) → **Profile** → **sign out**.
+Smoke: login → Hub → Map (fallback + **`venues`**) → Chat → Profile → sign-out.
 
-If the app does not load over LAN (common on guest networks or strict firewalls):
+Tunnel if LAN blocks QR: **`npm run dev:mobile -- --tunnel`**.
+
+---
+
+## Native Mapbox (**development build** — required for real map tiles)
+
+Interactive Mapbox **`MapView`** needs a **custom dev client** (`expo-dev-client` is already in the project):
+
+**One-time native generation & build**
 
 ```bash
-npm run dev:mobile -- --tunnel
+cd apps/mobile
+# Ensure `.env` has EXPO_PUBLIC_* vars + EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN
+npx expo prebuild
 ```
 
-Then scan the new QR code (tunnel is slower but works across networks).
+Then **iOS** (Simulator or device):
 
-### What this phase tests
+```bash
+cd apps/mobile
+npx expo run:ios
+```
 
-- Supabase email/password sign-in
-- Session persistence (SecureStore)
-- Web-parity bottom tabs
-- Read-only **`friend_requests`**, **`blocks`**, **`profiles`**, **`venues`**, **`stories`**, **`chats`**, **`messages`**
-- Hub friends rail + live places + **Shares** preview + Profile friend count
-- Map static preview + venue names
-- Chat **Messages** tab — previews (avatar, name, snippet, time); unread dot from **snapshot** only
-- Sign out
+**Android:**
 
-### What this phase does **not** test
+```bash
+cd apps/mobile
+npx expo run:android
+```
 
-- Maps, GPS, or background location
-- `user_presence`
-- Live venue heat or friend-near-venue (web/PWA)
-- Likes, comments, or share actions on native (web/PWA only)
-- Stories **viewer** / moments playback
-- Chat composer, thread UI, realtime, typing, **fresh** unread counts (**2N** shows last-seen-on-fetch only)
-- Profile editing or friend actions (accept/decline) on native
+After install, start Metro from repo root (**`npm run dev:mobile`**) and open the **dev build** app (not Expo Go). **`expo start --dev-client`** flow applies.
+
+**Rebuild** whenever **`app.config.ts` plugins**, Mapbox Gradle/Pod knobs, or other native deps change.
+
+---
+
+### Quick verification commands (engineering)
+
+From repo root + `apps/mobile`:
+
+```bash
+npm run test:shared
+cd apps/mobile && npx tsc --noEmit
+rg '\.from\(' apps/mobile
+```
+
+---
+
+## Troubleshooting
+
+### “Configuration required” / missing Supabase
+
+Create **`apps/mobile/.env`** — both **`EXPO_PUBLIC_SUPABASE_*`** required.
+
+### Map stays decorative despite token
+
+Usually **Expo Go** limitation — switch to **`expo run:ios`** / **`expo run:android`** dev build. Rarely: typo in **`EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN`** (must be non-empty `pk.`).
+
+### Pods / Gradle Mapbox failures
+
+Re-run **`npx expo prebuild --clean`** (destructive to generated `ios/` & `android/` — intentional for regen workflows), confirm Xcode / Android toolchain versions match Expo SDK 54 docs.
+
+### VS Code: too many Git changes (`apps/mobile/node_modules`)
+
+```bash
+rm -rf apps/mobile/node_modules && npm install   # repo root only
+```
+
+---
 
 ## Run (reference)
 
 ```bash
-npm run dev:mobile          # from repo root
+npm run dev:mobile     # repo root → Metro + dev-client / Expo Go QR
 ```
 
-Or from this directory: `npm run start`.
+`apps/mobile` also exposes **`npm run start`**, **`npm run ios`**, **`npm run android`**.
 
-- **Expo Go** is enough for the current shell + reads (Phase 2B–2N).
-- **Development build** (`expo run:ios` / `android`) is for later native modules (Mapbox, background location, etc.).
+---
 
-## Bundle ID
+## Bundle ID · monorepo
 
-`com.intencity.app` (iOS and Android) — see `app.config.ts`.
+- **Bundle / application id:** **`com.intencity.app`** — `app.config.ts`
+- **`@intencity/shared`** via **`metro.config.js`** — Hub shows harmless shared smoke (**timing constants unchanged deliberately**).
 
-## Monorepo
+---
 
-`@intencity/shared` is imported from `packages/shared` via Metro (`metro.config.js`). Hub tab shows a harmless shared smoke line; **presence timing windows are unchanged**.
+## Current boundaries (Era 1 — Mirror)
 
-## Troubleshooting
+| OK in Era 1 | Era 2 / gated slice |
+|-------------|---------------------|
+| **`P2O-C`** presence **read** + map display | **`user_presence` writes** (`P2O-D`) |
+| **`P2O-B`** foreground GPS | Web product routes retired |
+| **`MAP-B/C`** + Live Places | — |
+| REALTIME-1 + mirror backlog | Per [parity audit §11](../../docs/PWA_NATIVE_PARITY_AUDIT.md#11-full-parity-backlog-master) |
 
-### “Configuration required” on launch
-
-Missing env vars. Create `apps/mobile/.env` from `.env.example` and set both `EXPO_PUBLIC_*` values.
-
-### Profile tab shows only email / user id
-
-No `profiles` row for this account yet, RLS blocked the read, or fetch failed — check Supabase dashboard and complete onboarding on web.
-
-### Hub shows no friend rings (only “Your moment”)
-
-No accepted friends, all friends blocked/inactive, or RLS — add friends on web/PWA or check Supabase.
-
-### Hub “Live places” empty or error
-
-RLS on `venues` for the mobile role, empty table, or network — verify `venues` policy matches web expectations.
-
-### Hub “Shares” empty
-
-No `is_share` rows for you or accepted friends, RLS, or fetch error — post shares on web/PWA or check Supabase `stories` policies.
-
-### Chat Messages empty
-
-No **`chats`** rows for your account yet, RLS denied **`chats`** / **`messages`** / **`profiles`**, or network — confirm threads exist on web **`/chat`**.
-
-### Expo Go cannot connect / infinite loading
-
-- Phone and Mac must be on the **same Wi‑Fi** (or use `--tunnel`).
-- macOS firewall: allow Node/Metro if prompted.
-- Try: `npm run dev:mobile -- --tunnel`
-
-### VS Code: “too many active changes” in Git
-
-Often caused by nested `apps/mobile/node_modules` (thousands of untracked files).
-
-Fix:
-
-```bash
-rm -rf apps/mobile/node_modules
-npm install    # from repo root only
-```
-
-Root `.gitignore` ignores all `node_modules/` and `.expo/`. Prefer **`npm install` at repo root**, not `npx expo install` inside `apps/mobile`, unless you know you need a new native dependency.
-
-### Expo Go vs dev client
-
-Phase 2B–2N works in **Expo Go**. Later phases (Mapbox, background location) will require a **development build** (`expo-dev-client`), not Expo Go alone.
-
-## Current boundaries (post–2N)
-
-| Allowed | Not allowed without named phase + audit |
-|---------|-------------------------------------------|
-| Auth UI polish | New `.from()` tables beyond **2O+** without doc update |
-| Read approved tables (`profiles`, `friend_requests`, `blocks`, `venues`, `stories`, `chats`, `messages`) as documented | `user_presence`, writes, realtime subscriptions |
-| Hub/Map/Create/Chat/Profile shells | Mapbox, GPS, live map engine |
-| Shared smoke on Hub | Presence freshness UI tied to `user_presence` |
-
-**Web** remains the only **physical presence** writer and the **live map** authority. See [docs/MIGRATION_PHASES.md](../../docs/MIGRATION_PHASES.md) and [docs/PRESENCE_OWNERSHIP.md](../../docs/PRESENCE_OWNERSHIP.md).
+Canonical model: [**PRODUCTION_ERA_MODEL.md**](../../docs/PRODUCTION_ERA_MODEL.md) · [**MIGRATION_PHASES.md**](../../docs/MIGRATION_PHASES.md) · [**PRESENCE_OWNERSHIP.md**](../../docs/PRESENCE_OWNERSHIP.md).

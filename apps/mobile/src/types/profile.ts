@@ -4,4 +4,5 @@ export type MyProfile = {
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
+  ghost_mode: boolean | null;
 };

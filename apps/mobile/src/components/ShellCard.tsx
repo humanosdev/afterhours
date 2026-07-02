@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { GlassSurface } from "./GlassSurface";
+import { Surface } from "./Surface";
 import { colors } from "../theme/colors";
 import { layout } from "../theme/layout";
 
@@ -9,10 +9,11 @@ type ShellCardProps = {
   description?: string;
   children?: ReactNode;
   style?: ViewStyle;
+  /** @deprecated Flat surfaces only — kept for call-site compat. */
   glass?: boolean;
 };
 
-export function ShellCard({ title, description, children, style, glass: useGlass = true }: ShellCardProps) {
+export function ShellCard({ title, description, children, style }: ShellCardProps) {
   const body = (
     <>
       {title ? <Text style={styles.title}>{title}</Text> : null}
@@ -21,15 +22,11 @@ export function ShellCard({ title, description, children, style, glass: useGlass
     </>
   );
 
-  if (useGlass) {
-    return (
-      <GlassSurface style={[styles.card, style]} muted>
-        {body}
-      </GlassSurface>
-    );
-  }
-
-  return <View style={[styles.cardSolid, style]}>{body}</View>;
+  return (
+    <Surface variant="card" style={[styles.card, style]}>
+      {body}
+    </Surface>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -37,14 +34,6 @@ const styles = StyleSheet.create({
     borderRadius: layout.cardRadius,
     padding: layout.cardGap + 2,
     gap: 8,
-  },
-  cardSolid: {
-    borderRadius: layout.cardRadius,
-    padding: 12,
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
   },
   title: {
     fontSize: 15,

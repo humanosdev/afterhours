@@ -1,73 +1,91 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, TextInput, View } from "react-native";
-import { GlassSurface } from "./GlassSurface";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Surface } from "./Surface";
+import { GlassSearchField } from "./ui/GlassSearchField";
 import { colors } from "../theme/colors";
 import { layout } from "../theme/layout";
 
 type SearchFieldPlaceholderProps = {
   placeholder?: string;
-  /** When set with `onChangeText`, renders a glass `TextInput` (Phase 2O integrated search). */
   value?: string;
   onChangeText?: (text: string) => void;
+  onPress?: () => void;
+  variant?: "pill" | "field";
 };
 
 export function SearchFieldPlaceholder({
-  placeholder = "Search friends, places, venues…",
+  placeholder = "Search friends, venues…",
   value,
   onChangeText,
+  onPress,
+  variant = "pill",
 }: SearchFieldPlaceholderProps) {
   const interactive = typeof onChangeText === "function";
+  const isPill = variant === "pill";
 
-  return (
-    <GlassSurface style={styles.wrap}>
-      <View style={styles.inner}>
-        <Ionicons name="search-outline" size={18} color={colors.textWhite42} />
-        {interactive ? (
-          <TextInput
-            style={styles.input}
-            placeholder={placeholder}
-            placeholderTextColor={colors.textWhite42}
-            value={value ?? ""}
-            onChangeText={onChangeText}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-            accessibilityLabel={placeholder}
-          />
-        ) : (
-          <Text style={styles.text}>{placeholder}</Text>
-        )}
-      </View>
-    </GlassSurface>
+  const inner = interactive ? (
+    <GlassSearchField
+      value={value ?? ""}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      leading={<Ionicons name="search-outline" size={18} color={colors.textWhite42} />}
+    />
+  ) : (
+    <View style={[styles.inner, isPill ? styles.innerPill : styles.innerField]}>
+      <Ionicons name="search-outline" size={18} color={colors.textWhite42} />
+      <Text style={styles.text}>{placeholder}</Text>
+    </View>
   );
+
+  const field = (
+    <Surface
+      variant="field"
+      style={[styles.wrap, isPill ? styles.wrapPill : styles.wrapField]}
+    >
+      {inner}
+    </Surface>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} accessibilityRole="button" style={styles.pressable}>
+        {field}
+      </Pressable>
+    );
+  }
+
+  return field;
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    borderRadius: 999,
+  pressable: {
     marginBottom: layout.sectionGap,
-    overflow: "hidden",
+  },
+  wrap: {
+    marginBottom: layout.sectionGap,
+  },
+  wrapPill: {
+    borderRadius: layout.pillRadius,
+  },
+  wrapField: {
+    borderRadius: layout.inputRadius,
   },
   inner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingHorizontal: 18,
-    minHeight: 50,
+    minHeight: layout.searchBarHeight,
+    paddingHorizontal: 16,
     paddingVertical: 12,
+  },
+  innerPill: {},
+  innerField: {
+    minHeight: 44,
+    paddingHorizontal: 12,
   },
   text: {
     flex: 1,
     fontSize: 15,
     color: colors.textWhite42,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.textPrimary,
-    padding: 0,
-    margin: 0,
-    minHeight: 22,
   },
 });

@@ -163,7 +163,7 @@ function VenueActivityContent() {
                     sceneLight ? "text-[#64748b]" : "text-white/45"
                   }`}
                 >
-                  Open this screen from Live Places or the map so we know which room you&apos;re standing in.
+                  Open this screen from Live Venues or the map so we know which room you&apos;re standing in.
                 </p>
                 <button
                   type="button"
@@ -174,7 +174,7 @@ function VenueActivityContent() {
                       : "bg-gradient-to-r from-accent-violet-active via-accent-violet to-[#3558d4] text-white shadow-[0_0_30px_rgba(59,102,255,0.32)] hover:brightness-110"
                   }`}
                 >
-                  Browse Live Places
+                  Browse Live Venues
                 </button>
               </div>
             </div>

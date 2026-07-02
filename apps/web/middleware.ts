@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_GATE_PATH_PREFIXES } from "@/lib/authGatePaths";
+import { isPublicSitePath } from "@/lib/publicSitePaths";
+import { isMarketingSite } from "@/lib/webSiteMode";
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 const ONBOARDING_PATH = "/onboarding";
 
@@ -44,6 +46,17 @@ export async function middleware(req: NextRequest) {
             "Service-Worker-Allowed": "/",
           },
         });
+      }
+      return withDevDocumentNoStore(NextResponse.next(), req);
+    }
+
+    /** Era 2: marketing-only site — block auth/product without deleting PWA routes. */
+    if (isMarketingSite()) {
+      if (!isPublicSitePath(pathname)) {
+        const homeUrl = req.nextUrl.clone();
+        homeUrl.pathname = "/";
+        homeUrl.search = "";
+        return withDevDocumentNoStore(NextResponse.redirect(homeUrl), req);
       }
       return withDevDocumentNoStore(NextResponse.next(), req);
     }

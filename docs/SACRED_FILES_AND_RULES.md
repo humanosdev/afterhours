@@ -13,10 +13,11 @@
 3. **`packages/shared`** changes affect future mobile + web — require `npm run test:shared`.
 4. **Do not enable mobile `user_presence` writes** without gates in [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md).
 5. Phase 1 intentionally **did not** touch map or AppShell — keep that discipline until web write retirement.
-6. **Post–2F:** `apps/mobile` may read approved tables per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) (**2F**–**2N**); do **not** add location, `user_presence`, or other table reads without a new phase plan.
+6. **Post–2F:** `apps/mobile` may read approved tables per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) (**2F**–**2O**); **Post–2O** (**`P2O-A`+**) requires its own doc update **before** **`expo-location`** / **`user_presence`** I/O or any **new** `.from(...)` — do **not** add those without the named slice (**`P2O-A`** landed read-only Mapbox + **`venues`** per that doc).
 7. **Phase 2G:** navigation planning docs only — no map engine, GPS, or presence I/O.
-8. **Post–2H:** native tabs are Hub / Map / Create / Chat / Profile — **still no Mapbox**, `expo-location`, or `user_presence`; Chat has **read-only list previews only** (**2N**); inherit web IA, do not redesign independently.
-9. **Native `supabase.from(...)` / new `.from()` calls:** **Forbidden** unless tied to a **named migration sub-phase (2K–2O or post–2O)** in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md), with PR scope limited to that phase and **grep audit** (`rg "\.from\(" apps/mobile`) + `npm run test:shared` + `npx tsc --noEmit` documented. **2J** itself adds **no** new `.from()` — planning only.
+8. **Post–2H + `VP-1` / `P2O-A`:** IA scaffolds + map engine only — **not** visual or product parity. **`VP-2`** is the **next** implementation slice (exact PWA visual identity). **`P2O-B`** (**`expo-location`**) is **paused** until **`VP-2`** sign-off. **`P2O-A`** Mapbox = catalog **`venues`** only — **no** GPS puck, **no** **`user_presence`** until **`P2O-C`/`D`**.
+9. **Native `supabase.from(...)` / new `.from()` calls:** **Forbidden** unless tied to a **named migration sub-phase** in [MIGRATION_PHASES.md](./MIGRATION_PHASES.md), with PR scope limited to that phase and **grep audit** (`rg "\.from\(" apps/mobile`) + `npm run test:shared` + `npx tsc --noEmit` documented. **`user_presence` writes** = **Era 2 / `P2O-D` only** ([PRODUCTION_ERA_MODEL.md](./PRODUCTION_ERA_MODEL.md)). **`user_presence` reads** = **`P2O-C`** (landed). **`expo-location`** = **`P2O-B`** (landed).
+10. **Native Product Equivalence Doctrine:** `apps/mobile` must eventually support **every PWA capability** with **exact user-facing equivalence** (or deliberate native-quality upgrade preserving identity). Canonical spec: **[Native Product Equivalence Doctrine](./MIGRATION_PHASES.md#native-product-equivalence-doctrine)**. Maintain [§11 backlog](./PWA_NATIVE_PARITY_AUDIT.md#11-full-parity-backlog-master) until **Native-enhanced full parity** per surface.
 
 ---
 
@@ -181,15 +182,16 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 ---
 
-## `apps/mobile` (post–2N)
+## `apps/mobile` (**`VP-2` next** · **`P2O-B` paused**)
 
 | | |
 |---|---|
-| **Owns today** | Expo auth shell, Phase 2C UI, Phase 2H–2I shell, Phase 2F own profile, Phase 2K `friend_requests` / `blocks` / friend `profiles`, Phase 2L **`venues`**, **Phase 2M** read-only Hub **`stories`** (shares), **Phase 2N** read-only **`chats`** / **`messages`** (list previews), `@intencity/shared` smoke on Hub, Metro monorepo config |
-| **Does not own** | `user_presence` (read/write), geolocation, live map **engine** (Mapbox), **live** chat (**send**, subscriptions, notifications mutations, thread UX — web/PWA until later phases), notifications delivery |
-| **Change when** | UI polish, or an **approved** **2O+** phase per [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) |
-| **Avoid** | New `.from()` without named phase + audit (rule 9); `expo-location`, `user_presence` I/O, “quick map screen” without phase approval |
-| **Navigation** | Phase 2H Hub / Map / Create / Chat / Profile; Hub has **read-only** friends, venues, Hub **Shares** (`stories`); Chat lists **read-only** previews (**`chats`**, **`messages`**); no fixed Search tab — web `BottomNav.tsx` is UX source of truth |
+| **Owns today** | **2O** read plane + **`VP-1`/`P2O-A` scaffolds** (IA + Mapbox engine) — **most screens = Visual mismatch** vs PWA per [§11 backlog](./PWA_NATIVE_PARITY_AUDIT.md#11-full-parity-backlog-master) |
+| **Next slice** | **`VP-2`** — exact PWA visual identity on existing screens (**no** new features) |
+| **Paused** | **`P2O-B`** (`expo-location`) until **`VP-2`** documented complete |
+| **Does not own** | Full product parity, GPS puck, **`user_presence`**, writes, realtime |
+| **Avoid** | Treating **`VP-1`/`P2O-A` as parity**; starting **`P2O-B`** before **`VP-2`**; net-new `.from(...)` outside approved phases |
+| **Navigation** | Hub / Map / Moments / Chat / Profile + Stack shells · web `BottomNav.tsx` IA source |
 
 ---
 
@@ -197,7 +199,7 @@ Manual (web): `/map` inner confirm ≥60s, navigate map → hub → map, ghost m
 
 When asked to “add mobile” or “fix presence”:
 
-1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — confirm current sub-phase (**post–2N** = Chat list previews shipped; next code **2O** unless amended; **no** new `.from()` tables without named phase).
+1. Read [MIGRATION_PHASES.md](./MIGRATION_PHASES.md) — **next** implementation = **`VP-2`** (visual identity). **`P2O-B` paused**. No **`user_presence`** / net-new `.from(...)` / **`expo-location`** without named slice + doc update.
 2. Read [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) — confirm writer rules.
 3. Do not touch sacred **web** files unless the task explicitly names them and the phase allows it.
 4. Do not add `expo-location` or `user_presence` writes to mobile without presence-ownership gates.

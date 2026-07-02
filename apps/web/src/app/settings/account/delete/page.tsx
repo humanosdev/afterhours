@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { clearUserPresenceOnSignOut } from "@/lib/userPresenceWrite";
 import { AppSubpageHeader, APP_TAB_BOTTOM_PADDING_CLASS, navigateBack } from "@/components/AppSubpageHeader";
 
 export default function DeleteAccountPage() {
@@ -51,6 +52,10 @@ export default function DeleteAccountPage() {
       setError("Could not schedule deletion. Try again.");
       return;
     }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) await clearUserPresenceOnSignOut(supabase, user.id);
     await supabase.auth.signOut();
     router.replace("/login?account=deleted");
   };

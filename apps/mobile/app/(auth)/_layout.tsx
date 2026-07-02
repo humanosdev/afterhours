@@ -1,24 +1,48 @@
-import { Redirect, Stack } from "expo-router";
-import { AppLoadingScreen } from "../../src/components/AppLoadingScreen";
+import { Redirect, Stack, usePathname } from "expo-router";
+import { AuthSessionRedirect } from "../../src/components/AuthSessionRedirect";
 import { useAuth } from "../../src/providers/AuthProvider";
 import { colors } from "../../src/theme/colors";
 
-export default function AuthLayout() {
-  const { session, loading } = useAuth();
+function isSessionRequiredRoute(pathname: string): boolean {
+  return (
+    pathname === "/reset-password" ||
+    pathname === "/onboarding" ||
+    pathname === "/onboarding/username"
+  );
+}
 
-  if (loading) {
-    return <AppLoadingScreen message="Checking session…" />;
+function isSignedOutOnlyRoute(pathname: string): boolean {
+  return pathname === "/login" || pathname === "/signup" || pathname === "/forgot-password";
+}
+
+export default function AuthLayout() {
+  const { session } = useAuth();
+  const pathname = usePathname();
+
+  if (!session) {
+    if (isSessionRequiredRoute(pathname)) {
+      return <Redirect href="/login" />;
+    }
+    return (
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { flex: 1, backgroundColor: colors.bgPrimary },
+          animation: "fade",
+        }}
+      />
+    );
   }
 
-  if (session) {
-    return <Redirect href="/hub" />;
+  if (isSignedOutOnlyRoute(pathname)) {
+    return <AuthSessionRedirect />;
   }
 
   return (
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: colors.bgPrimary },
+        contentStyle: { flex: 1, backgroundColor: colors.bgPrimary },
         animation: "fade",
       }}
     />

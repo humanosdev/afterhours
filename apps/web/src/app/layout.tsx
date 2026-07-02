@@ -5,11 +5,15 @@ import { DEV_PURGE_SERVICE_WORKER_SCRIPT } from "@/lib/devPurgeServiceWorkerScri
 import { IntencityBrandLockupImage } from "@/components/IntencityBrandLockupImage";
 import { INTENCITY_BRAND_LOCKUP_SRC } from "@/lib/brandAssets";
 import { PROD_CHUNK_HEAL_SCRIPT } from "@/lib/prodChunkHealScript";
+import { appConfig } from "@/lib/appConfig";
+import { isMarketingSite } from "@/lib/webSiteMode";
 import "./globals.css";
 
+const marketingSite = isMarketingSite();
+
 export const metadata = {
-  title: "Intencity",
-  description: "See where the night is happening",
+  title: marketingSite ? `${appConfig.appName} — Live nightlife awareness` : appConfig.appName,
+  description: appConfig.description,
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

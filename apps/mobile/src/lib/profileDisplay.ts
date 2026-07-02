@@ -1,10 +1,25 @@
 import type { MyProfile } from "../types/profile";
 
+export type ProfileNameFields = {
+  username?: string | null;
+  display_name?: string | null;
+};
+
+/** Social surfaces — always `profiles.username`, never display_name (PWA parity). */
+export function profileUsernameLabel(
+  profile: ProfileNameFields | null | undefined,
+  fallback = "user"
+): string {
+  const u = profile?.username?.trim().replace(/^@/, "");
+  return u || fallback;
+}
+
+/** Profile header / edit — display name when set, else @username. */
 export function profileDisplayName(profile: MyProfile | null): string | null {
   const display = profile?.display_name?.trim();
   if (display) return display;
   const username = profile?.username?.trim();
-  if (username) return `@${username}`;
+  if (username) return `@${username.replace(/^@/, "")}`;
   return null;
 }
 
@@ -12,8 +27,8 @@ export function profileAvatarLabel(
   profile: MyProfile | null,
   fallbackEmail: string | null | undefined
 ): string {
-  const display = profileDisplayName(profile);
-  if (display) return display.replace(/^@/, "");
+  const username = profileUsernameLabel(profile, "");
+  if (username) return username;
   const email = fallbackEmail?.trim();
   if (email) return email.split("@")[0] ?? email;
   return "?";

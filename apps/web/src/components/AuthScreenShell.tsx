@@ -5,9 +5,10 @@ function shellPad(marketing: boolean, marketingScroll: boolean) {
 }
 
 function baseClass(marketing: boolean, marketingScroll: boolean) {
+  const topInset = marketingScroll ? 20 : 28;
   return (
     `flex min-h-[100dvh] w-full max-w-none flex-col bg-primary text-text-primary ${shellPad(marketing, marketingScroll)} ` +
-    "pt-[calc(env(safe-area-inset-top,0px)+28px)] " +
+    `pt-[calc(env(safe-area-inset-top,0px)+${topInset}px)] ` +
     "pb-[max(env(safe-area-inset-bottom,0px),28px)]"
   );
 }

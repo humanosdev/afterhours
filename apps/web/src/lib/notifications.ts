@@ -1,3 +1,7 @@
+import {
+  shouldSendPushForStoryEngagement,
+  type StoryEngagementGroupType,
+} from "@intencity/shared";
 import type { NotificationType } from "../../types/notifications";
 import { supabase } from "@/lib/supabaseClient";
 import { acceptedFriendIdsExcludingBlocks } from "@/lib/pairBlockStatus";
@@ -88,6 +92,25 @@ function typePreferenceEnabled(type: NotificationType, prefs?: PreferenceRow | n
   }
 }
 
+/** Distinct actors who already have a story like/comment row for this recipient. */
+export async function countDistinctStoryEngagementActors(
+  recipientId: string,
+  storyId: string,
+  type: StoryEngagementGroupType
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("actor_user_id")
+    .eq("recipient_user_id", recipientId)
+    .eq("story_id", storyId)
+    .eq("type", type);
+  if (error) {
+    console.warn("countDistinctStoryEngagementActors:", error.message);
+    return 0;
+  }
+  return new Set((data ?? []).map((r) => r.actor_user_id)).size;
+}
+
 export async function createNotification(params: {
   recipientId: string;
   actorId: string;
@@ -137,6 +160,20 @@ export async function createNotification(params: {
   }
 
   if ((prefs?.push_enabled ?? true) === false) return;
+
+  if (
+    params.storyId &&
+    (type === "story_like" || type === "story_comment")
+  ) {
+    const distinctActors = await countDistinctStoryEngagementActors(
+      recipientId,
+      params.storyId,
+      type
+    );
+    if (!shouldSendPushForStoryEngagement(distinctActors)) {
+      return;
+    }
+  }
 
   if (params.pushTitle && params.pushBody) {
     await fetch("/api/push/notify", {

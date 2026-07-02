@@ -27,6 +27,7 @@ import {
 import { Plus } from "lucide-react";
 import { confirmAndBlockUser } from "@/lib/blockUserAction";
 import { sendPendingFriendRequest } from "@/lib/sendPendingFriendRequest";
+import { fetchProfileVenuesForUser } from "@/lib/profileVenues";
 
 async function unfriendUser(me: string, them: string) {
   const { error, count } = await supabase
@@ -148,8 +149,8 @@ export default function UserProfile() {
   const [theirMomentViewerStories, setTheirMomentViewerStories] = useState<StoryViewerStory[]>([]);
   const [activeStoryViewerGroup, setActiveStoryViewerGroup] = useState<StoryViewerGroup | null>(null);
   const [viewedMomentIds, setViewedMomentIds] = useState<Record<string, boolean>>({});
-  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
-  const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
+  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "venues">("shares");
+  const [venues, setVenues] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
   const [mutualPreview, setMutualPreview] = useState<ProfileLite[]>([]);
   const [mutualTotal, setMutualTotal] = useState(0);
   const [mutualLoadDone, setMutualLoadDone] = useState(false);
@@ -560,51 +561,29 @@ export default function UserProfile() {
   useEffect(() => {
     if (!profile?.id) return;
     if (profile.profile_inactive) {
-      setPlaces([]);
+      setVenues([]);
       return;
     }
     const mergedBlock = pairBlock;
     if (mergedBlock !== "none") {
-      setPlaces([]);
+      setVenues([]);
       return;
     }
     const isOwn = me === profile.id;
     const locked = !!profile.is_private && !isOwn && !isFriend;
     if (locked) {
-      setPlaces([]);
+      setVenues([]);
       return;
     }
-    (async () => {
-      const { data: storyRows } = await supabase
-        .from("stories")
-        .select("venue_id, created_at")
-        .eq("user_id", profile.id)
-        .limit(1000);
-
-      const historyByVenue = new Map<string, number>();
-      for (const row of storyRows ?? []) {
-        const venueId = (row as any)?.venue_id as string | null | undefined;
-        if (!venueId) continue;
-        const ts = new Date((row as any)?.created_at).getTime();
-        const prev = historyByVenue.get(venueId) ?? 0;
-        if (Number.isFinite(ts) && ts > prev) historyByVenue.set(venueId, ts);
-      }
-
-      if (!historyByVenue.size) {
-        setPlaces([]);
-        return;
-      }
-
-      const ids = Array.from(historyByVenue.keys());
-      const { data: venueRows } = await supabase
-        .from("venues")
-        .select("id, name, category")
-        .in("id", ids);
-
-      const sorted = (venueRows ?? [])
-        .slice()
-        .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
-      setPlaces(sorted as any);
+    void (async () => {
+      const { venues: profileVenues } = await fetchProfileVenuesForUser(supabase, profile.id);
+      setVenues(
+        profileVenues.map((p) => ({
+          id: p.id,
+          name: p.name,
+          category: p.category,
+        }))
+      );
     })();
   }, [profile?.id, profile?.is_private, profile?.profile_inactive, me, isFriend, pairBlock]);
 
@@ -682,7 +661,7 @@ export default function UserProfile() {
   const profileTabs = [
     { key: "shares" as const, label: "Shares" },
     ...(isOwnProfile ? [{ key: "archive" as const, label: "Archive" }] : []),
-    { key: "places" as const, label: "Places" },
+    { key: "venues" as const, label: "Venues" },
   ];
   const openMomentsTab = () => {
     if (!profile || shouldHidePrivateProfile || isInactiveShell) return;
@@ -889,9 +868,9 @@ export default function UserProfile() {
                 </button>
                 <div className="min-w-0 px-0.5">
                   <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">
-                    {shouldHidePrivateProfile ? "—" : isInactiveShell ? 0 : places.length}
+                    {shouldHidePrivateProfile ? "—" : isInactiveShell ? 0 : venues.length}
                   </p>
-                  <p className="mt-1 text-[11px] text-white/48">Places</p>
+                  <p className="mt-1 text-[11px] text-white/48">Venues</p>
                 </div>
                 <div className="min-w-0 px-0.5">
                   <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">
@@ -1199,11 +1178,11 @@ export default function UserProfile() {
                   </div>
                 ) : null}
 
-                {activeTab === "places" ? (
+                {activeTab === "venues" ? (
                   <div>
-                    {places.length ? (
+                    {venues.length ? (
                       <ul className="divide-y divide-white/[0.08]">
-                        {places.map((place) => (
+                        {venues.map((place) => (
                           <li key={place.id} className="flex items-center justify-between gap-3 py-3 first:pt-0">
                             <div className="min-w-0">
                               <p className="truncate text-[15px] font-semibold text-white">{place.name}</p>
@@ -1221,7 +1200,7 @@ export default function UserProfile() {
                       </ul>
                     ) : (
                       <p className="py-8 text-center text-[13px] text-white/42">
-                        Places they have visited will appear here.
+                        Venues they&apos;ve stayed at for 15+ minutes appear here.
                       </p>
                     )}
                   </div>

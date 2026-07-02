@@ -1,12 +1,23 @@
 import { StyleSheet, Text, View } from "react-native";
+import { IntencityBrandLockup } from "./IntencityBrandLockup";
 import { colors } from "../theme/colors";
 
 type IntencityWordmarkProps = {
   size?: "default" | "large";
   subtitle?: string;
+  useLockup?: boolean;
 };
 
-export function IntencityWordmark({ size = "default", subtitle }: IntencityWordmarkProps) {
+export function IntencityWordmark({ size = "default", subtitle, useLockup = true }: IntencityWordmarkProps) {
+  if (useLockup) {
+    return (
+      <View style={styles.wrap}>
+        <IntencityBrandLockup variant={size === "large" ? "splash" : "auth"} />
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.wrap}>
       <Text style={[styles.title, size === "large" && styles.titleLarge]}>Intencity</Text>
@@ -18,7 +29,8 @@ export function IntencityWordmark({ size = "default", subtitle }: IntencityWordm
 const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
-    gap: 6,
+    gap: 8,
+    width: "100%",
   },
   title: {
     fontSize: 28,
@@ -35,5 +47,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
     lineHeight: 20,
+    maxWidth: 320,
   },
 });

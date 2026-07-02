@@ -143,26 +143,24 @@ export default function HubShareFeedCard({
       </button>
 
       <div className="mt-3 flex items-center justify-between gap-3 px-0.5">
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleLike();
-            }}
-            disabled={!meId}
-            className="rounded-full p-0.5 text-white transition enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label={liked ? "Unlike" : "Like"}
-          >
-            <Heart
-              size={26}
-              strokeWidth={1.65}
-              className={liked ? "fill-red-500 text-red-500" : "text-white"}
-              aria-hidden
-            />
-          </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleLike();
+          }}
+          disabled={!meId}
+          className="inline-flex items-center gap-1.5 rounded-full py-0.5 pr-1 text-white transition enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label={liked ? "Unlike" : "Like"}
+        >
+          <Heart
+            size={26}
+            strokeWidth={1.65}
+            className={liked ? "fill-red-500 text-red-500" : "text-white"}
+            aria-hidden
+          />
           <span className="text-[15px] font-semibold tabular-nums text-white/90">{likesCount}</span>
-        </div>
+        </button>
         <button
           type="button"
           onClick={(e) => {

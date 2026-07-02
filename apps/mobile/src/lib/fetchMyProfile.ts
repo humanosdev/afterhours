@@ -2,7 +2,7 @@ import type { MyProfile } from "../types/profile";
 import { supabase } from "./supabase/client";
 
 const MY_PROFILE_COLUMNS =
-  "username, display_name, bio, avatar_url" as const;
+  "username, display_name, bio, avatar_url, ghost_mode" as const;
 
 export type FetchMyProfileResult = {
   profile: MyProfile | null;

@@ -9,9 +9,11 @@ import StoryCameraModal from "./StoryCameraModal";
 import ShareCommentsBottomSheet from "./ShareCommentsBottomSheet";
 import { ClientAuthProvider } from "@/contexts/ClientAuthContext";
 import { matchesAuthGatePath } from "@/lib/authGatePaths";
+import { isMarketingSite } from "@/lib/webSiteMode";
 import { OPEN_SHARE_COMMENTS_EVENT, type OpenShareCommentsDetail } from "@/lib/shareCommentsSheet";
 import { geolocationFailureMessage, LOCATION_INSECURE_CONTEXT, PRESENCE_SAVE_FAILED } from "@/lib/geolocationMessages";
 import { isValidCoordinatePair } from "@/lib/presence";
+import { isWebPresenceWriteRetired } from "@intencity/shared";
 import { supabase } from "@/lib/supabaseClient";
 import type { VenueForPresenceSync } from "@/lib/userPresenceVenueSync";
 import { syncUserPresenceWithVenuesFromCoords } from "@/lib/userPresenceVenueSync";
@@ -162,6 +164,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     "/privacy",
     "/terms",
     "/guidelines",
+    "/contact",
     "/forgot-password",
     "/reset-password",
     "/onboarding",
@@ -319,6 +322,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
    * Faster cadence + ping again when you return to the tab. Map still assigns `venue_id`.
    */
   useEffect(() => {
+    if (isWebPresenceWriteRetired()) return;
+    if (isMarketingSite()) return;
     if (!currentUserId) return;
     const authMarketing = new Set([
       "/login",
@@ -440,6 +445,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [currentUserId, pathname]);
 
   useEffect(() => {
+    if (isMarketingSite()) return;
     if (!currentUserId) {
       setChatUnreadCount(0);
       return;

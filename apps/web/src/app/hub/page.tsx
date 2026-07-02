@@ -11,6 +11,7 @@ import StoryViewerModal, { type StoryViewerGroup } from "@/components/StoryViewe
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
 import { isFriendOnlineNow, isPresenceLive, isValidCoordinatePair, getFriendSocialActivitySubtitle } from "@/lib/presence";
+import { getFriendHubActivitySubtitle } from "@/lib/presenceHubSubtitle";
 import { subscribeUserPresenceChanges } from "@/lib/userPresenceRealtime";
 import { preloadImage } from "@/lib/preloadImage";
 import { acceptedFriendIdsExcludingBlocks } from "@/lib/pairBlockStatus";
@@ -113,8 +114,6 @@ export default function HubPage() {
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
   const [friendGhostById, setFriendGhostById] = useState<Record<string, boolean>>({});
   const [meId, setMeId] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [myStoryFallback, setMyStoryFallback] = useState<string>("AH");
   const [unreadCount, setUnreadCount] = useState(0);
   const [friendShares, setFriendShares] = useState<ShareItem[]>([]);
   const [shareStatsById, setShareStatsById] = useState<Record<string, HubShareFeedCardState>>({});
@@ -206,12 +205,6 @@ export default function HubPage() {
         }
         const data = res.data;
         const nextUrl = data?.avatar_url ?? null;
-        setAvatarUrl(nextUrl);
-        setMyStoryFallback(
-          data?.display_name?.trim() ||
-            data?.username?.trim() ||
-            "AH"
-        );
         await preloadImage(nextUrl, 3500);
       } catch (e) {
         console.error("hub avatar load:", e);
@@ -667,10 +660,6 @@ export default function HubPage() {
         .filter((group) => group.stories.length > 0),
     [groupedStories, presenceClock]
   );
-  const myStoryGroup = useMemo(
-    () => validGroupedStories.find((g) => g.user_id === meId) ?? null,
-    [validGroupedStories, meId]
-  );
   const friendStoryGroups = useMemo(
     () => validGroupedStories.filter((g) => g.user_id !== meId),
     [validGroupedStories, meId]
@@ -730,10 +719,6 @@ export default function HubPage() {
       })),
     });
   };
-  const hasMyActiveStory = !!myStoryGroup?.stories?.some((s) => hasActiveStoryMedia(s));
-  const myStoryHasUnseen =
-    !!myStoryGroup?.stories?.some((s) => hasActiveStoryMedia(s) && !viewedStoryIds[s.id]);
-
   const hubVenueStrip = useMemo(() => {
     const statsFor = (venue: Venue) => {
       let inside = 0;
@@ -796,8 +781,8 @@ export default function HubPage() {
           type: "story_like",
           storyId: shareId,
           dedupeKey: `story_like:${shareId}:${meId}`,
-          pushTitle: "Your post got a new like",
-          pushBody: "A friend liked your post.",
+          pushTitle: "Your share got a new like",
+          pushBody: "A friend liked your share.",
           route: `/moments/${shareId}`,
         });
       }
@@ -972,7 +957,7 @@ export default function HubPage() {
           aria-label="Open search and discovery"
         >
           <Search className="shrink-0 text-white/42" size={18} strokeWidth={2} aria-hidden />
-          <span className="truncate text-[15px] text-white/42">Search friends, places, venues...</span>
+          <span className="truncate text-[15px] text-white/42">Search friends, venues...</span>
         </button>
       </div>
 
@@ -984,46 +969,12 @@ export default function HubPage() {
         <HubFeedSkeleton />
       ) : (
         <>
-      {/* Moments — large story rings first (dominant like Instagram home) */}
-      <section className="-mx-4 relative pb-3 pt-0 sm:-mx-5" aria-labelledby="hub-moments-heading">
+      {/* Moments — friend story rings */}
+      <section className="-mx-4 relative pb-2 pt-0 sm:-mx-5" aria-labelledby="hub-moments-heading">
         <h2 id="hub-moments-heading" className="sr-only">
           Moments
         </h2>
-        <div className="scrollbar-none flex items-start gap-[14px] overflow-x-auto px-4 py-2.5 pb-3 sm:px-5">
-          {/* YOUR MOMENT */}
-          <button
-            type="button"
-            onClick={() => {
-              if (hasMyActiveStory && myStoryGroup) {
-                openStoryViewerForUser(myStoryGroup.user_id);
-                return;
-              }
-              window.dispatchEvent(
-                new CustomEvent("open-create-composer", {
-                  detail: { mode: "both", tab: "moments" },
-                })
-              );
-            }}
-            className="flex w-[84px] shrink-0 flex-col items-center"
-          >
-            <div className="relative">
-              <StoryRing
-                src={avatarUrl}
-                alt="your moment"
-                fallbackText={myStoryFallback}
-                size="storyLg"
-                active={myStoryHasUnseen}
-              />
-              {!hasMyActiveStory ? (
-                <div className="absolute -bottom-0.5 -right-0.5 grid h-6 w-6 place-items-center rounded-full border-2 border-primary bg-accent-violet text-text-primary shadow-[0_0_14px_rgba(59,102,255,0.58)]">
-                  <span className="text-[13px] font-semibold leading-none">+</span>
-                </div>
-              ) : null}
-            </div>
-            <span className="mt-2 w-full truncate text-center text-[12px] leading-tight text-white/55">Your moment</span>
-          </button>
-
-          {/* FRIEND MOMENTS */}
+        <div className="scrollbar-none flex items-start gap-[14px] overflow-x-auto px-4 py-2 pb-2.5 sm:px-5">
           {friendStoryGroups.map((user) => (
             <button
               key={user.user_id}
@@ -1047,8 +998,8 @@ export default function HubPage() {
         </div>
       </section>
 
-      {/* Active friends */}
-      <section className="pt-4 space-y-2.5">
+      {onlineFriends.length > 0 ? (
+      <section className="space-y-2.5 pt-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-[15px] font-semibold text-white">Active friends</h2>
           <button
@@ -1059,18 +1010,9 @@ export default function HubPage() {
             <span>Open friends</span>
           </button>
         </div>
-        {onlineFriends.length === 0 ? (
-          <div className="py-5 text-center">
-            <p className="text-[15px] font-semibold text-white/85">No friends live right now</p>
-            <p className="mt-1.5 max-w-xs mx-auto text-[13px] leading-snug text-white/42">
-              When people step out, they surface here first.
-            </p>
-          </div>
-        ) : (
           <div className="scrollbar-none -mx-0.5 flex gap-4 overflow-x-auto px-0.5 pb-2">
             {onlineFriends.map((f) => {
               const name = profiles[f.user_id] || "Friend";
-              const venueName = f.venue_id ? venues.find((v) => v.id === f.venue_id)?.name ?? null : null;
               return (
                 <button
                   key={f.user_id}
@@ -1090,29 +1032,24 @@ export default function HubPage() {
                   <div className="w-full">
                     <div className="truncate text-[12px] font-semibold text-white">{name}</div>
                     <div className="truncate text-[10px] text-white/42">
-                      {getFriendSocialActivitySubtitle(
-                        {
-                          ghostMode: false,
-                          updatedAt: f.updated_at,
-                          venueId: f.venue_id,
-                          venueName: venueName,
-                        },
-                        Date.now()
-                      )}
+                      {getFriendHubActivitySubtitle(f, venues, Date.now())}
                     </div>
                   </div>
                 </button>
               );
             })}
           </div>
-        )}
       </section>
+      ) : null}
 
-      <div className="mt-14 mb-5 h-px bg-white/[0.08]" aria-hidden />
+      <div
+        className={`h-px bg-white/[0.08] ${onlineFriends.length > 0 ? "mb-5 mt-8" : "mb-3 mt-3"}`}
+        aria-hidden
+      />
 
-      <section className="pt-6 sm:pt-8">
+      <section className={onlineFriends.length > 0 ? "pt-6 sm:pt-8" : "pt-1 sm:pt-2"}>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-[15px] font-semibold text-white">Live Places</h2>
+          <h2 className="text-[15px] font-semibold text-white">Live Venues</h2>
           <button
             type="button"
             onClick={() => router.push("/live-places")}

@@ -1,40 +1,58 @@
-import { Redirect, Tabs } from "expo-router";
-import { AppLoadingScreen } from "../../src/components/AppLoadingScreen";
-import { FloatingTabBar } from "../../src/components/FloatingTabBar";
+import { Redirect, Stack } from "expo-router";
+import { ChatSendQueueProcessor } from "../../src/components/ChatSendQueueProcessor";
+import { AppOpenTracker } from "../../src/components/AppOpenTracker";
+import { ProfileOnboardingGate } from "../../src/components/ProfileOnboardingRedirect";
+import { ProfilePlaceEarnTracker } from "../../src/components/ProfilePlaceEarnTracker";
+import { NativePresenceWriteTracker } from "../../src/components/NativePresenceWriteTracker";
+import { TabShellPrewarm } from "../../src/components/TabShellPrewarm";
 import { useAuth } from "../../src/providers/AuthProvider";
+import { AppLifecycleProvider } from "../../src/providers/AppLifecycleProvider";
+import { CreateComposerProvider } from "../../src/providers/CreateComposerProvider";
+import { NotificationDeliveryProvider } from "../../src/providers/NotificationDeliveryProvider";
+import { PresenceProvider } from "../../src/providers/PresenceProvider";
+import { PushNotificationProvider } from "../../src/providers/PushNotificationProvider";
+import { ReportedContentProvider } from "../../src/providers/ReportedContentProvider";
 import { colors } from "../../src/theme/colors";
 
 /**
- * Phase 2I — web-parity floating tab bar (Hub / Map / Create / Chat / Profile).
- * Visual shell only; production UX and data remain on web/PWA.
+ * Signed-in stack over tabs — stack routes mirror web IA.
  */
-export default function AppTabLayout() {
-  const { session, loading } = useAuth();
-
-  if (loading) {
-    return <AppLoadingScreen message="Checking session…" />;
-  }
+export default function AppStackLayout() {
+  const { session } = useAuth();
 
   if (!session) {
     return <Redirect href="/login" />;
   }
 
   return (
-    <Tabs
-      tabBar={(props) => <FloatingTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-        tabBarShowLabel: false,
-        sceneStyle: {
-          backgroundColor: colors.bgPrimary,
-        },
-      }}
-    >
-      <Tabs.Screen name="hub" options={{ title: "Hub" }} />
-      <Tabs.Screen name="map" options={{ title: "Map" }} />
-      <Tabs.Screen name="create" options={{ title: "Create" }} />
-      <Tabs.Screen name="chat" options={{ title: "Chat" }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
-    </Tabs>
+    <ReportedContentProvider>
+    <CreateComposerProvider>
+      <AppLifecycleProvider>
+      <NotificationDeliveryProvider>
+        <PushNotificationProvider>
+        <PresenceProvider>
+        <ProfileOnboardingGate>
+        <NativePresenceWriteTracker />
+        <ProfilePlaceEarnTracker />
+        <AppOpenTracker />
+        <ChatSendQueueProcessor />
+        <TabShellPrewarm />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bgPrimary },
+            animation: "slide_from_right",
+          }}
+        >
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="chat/[id]" options={{ animation: "slide_from_right" }} />
+        </Stack>
+        </ProfileOnboardingGate>
+        </PresenceProvider>
+        </PushNotificationProvider>
+      </NotificationDeliveryProvider>
+      </AppLifecycleProvider>
+    </CreateComposerProvider>
+    </ReportedContentProvider>
   );
 }

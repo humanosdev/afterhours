@@ -1,5 +1,6 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
+import { chrome } from "../theme/chrome";
 import { layout } from "../theme/layout";
 
 type ShellListRowProps = {
@@ -7,18 +8,33 @@ type ShellListRowProps = {
   subtitle?: string;
   meta?: string;
   isLast?: boolean;
+  onPress?: () => void;
 };
 
-export function ShellListRow({ title, subtitle, meta, isLast = false }: ShellListRowProps) {
-  return (
-    <View style={[styles.row, !isLast && styles.rowBorder]}>
+export function ShellListRow({ title, subtitle, meta, isLast = false, onPress }: ShellListRowProps) {
+  const inner = (
+    <>
       <View style={styles.textBlock}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
       {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-    </View>
+    </>
   );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.row, !isLast && styles.rowBorder, pressed && styles.pressed]}
+      >
+        {inner}
+      </Pressable>
+    );
+  }
+
+  return <View style={[styles.row, !isLast && styles.rowBorder]}>{inner}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -31,7 +47,7 @@ const styles = StyleSheet.create({
   },
   rowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSubtle,
+    borderBottomColor: chrome.listDivider,
   },
   textBlock: {
     flex: 1,
@@ -51,5 +67,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     color: colors.textMuted,
+  },
+  pressed: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
   },
 });

@@ -273,8 +273,8 @@ export default function MomentDetailPage() {
         type: "story_like",
         storyId: moment.id,
         dedupeKey: `story_like:${moment.id}:${meId}`,
-        pushTitle: "Your post got a new like",
-        pushBody: "A friend liked your post.",
+        pushTitle: moment.is_share ? "Your share got a new like" : "Your moment got a new like",
+        pushBody: moment.is_share ? "A friend liked your share." : "A friend liked your moment.",
         route: `/moments/${moment.id}`,
       });
     }

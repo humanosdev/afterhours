@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { clearUserPresenceOnSignOut } from "@/lib/userPresenceWrite";
 import { useRouter } from "next/navigation";
 import { StoryRing } from "@/components/ui";
 import ProfileStoriesGrid from "@/components/ProfileStoriesGrid";
@@ -24,6 +25,7 @@ import StoryViewerModal, { type StoryViewerGroup, type StoryViewerStory } from "
 import { isStoryRowShareFlag } from "@/lib/storyRowShare";
 import { isMomentStillActive } from "@/lib/momentWindow";
 import { fetchViewedStoryIds, STORY_VIEWED_EVENT } from "@/lib/storyViews";
+import { fetchProfileVenuesForUser } from "@/lib/profileVenues";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -43,8 +45,8 @@ export default function ProfilePage() {
   const [myStoryViewerStories, setMyStoryViewerStories] = useState<StoryViewerStory[]>([]);
   const [viewedMyMomentIds, setViewedMyMomentIds] = useState<Record<string, boolean>>({});
   const [activeViewerGroup, setActiveViewerGroup] = useState<StoryViewerGroup | null>(null);
-  const [places, setPlaces] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
-  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "places">("shares");
+  const [venues, setVenues] = useState<Array<{ id: string; name: string; category?: string | null }>>([]);
+  const [activeTab, setActiveTab] = useState<"shares" | "archive" | "venues">("shares");
 
   const [userId, setUserId] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -59,6 +61,9 @@ export default function ProfilePage() {
       `Are you sure you want to sign out of "${accountLabel}"?`
     );
     if (!confirmed) return;
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth.user?.id;
+    if (uid) await clearUserPresenceOnSignOut(supabase, uid);
     await supabase.auth.signOut();
     router.push("/login");
   }
@@ -171,25 +176,15 @@ export default function ProfilePage() {
     setMyStoryViewerStories(viewerStories);
     setPresenceUpdatedAt(presenceRes.data?.updated_at ?? null);
 
-    const historyByVenue = new Map<string, number>();
-    for (const row of momentRows) {
-      const venueId = (row as any)?.venue_id as string | null | undefined;
-      if (!venueId) continue;
-      const ts = new Date((row as any)?.created_at).getTime();
-      const prev = historyByVenue.get(venueId) ?? 0;
-      if (Number.isFinite(ts) && ts > prev) historyByVenue.set(venueId, ts);
-    }
-
-    if (!historyByVenue.size) {
-      setPlaces([]);
-    } else {
-      const ids = Array.from(historyByVenue.keys());
-      const { data: venueRows } = await supabase.from("venues").select("id, name, category").in("id", ids);
-      const sorted = (venueRows ?? [])
-        .slice()
-        .sort((a: any, b: any) => (historyByVenue.get(b.id) ?? 0) - (historyByVenue.get(a.id) ?? 0));
-      setPlaces(sorted as any);
-    }
+    const { venues: profileVenues, error: venuesError } = await fetchProfileVenuesForUser(supabase, userId);
+    if (venuesError) console.warn("profile venues fetch:", venuesError);
+    setVenues(
+      profileVenues.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+      }))
+    );
   }, [userId]);
 
   useEffect(() => {
@@ -342,7 +337,7 @@ export default function ProfilePage() {
   const profileTabs = [
     { key: "shares" as const, label: "Shares" },
     { key: "archive" as const, label: "Archive" },
-    { key: "places" as const, label: "Places" },
+    { key: "venues" as const, label: "Venues" },
   ];
 
   return (
@@ -459,8 +454,8 @@ export default function ProfilePage() {
                     <p className="mt-1 text-[11px] text-white/48">Friends</p>
                   </button>
                   <div className="min-w-0 px-0.5">
-                    <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{places.length}</p>
-                    <p className="mt-1 text-[11px] text-white/48">Places</p>
+                    <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{venues.length}</p>
+                    <p className="mt-1 text-[11px] text-white/48">Venues</p>
                   </div>
                   <div className="min-w-0 px-0.5">
                     <p className="text-lg font-semibold tabular-nums text-white sm:text-xl">{momentsCount}</p>
@@ -580,11 +575,11 @@ export default function ProfilePage() {
               </div>
             ) : null}
 
-            {activeTab === "places" ? (
+            {activeTab === "venues" ? (
               <div>
-                {places.length ? (
+                {venues.length ? (
                   <ul className="divide-y divide-white/[0.08]">
-                    {places.map((place) => (
+                    {venues.map((place) => (
                       <li
                         key={place.id}
                         className="flex items-center justify-between gap-3 py-3 first:pt-0"
@@ -605,7 +600,7 @@ export default function ProfilePage() {
                   </ul>
                 ) : (
                     <p className="py-8 text-center text-[13px] text-white/42">
-                      Places you have visited will appear here.
+                      Stay at a venue for 15+ minutes and it&apos;ll show up here permanently.
                     </p>
                 )}
               </div>

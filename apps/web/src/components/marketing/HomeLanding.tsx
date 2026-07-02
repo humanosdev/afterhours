@@ -40,14 +40,14 @@ export function HomeLanding() {
         </div>
 
         <div className="relative z-[1]">
-          <AuthIntencityWordmark className="mb-8 shrink-0" />
+          <AuthIntencityWordmark className="mb-2 shrink-0" />
           <h1 className="sr-only">Intencity</h1>
 
-          <p className="ah-landing-hero-animate mx-auto mt-2 max-w-[22rem] text-center text-sm leading-relaxed text-text-secondary [animation-delay:120ms]">
+          <p className="ah-landing-hero-animate mx-auto max-w-[22rem] text-center text-sm leading-relaxed text-text-secondary [animation-delay:120ms]">
             See where people are, what&apos;s active, and where your friends are moving — live.
           </p>
 
-          <div className="ah-landing-hero-animate mx-auto mt-10 max-w-[min(92vw,28rem)] space-y-3 sm:max-w-xl [animation-delay:180ms]">
+          <div className="ah-landing-hero-animate mx-auto mt-6 max-w-[min(92vw,28rem)] space-y-2.5 sm:mt-10 sm:max-w-xl sm:space-y-3 [animation-delay:180ms]">
             <FeatureRow
               icon={<Sparkles size={18} strokeWidth={1.75} className="text-accent-violet-active" />}
               title="Know the vibe before you go"
@@ -65,7 +65,7 @@ export function HomeLanding() {
             />
           </div>
 
-          <div className="mx-auto mt-14 max-w-[20rem] text-center">
+          <div className="mx-auto mt-8 max-w-[20rem] text-center sm:mt-14">
             <div className="mx-auto mb-1 flex justify-center text-accent-violet/80">
               <MapPin size={20} strokeWidth={1.75} aria-hidden />
             </div>
@@ -73,7 +73,7 @@ export function HomeLanding() {
             <p className="mt-1.5 text-[15px] font-medium text-white/55">Join Intencity.</p>
           </div>
 
-          <div className="mx-auto mt-8 w-full max-w-sm space-y-3 pb-2">
+          <div className="mx-auto mt-6 w-full max-w-sm space-y-3 pb-2 sm:mt-8">
             <Link
               href="/signup"
               className="flex w-full items-center justify-center rounded-xl bg-white py-3 text-center text-[15px] font-semibold text-black shadow-[0_1px_0_rgba(255,255,255,0.12)] transition duration-200 ease-out hover:bg-white/95 active:scale-[0.99]"
@@ -88,7 +88,7 @@ export function HomeLanding() {
             </Link>
           </div>
 
-          <p className="mx-auto mt-8 max-w-sm pb-2 text-center text-xs leading-relaxed text-white/50">
+          <p className="mx-auto mt-6 max-w-sm pb-2 text-center text-xs leading-relaxed text-white/50 sm:mt-8">
             By joining, you agree to our{" "}
             <Link href="/terms" className="text-white/80 underline underline-offset-2">
               Terms

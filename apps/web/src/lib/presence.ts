@@ -6,6 +6,7 @@
 export {
   RECENT_WINDOW_MS,
   MAP_ACTIVITY_WINDOW_MS,
+  HEAT_ACTIVITY_WINDOW_MS,
   LIVE_WINDOW_MS,
   FRIEND_ONLINE_BADGE_MS,
   MAP_FALLBACK_CENTER_LAT,
@@ -14,6 +15,7 @@ export {
   isValidCoordinatePair,
   getPresenceFreshness,
   isPresenceLive,
+  isPresenceLiveForHeat,
   isFriendOnlineNow,
   isPresenceRecent,
 } from "@intencity/shared";
@@ -36,20 +38,23 @@ export function getFriendSocialActivitySubtitle(
     updatedAt: string | null | undefined;
     venueId: string | null | undefined;
     venueName: string | null | undefined;
+    /** Hub active-friends rail — generic "At a venue" without naming the spot. */
+    genericVenueLabel?: boolean;
   },
   nowMs = Date.now()
 ): string {
   if (args.ghostMode) return "Hiding location";
   const v = args.venueName?.trim();
-  const hasVenue = Boolean(args.venueId && v);
+  const hasVenue = Boolean(args.venueId && (args.genericVenueLabel || v));
+  const venueLabel = args.genericVenueLabel ? "a venue" : v;
   if (isFriendOnlineNow(args.updatedAt, nowMs)) {
-    return hasVenue ? `At ${v}` : "Active now";
+    return hasVenue ? `At ${venueLabel}` : "Active now";
   }
   if (isPresenceLive(args.updatedAt, nowMs)) {
-    return hasVenue ? `Away · At ${v}` : "Away";
+    return hasVenue ? `Away · At ${venueLabel}` : "Away";
   }
   if (isPresenceRecent(args.updatedAt, nowMs)) {
-    return hasVenue ? `Recently at ${v}` : "Recently active";
+    return hasVenue ? `Recently at ${venueLabel}` : "Recently active";
   }
   return "Offline";
 }

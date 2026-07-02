@@ -1,88 +1,85 @@
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
+import { Pressable, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Heart } from "lucide-react-native";
+import { useNotificationDelivery } from "../providers/NotificationDeliveryProvider";
+import { UnreadBadge } from "./ui/UnreadBadge";
+import { TabScreenHeader } from "./TabScreenHeader";
 import { colors } from "../theme/colors";
 
-/**
- * Matches web `/hub` top chrome: logo strip + slogan (decorative ♡ — no navigation; UI parity only).
- */
+const HUB_LOGO = require("../../assets/hub-logo.png");
+const HEART_SIZE = 24;
+const HEART_STROKE = 2.25;
+
+/** Hub tab header — title left, logo center, notifications right. */
 export function HubTopChrome() {
+  const router = useRouter();
+  const { hubActivityUnread } = useNotificationDelivery();
+
   return (
-    <View style={styles.header}>
-      <View style={styles.left}>
-        <View style={styles.logoWell}>
-          <Image
-            accessibilityIgnoresInvertColors
-            source={require("../../assets/icon.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+    <TabScreenHeader
+      title="Hub"
+      centerSlot={
+        <Image
+          source={HUB_LOGO}
+          style={styles.hubLogo}
+          contentFit="contain"
+          contentPosition="center"
+          cachePolicy="memory-disk"
+          accessibilityLabel="Intencity"
+        />
+      }
+      rightSlot={
+        <View style={styles.heartWrap}>
+          <Pressable
+            onPress={() => router.push("/notifications")}
+            accessibilityRole="button"
+            accessibilityLabel={
+              hubActivityUnread > 0
+                ? `Notifications, ${hubActivityUnread} unread`
+                : "Notifications"
+            }
+            hitSlop={6}
+            style={({ pressed }) => [styles.heartHit, pressed && styles.heartPressed]}
+          >
+            <Heart
+              size={HEART_SIZE}
+              strokeWidth={HEART_STROKE}
+              color={hubActivityUnread > 0 ? colors.accentActive : colors.textWhite85}
+              fill={hubActivityUnread > 0 ? "rgba(59, 102, 255, 0.22)" : "transparent"}
+            />
+          </Pressable>
+          <UnreadBadge count={hubActivityUnread} style={styles.heartBadge} />
         </View>
-        <View style={styles.sloganBlock}>
-          <Text style={styles.slogan}>
-            Live the city, feel the <Text style={styles.intencityWord}>intencity</Text>.
-          </Text>
-        </View>
-      </View>
-      <View style={styles.decorHeart} accessibilityElementsHidden>
-        <Text style={styles.heart}>♡</Text>
-      </View>
-    </View>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingBottom: 12,
+  hubLogo: {
+    width: 36,
+    height: 36,
   },
-  left: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minWidth: 0,
-  },
-  logoWell: {
-    width: 38,
-    height: 38,
+  heartWrap: {
+    position: "relative",
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  logo: {
-    width: 38,
-    height: 38,
-  },
-  sloganBlock: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: "center",
-  },
-  slogan: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: colors.textWhite55,
-    lineHeight: 17,
-  },
-  intencityWord: {
-    fontWeight: "600",
-    color: colors.accentActive,
-  },
-  decorHeart: {
-    width: 42,
-    height: 42,
-    borderRadius: 999,
+  heartHit: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    backgroundColor: "rgba(10, 12, 24, 0.72)",
-    opacity: 0.92,
   },
-  heart: {
-    fontSize: 15,
-    color: colors.textWhite78,
-    marginTop: 1,
+  heartBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+  },
+  heartPressed: {
+    opacity: 0.72,
   },
 });

@@ -32,10 +32,12 @@ import {
   isFriendOnlineNow,
   isLikelyMapFallbackPresence,
   isPresenceLive,
+  isPresenceLiveForHeat,
   isValidCoordinatePair,
   MAP_FALLBACK_CENTER_LAT,
   MAP_FALLBACK_CENTER_LNG,
 } from "@/lib/presence";
+import { isWebPresenceWriteRetired } from "@intencity/shared";
 import { formatRelativeTime } from "@/lib/time";
 import { syncUserPresenceWithVenuesFromCoords, type VenueForPresenceSync } from "@/lib/userPresenceVenueSync";
 import { acceptedFriendIdsExcludingBlocks } from "@/lib/pairBlockStatus";
@@ -50,6 +52,13 @@ import {
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuthRouteTransition } from "@/components/AuthRouteTransition";
 import MapPageSkeleton from "@/components/skeletons/MapPageSkeleton";
+import { fogPropsForDayMode } from "@/lib/mapAtmosphere";
+import {
+  coalesceOverlappingVenueActivityFeatures,
+  venueHeatColorStepExpression,
+  venueHeatHexFromActivity,
+  venueHeatmapColorExpression,
+} from "@intencity/shared";
 // Dev venue radii — off by default for MVP (enable locally when debugging zones)
 const SHOW_DEV_RADII = false;
 
@@ -81,22 +90,10 @@ const HEATMAP_INTENSITY_BASE_EXPR: mapboxgl.Expression = [
   2,
 ];
 
-/**
- * Matches `VENUE_GLOW_LAYER` `circle-color` steps — checkpoint bar borrows this as a whisper, not a loud fill.
- */
-function venueCombinedActivityToHeatHex(activity: number): string {
-  const n = Math.max(0, Math.round(Number.isFinite(activity) ? activity : 0));
-  if (n >= 16) return "#1F52F5";
-  if (n >= 9) return "#ff2ea6";
-  if (n >= 4) return "#14b8a6";
-  if (n >= 1) return "#7dd3fc";
-  return "#7c8aa0";
-}
-
 function heatHexToRgba(hex: string, alpha: number): string {
   const h = hex.replace("#", "");
   if (h.length !== 6 || !/^[0-9a-fA-F]+$/i.test(h)) {
-    return `rgba(124, 138, 160, ${alpha})`;
+    return `rgba(42, 42, 42, ${alpha})`;
   }
   const v = parseInt(h, 16);
   const r = (v >> 16) & 255;
@@ -107,7 +104,7 @@ function heatHexToRgba(hex: string, alpha: number): string {
 
 /** Heat-tinted ring + bloom so the pill reads lively without a flat color wash. Stronger on light map so it mirrors night visibility. */
 function checkpointBarHeatShadowStyle(activity: number, dayMode: boolean): { boxShadow: string } {
-  const heat = venueCombinedActivityToHeatHex(activity);
+  const heat = venueHeatHexFromActivity(activity);
   const edge = dayMode ? 0.34 : 0.24;
   const glow = dayMode ? 0.44 : 0.32;
   const drop = dayMode ? 0.22 : 0.14;
@@ -116,7 +113,7 @@ function checkpointBarHeatShadowStyle(activity: number, dayMode: boolean): { box
   };
 }
 
-/** Matches venue heat steps: 1 ice → 4 teal → 9 pink → 16 packed blue. Pulse starts past the teal tier (3rd color band). */
+/** Matches venue heat steps: 9 High → 16 Very High+. Pulse starts at High tier. */
 const CHECKPOINT_RING_PULSE_SOFT_MIN = 9;
 const CHECKPOINT_RING_PULSE_STRONG_MIN = 16;
 
@@ -131,7 +128,7 @@ function checkpointBarHeatPulseTier(activity: number): "off" | "soft" | "strong"
 function checkpointBarPulseOverlayStyle(activity: number, dayMode: boolean): { boxShadow: string } | undefined {
   const tier = checkpointBarHeatPulseTier(activity);
   if (tier === "off") return undefined;
-  const heat = venueCombinedActivityToHeatHex(activity);
+  const heat = venueHeatHexFromActivity(activity);
   if (tier === "strong") {
     return {
       boxShadow: dayMode
@@ -148,7 +145,7 @@ function checkpointBarPulseOverlayStyle(activity: number, dayMode: boolean): { b
 
 /** Venue bottom sheet: neutral depth + heat rim so day mode matches checkpoint energy. */
 function venueSheetStackShadowStyle(activity: number, dayMode: boolean): { boxShadow: string } {
-  const heat = venueCombinedActivityToHeatHex(activity);
+  const heat = venueHeatHexFromActivity(activity);
   if (dayMode) {
     return {
       boxShadow: [
@@ -171,7 +168,7 @@ function venueSheetStackShadowStyle(activity: number, dayMode: boolean): { boxSh
 
 /** Top-edge pulse ring on venue sheet — heat keyed like map layers (not fixed violet). */
 function venueSheetInnerRimStyle(activity: number, dayMode: boolean): { borderColor: string; boxShadow: string } {
-  const heat = venueCombinedActivityToHeatHex(activity);
+  const heat = venueHeatHexFromActivity(activity);
   return {
     borderColor: heatHexToRgba(heat, dayMode ? 0.34 : 0.3),
     boxShadow: dayMode
@@ -190,26 +187,8 @@ function mapStyleUrlForDayMode(day: boolean): string {
   return day ? MAP_STYLE_DAY : MAP_STYLE_NIGHT;
 }
 
-function applyMapAtmosphereForMode(m: mapboxgl.Map, dayMode: boolean) {
-  if (dayMode) {
-    m.setFog({
-      range: [1, 10],
-      color: "#eef0f4",
-      "high-color": "#e5e8ef",
-      "horizon-blend": 0.22,
-      "space-color": "#f4f5f8",
-      "star-intensity": 0,
-    });
-  } else {
-    m.setFog({
-      range: [0.85, 8],
-      color: "#0c1118",
-      "high-color": "#131b26",
-      "horizon-blend": 0.12,
-      "space-color": "#080d14",
-      "star-intensity": 0.45,
-    });
-  }
+function applyMapAtmosphereForMode(m: mapboxgl.Map, dayMode: boolean, zoom = m.getZoom()) {
+  m.setFog(fogPropsForDayMode(dayMode, zoom));
 }
 
 function applyBrandedBasemapTheme(m: mapboxgl.Map, dayMode: boolean) {
@@ -1201,7 +1180,7 @@ useEffect(() => {
 
   m.on("load", () => {
     clearLoadFailsafe();
-    applyMapAtmosphereForMode(m, initialDay);
+    applyMapAtmosphereForMode(m, initialDay, m.getZoom());
     applyBrandedBasemapTheme(m, initialDay);
     setMapReady(true);
     requestAnimationFrame(() => {
@@ -1227,6 +1206,7 @@ useEffect(() => {
     removeMapIdlePointerListener = () =>
       container.removeEventListener("pointerdown", onMapPointerIdleReset);
   });
+  m.on("zoom", () => setMapZoom(m.getZoom()));
   m.on("zoomend", () => setMapZoom(m.getZoom()));
 
   return () => {
@@ -1256,6 +1236,12 @@ useEffect(() => {
   useEffect(() => {
     const m = map.current;
     if (!m || !mapReady) return;
+    applyMapAtmosphereForMode(m, mapDayMode, mapZoom);
+  }, [mapReady, mapDayMode, mapZoom]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
 
     const url = mapStyleUrlForDayMode(mapDayMode);
     if (lastAppliedMapStyleRef.current === url) return;
@@ -1267,7 +1253,7 @@ useEffect(() => {
     const onStyleLoad = () => {
       m.off("style.load", onStyleLoad);
       if (cancelled) return;
-      applyMapAtmosphereForMode(m, targetDay);
+      applyMapAtmosphereForMode(m, targetDay, m.getZoom());
       applyBrandedBasemapTheme(m, targetDay);
       setMapStyleEpoch((e) => e + 1);
     };
@@ -1534,7 +1520,7 @@ function getCountsForVenue(
     if (hiddenIds.has(p.user_id)) continue;
   if (p.user_id === meId) continue;
   if (!isValidCoordinatePair(p.lat, p.lng)) continue;
-  if (!isPresenceLive(p.updated_at, now)) continue;
+  if (!isPresenceLiveForHeat(p.updated_at, now)) continue;
 
   const isFriend =
   !!friendsById[p.user_id] &&
@@ -1909,16 +1895,7 @@ useEffect(() => {
       type: "heatmap",
       source: VENUE_ACTIVITY_SOURCE,
       paint: {
-        "heatmap-weight": [
-          "interpolate",
-          ["linear"],
-          ["coalesce", ["get", "combined_count"], 0],
-          0, 0,
-          2, 0.2,
-          6, 0.5,
-          11, 0.8,
-          18, 1.2,
-        ],
+        "heatmap-weight": 0,
         "heatmap-intensity": HEATMAP_INTENSITY_BASE_EXPR,
         "heatmap-radius": [
           "interpolate",
@@ -1944,16 +1921,7 @@ useEffect(() => {
           17, 0.06,
           18, 0,
         ],
-        "heatmap-color": [
-          "interpolate",
-          ["linear"],
-          ["heatmap-density"],
-          0, "rgba(148,163,184,0.06)",      // no people: transparent gray haze
-          0.18, "#7dd3fc",                  // some: ice blue
-          0.42, "#14b8a6",                  // growing: teal
-          0.72, "#ff2ea6",                  // busy: hot pink
-          1, "#1F52F5",                     // packed: deep electric blue
-        ],
+        "heatmap-color": venueHeatmapColorExpression() as mapboxgl.Expression,
       },
     });
 
@@ -2060,15 +2028,7 @@ useEffect(() => {
       type: "circle",
       source: VENUE_ACTIVITY_SOURCE,
       paint: {
-        "circle-color": [
-          "step",
-          ["coalesce", ["get", "combined_count"], 0],
-          "rgba(148,163,184,0.34)",
-          1, "#7dd3fc",
-          4, "#14b8a6",
-          9, "#ff2ea6",
-          16, "#1F52F5",
-        ],
+        "circle-color": venueHeatColorStepExpression() as mapboxgl.Expression,
         "circle-radius": [
           "interpolate",
           ["linear"],
@@ -2078,7 +2038,7 @@ useEffect(() => {
             ["linear"],
             [
               "+",
-              ["coalesce", ["get", "combined_count"], 0],
+              0,
               ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
               ["*", 1.8, ["coalesce", ["get", "ambient_pulse"], 0]],
             ],
@@ -2092,7 +2052,7 @@ useEffect(() => {
             ["linear"],
             [
               "+",
-              ["coalesce", ["get", "combined_count"], 0],
+              0,
               ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
               ["*", 1.8, ["coalesce", ["get", "ambient_pulse"], 0]],
             ],
@@ -2106,7 +2066,7 @@ useEffect(() => {
             ["linear"],
             [
               "+",
-              ["coalesce", ["get", "combined_count"], 0],
+              0,
               ["*", 6, ["coalesce", ["get", "checkpoint_pulse"], 0]],
               ["*", 1.8, ["coalesce", ["get", "ambient_pulse"], 0]],
             ],
@@ -2122,12 +2082,9 @@ useEffect(() => {
         "circle-opacity": [
           "interpolate",
           ["linear"],
-          ["coalesce", ["get", "combined_count"], 0],
-          0, 0.12,
-          1, 0.28,
-          6, 0.38,
-          12, 0.5,
-          18, 0.62,
+          ["zoom"],
+          10, 0.12,
+          14, 0.28,
         ],
         "circle-pitch-alignment": "map",
         "circle-stroke-width": 0,
@@ -2139,15 +2096,7 @@ useEffect(() => {
       type: "circle",
       source: VENUE_ACTIVITY_SOURCE,
       paint: {
-        "circle-color": [
-          "step",
-          ["coalesce", ["get", "combined_count"], 0],
-          "rgba(148,163,184,0.32)",
-          1, "#7dd3fc",
-          4, "#14b8a6",
-          9, "#ff2ea6",
-          16, "#1F52F5",
-        ],
+        "circle-color": venueHeatColorStepExpression() as mapboxgl.Expression,
         "circle-radius": [
           "interpolate",
           ["linear"],
@@ -2245,16 +2194,10 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
-          0,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 12], 0.88, 0],
-          6,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 8], 0.9, 0],
-          9,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 4], 0.92, 0],
-          11.5,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 1], 0.93, 0.08],
-          14,
-          0.95,
+          0, 0,
+          10, 0,
+          11.5, 0.12,
+          14, 0.95,
         ],
       },
     });
@@ -2296,16 +2239,10 @@ useEffect(() => {
           "interpolate",
           ["linear"],
           ["zoom"],
-          0,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 12], 0.88, 0],
-          6,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 8], 0.9, 0],
-          9,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 4], 0.92, 0],
-          11.5,
-          ["case", [">=", ["coalesce", ["get", "combined_count"], 0], 1], 0.93, 0.08],
-          14,
-          0.95,
+          0, 0,
+          10, 0,
+          11.5, 0.12,
+          14, 0.95,
         ],
       },
     });
@@ -2455,7 +2392,7 @@ useEffect(() => {
 
     src.setData({
       type: "FeatureCollection",
-      features,
+      features: coalesceOverlappingVenueActivityFeatures(features),
     } as any);
   }, [
     filteredVenues,
@@ -2641,6 +2578,7 @@ useEffect(() => {
   useEffect(() => {
   if (!you || !meId || venues.length === 0) return;
   if (!isValidCoordinatePair(you.lat, you.lng)) return;
+  if (isWebPresenceWriteRetired()) return;
  // if (hasRunInitialPresence.current) return;
 
 
@@ -2903,8 +2841,8 @@ useEffect(() => {
         if (!isMe && ghost) continue;
         if (findContainingVenue(latestP)) continue;
         const p = isMe
-          ? activePresenceByUser.get(id)
-          : (activePresenceByUser.get(id) ?? latestKnownPresenceByUser.get(id));
+          ? activePresenceByUser.get(id) ?? latestKnownPresenceByUser.get(id)
+          : activePresenceByUser.get(id);
         if (!p) continue;
         const key = coordinateKeyForPresence(p);
         const bucket = nonVenueOverlapGroups.get(key) ?? [];
@@ -2959,8 +2897,8 @@ useEffect(() => {
       }
 
       const p = isMe
-        ? activePresenceByUser.get(id)
-        : (activePresenceByUser.get(id) ?? latestKnownPresenceByUser.get(id));
+        ? activePresenceByUser.get(id) ?? latestKnownPresenceByUser.get(id)
+        : activePresenceByUser.get(id);
       if (!p) continue;
       if (!isMe && ghost) continue;
       if (isGlobeView) continue;
@@ -3995,7 +3933,7 @@ useEffect(() => {
                 size={18}
                 strokeWidth={2.2}
                 className={mapDayMode ? "shrink-0" : "shrink-0 text-white/95"}
-                style={mapDayMode ? { color: venueCombinedActivityToHeatHex(selectedVenueActivity) } : undefined}
+                style={mapDayMode ? { color: venueHeatHexFromActivity(selectedVenueActivity) } : undefined}
                 aria-hidden
               />
               Check the scene

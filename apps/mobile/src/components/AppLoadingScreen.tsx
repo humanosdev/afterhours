@@ -1,34 +1,36 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import { StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { colors } from "../theme/colors";
-import { IntencityWordmark } from "./IntencityWordmark";
-import { Screen } from "./Screen";
+import { HubBootLogo } from "./HubBootLogo";
 
 type AppLoadingScreenProps = {
-  message?: string;
+  onLayout?: (event: LayoutChangeEvent) => void;
 };
 
-export function AppLoadingScreen({ message = "Loading…" }: AppLoadingScreenProps) {
+/** Minimal boot splash — centered hub logo on app navy. */
+export function AppLoadingScreen({ onLayout }: AppLoadingScreenProps) {
+  useEffect(() => {
+    void SplashScreen.hideAsync();
+  }, []);
+
+  const handleLayout = (event: LayoutChangeEvent) => {
+    void SplashScreen.hideAsync();
+    onLayout?.(event);
+  };
+
   return (
-    <Screen centered>
-      <View style={styles.stack}>
-        <IntencityWordmark size="large" />
-        <ActivityIndicator size="large" color={colors.accent} style={styles.spinner} />
-        <Text style={styles.message}>{message}</Text>
-      </View>
-    </Screen>
+    <View style={styles.root} onLayout={handleLayout}>
+      <HubBootLogo />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stack: {
+  root: {
+    flex: 1,
+    backgroundColor: colors.bgPrimary,
     alignItems: "center",
-    gap: 20,
-  },
-  spinner: {
-    marginTop: 8,
-  },
-  message: {
-    fontSize: 15,
-    color: colors.textSecondary,
+    justifyContent: "center",
   },
 });

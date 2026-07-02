@@ -578,7 +578,7 @@ export default function GlobalSearchPage() {
                   ref={inputRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search friends, people, places, venues..."
+                  placeholder="Search friends, people, venues..."
                   enterKeyHint="search"
                   className="ah-glass-control h-[48px] w-full rounded-full pl-10 pr-3 text-[15px] text-white outline-none ring-0 placeholder:text-white/38 focus:border-accent-violet/35"
                 />
@@ -700,9 +700,9 @@ export default function GlobalSearchPage() {
                     </section>
 
                     <section>
-                      <h2 className="mb-2 text-[13px] font-semibold text-white">Places / Venues</h2>
+                      <h2 className="mb-2 text-[13px] font-semibold text-white">Venues</h2>
                       {venueHits.length === 0 ? (
-                        <p className="py-2 text-[13px] text-white/45">No places found.</p>
+                        <p className="py-2 text-[13px] text-white/45">No venues found.</p>
                       ) : (
                         <ul className="space-y-1">
                           {venueHits.map((v) => {
@@ -881,7 +881,7 @@ export default function GlobalSearchPage() {
                 </section>
 
                 <section>
-                  <SectionHeader title="Trending places" />
+                  <SectionHeader title="Trending venues" />
                   {trendingRanked.length === 0 ? (
                     <p className="mt-2 text-[13px] text-white/45">Venues appear here as activity picks up.</p>
                   ) : (

@@ -1,5 +1,8 @@
 "use client";
 
+import { isMarketingSite } from "@/lib/webSiteMode";
+import { MarketingSiteShell } from "@/components/marketing/MarketingSiteShell";
+import { MarketingHomeLanding } from "@/components/marketing/MarketingHomeLanding";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -9,6 +12,21 @@ import { HomeLanding } from "@/components/marketing/HomeLanding";
 import { withTimeout } from "@/lib/withTimeout";
 
 export default function HomePage() {
+  const marketingSite = isMarketingSite();
+
+  if (marketingSite) {
+    return (
+      <MarketingSiteShell>
+        <MarketingHomeLanding />
+      </MarketingSiteShell>
+    );
+  }
+
+  return <AppHomePage />;
+}
+
+/** Era 1 PWA home — session probe then landing or redirect to app. */
+function AppHomePage() {
   const router = useRouter();
   const { start } = useAuthRouteTransition();
   const [gate, setGate] = useState<"checking" | "landing">("checking");

@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
-import { appConfig } from "@/lib/appConfig";
-
-type PushRow = {
-  endpoint: string;
-  p256dh: string;
-  auth: string;
-};
+import { sendPushToUser } from "@/lib/pushNotifyServer";
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,6 +9,8 @@ export async function POST(req: NextRequest) {
     const title = body?.title as string | undefined;
     const bodyText = body?.body as string | undefined;
     const route = body?.route as string | undefined;
+    const notificationType = body?.notificationType as string | undefined;
+    const storyId = body?.storyId as string | undefined;
 
     if (!userId || !title || !bodyText) {
       return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
@@ -23,48 +18,27 @@ export async function POST(req: NextRequest) {
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
-    const vapidSubject = process.env.VAPID_SUBJECT ?? `mailto:${appConfig.supportEmail}`;
 
-    if (!supabaseUrl || !serviceRole || !vapidPublic || !vapidPrivate) {
+    if (!supabaseUrl || !serviceRole) {
       return NextResponse.json({ ok: false, error: "missing_env" }, { status: 500 });
     }
 
-    webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
     const admin = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
-    const { data: rows, error } = await admin
-      .from("push_subscriptions")
-      .select("endpoint, p256dh, auth")
-      .eq("user_id", userId);
-    if (error) {
-      return NextResponse.json({ ok: false, error: "subscriptions_fetch_failed" }, { status: 500 });
-    }
-
-    const payload = JSON.stringify({
+    const result = await sendPushToUser(admin, {
+      userId,
       title,
       body: bodyText,
-      route: route ?? "/notifications",
+      route,
+      notificationType,
+      storyId: storyId ?? null,
     });
 
-    const subscriptions = (rows ?? []) as PushRow[];
-    if (subscriptions.length === 0) return NextResponse.json({ ok: true, sent: 0 });
-
-    let sent = 0;
-    for (const row of subscriptions) {
-      const subscription = {
-        endpoint: row.endpoint,
-        keys: { p256dh: row.p256dh, auth: row.auth },
-      };
-      try {
-        await webpush.sendNotification(subscription, payload);
-        sent += 1;
-      } catch {
-        // swallow per-subscription errors to keep fanout resilient
-      }
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error ?? "push_send_failed" }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, sent });
+
+    return NextResponse.json({ ok: true, sent: result.sent, skipped: result.skipped ?? null });
   } catch {
     return NextResponse.json({ ok: false, error: "push_send_failed" }, { status: 500 });
   }

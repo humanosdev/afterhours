@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { BrandedSplashLogo } from "@/components/BrandedSplashLogo";
 import { INTENCITY_BRAND_LOCKUP_SRC } from "@/lib/brandAssets";
 import { AH_SPLASH_SESSION_KEY } from "@/lib/splashSession";
+import { isMarketingSite } from "@/lib/webSiteMode";
+import { isPublicSitePath } from "@/lib/publicSitePaths";
 
 /**
  * Splash timing (not arbitrary “extra” logo time):
@@ -78,6 +80,12 @@ export default function InitialAppSplash({ isAuthed }: { isAuthed: boolean }) {
 
   useEffect(() => {
     if (typeof window === "undefined" || !host) return;
+    /** Marketing site public pages — no branded app splash. */
+    if (isMarketingSite() && isPublicSitePath(pathname)) {
+      document.getElementById("ah-static-boot-splash")?.remove();
+      sessionStorage.setItem(AH_SPLASH_SESSION_KEY, "1");
+      return;
+    }
     if (sessionStorage.getItem(AH_SPLASH_SESSION_KEY)) return;
     if (started.current) return;
     started.current = true;
