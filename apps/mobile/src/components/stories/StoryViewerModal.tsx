@@ -390,7 +390,7 @@ export function StoryViewerModal({
 
   return (
     <>
-      <ModalGestureRoot visible animationType="none" presentationStyle="fullScreen" onRequestClose={close}>
+      <ModalGestureRoot visible animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
         <View style={styles.root}>
           <ReportedContentCover storyId={activeStory?.id ?? ""} style={styles.mediaStack}>
           <View style={StyleSheet.absoluteFill} pointerEvents="none">

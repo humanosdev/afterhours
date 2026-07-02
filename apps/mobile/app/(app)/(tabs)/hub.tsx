@@ -28,7 +28,7 @@ import { HubSuggestedFriendsCoach } from "../../../src/components/hub/HubSuggest
 import { shouldShowHubSuggestionsOnHubVisit, clearHubSuggestionsPending } from "../../../src/lib/appOpenPreference";
 import { OwnMomentRing } from "../../../src/components/hub/OwnMomentRing";
 import { FriendHubRing } from "../../../src/components/FriendHubRing";
-import { HubTabPageSkeleton } from "../../../src/components/skeletons/HubTabPageSkeleton";
+import { HubFeedPageSkeleton } from "../../../src/components/skeletons/HubFeedSkeleton";
 import {
   getCachedHubMoments,
   hubMomentsCacheKey,
@@ -53,6 +53,8 @@ import {
   subscribeStoryPostConfirmed,
   subscribeStoryPostFailed,
   subscribeStoryPostStarted,
+  mergeOptimisticMomentsMap,
+  isOptimisticStoryId,
 } from "../../../src/lib/storyPostOptimistic";
 import { pickCachedShareStats, patchShareStatsCache } from "../../../src/lib/shareStatsCache";
 import { useVenuesPreview } from "../../../src/hooks/useVenuesPreview";
@@ -71,6 +73,7 @@ import { hubLayout } from "../../../src/theme/hubLayout";
 import { mediaLexicon } from "../../../src/content/mediaLexicon";
 import { layout } from "../../../src/theme/layout";
 import { tabBodyLockedHeight } from "../../../src/theme/tabShellLayout";
+import { hubTabChromeAboveFeedPx } from "../../../src/theme/skeletonLayout";
 
 /** OwnMomentRing / FriendHubRing column width + hub rail gap. */
 const MOMENT_RING_SLOT = 84 + layout.hubRailGap;
@@ -144,7 +147,7 @@ export default function HubTabScreen() {
         .then((map) => {
           momentsEverLoadedRef.current = map.size > 0;
           setCachedHubMoments(key, map);
-          setMomentsByUser(map);
+          setMomentsByUser((prev) => mergeOptimisticMomentsMap(map, prev));
           const allStoryIds = Array.from(map.values()).flat().map((s) => s.id);
           if (allStoryIds.length > 0) {
             const cached = getCachedViewedStoryIds(user.id, allStoryIds);
@@ -224,15 +227,20 @@ export default function HubTabScreen() {
         setMomentsByUser((prev) => {
           const next = new Map(prev);
           for (const [uid, stories] of next) {
-            next.set(
-              uid,
-              stories.map((story) =>
-                story.id === tempId ? { ...story, id: storyId, media_url: imageUrl } : story
-              )
+            const patched = stories.map((story) =>
+              story.id === tempId ? { ...story, id: storyId, media_url: imageUrl } : story
             );
+            if (patched.some((s) => s.id === storyId)) {
+              next.set(uid, patched);
+              continue;
+            }
+            if (stories.some((s) => s.id === tempId)) {
+              next.set(uid, patched);
+            }
           }
           return next;
         });
+        bumpStoryEpoch();
       }),
       subscribeStoryPostFailed((tempId) => {
         setShares((prev) => prev.filter((row) => row.id !== tempId));
@@ -252,7 +260,7 @@ export default function HubTabScreen() {
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [user?.id, setShares]);
+  }, [user?.id, setShares, bumpStoryEpoch]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -438,9 +446,17 @@ export default function HubTabScreen() {
       ? hubSlotLayout.activeFriendsBlockWithRailMinHeight
       : hubSlotLayout.activeFriendsBlockEmptyMinHeight;
 
+  const hasOptimisticMoments = useMemo(() => {
+    for (const stories of momentsByUser.values()) {
+      if (stories.some((story) => isOptimisticStoryId(story.id))) return true;
+    }
+    return false;
+  }, [momentsByUser]);
+
   const hubFeedBusy = useMemo(() => {
     if (!user?.id) return false;
-    const momentsGateReady = momentsByUser.size === 0 || viewedIdsReady;
+    const momentsGateReady =
+      momentsByUser.size === 0 || viewedIdsReady || hasOptimisticMoments;
     return friendsLoading || momentsLoading || sharesLoading || !shareStatsReady || !momentsGateReady;
   }, [
     user?.id,
@@ -450,6 +466,7 @@ export default function HubTabScreen() {
     shareStatsReady,
     momentsByUser.size,
     viewedIdsReady,
+    hasOptimisticMoments,
   ]);
 
   const hubSkeletonShowsActiveFriends = friends.length > 0 || friendsLoading || hubFeedBusy;
@@ -518,22 +535,22 @@ export default function HubTabScreen() {
       onRefresh={onRefresh}
       refreshVariant="hub"
     >
+      <HubTopChrome />
+      <HubSearchLauncher />
       <StableSlot
         loading={hubFeedBusy}
         skeleton={
-          <HubTabPageSkeleton
+          <HubFeedPageSkeleton
             showActiveFriends={hubSkeletonActiveFriends}
-            minHeight={hubPageMinHeight}
+            minHeight={Math.max(320, hubPageMinHeight - hubTabChromeAboveFeedPx())}
           />
         }
-        style={{ minHeight: hubPageMinHeight, flexGrow: 1 }}
+        style={{ minHeight: Math.max(320, hubPageMinHeight - hubTabChromeAboveFeedPx()), flexGrow: 1 }}
+        variant="section"
         appSessionBoot
         tabBootKey="hub"
-        lockHeightWhileLoading
       >
       <>
-          <HubTopChrome />
-          <HubSearchLauncher />
           <View style={styles.momentsBlock}>
               <SectionHeader title="Moments" prominence="hub" />
               <ScrollView

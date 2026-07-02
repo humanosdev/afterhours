@@ -17,7 +17,8 @@ import { TextAction } from "../../../src/components/TextAction";
 import { ProfileAvatar } from "../../../src/components/ProfileAvatar";
 import { Screen } from "../../../src/components/Screen";
 import { SearchFieldPlaceholder } from "../../../src/components/SearchFieldPlaceholder";
-import { ChatTabPageSkeleton } from "../../../src/components/skeletons/ChatTabPageSkeleton";
+import { ChatListSkeleton, chatListSkeletonRowsForMinHeight } from "../../../src/components/skeletons/ChatListSkeleton";
+import { chatTabChromeAboveListPx } from "../../../src/theme/skeletonLayout";
 import { StableSlot } from "../../../src/components/ui/StableSlot";
 import { FadeInView } from "../../../src/components/ui/FadeInView";
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
@@ -135,67 +136,74 @@ export default function ChatTabScreen() {
       onRefresh={onRefresh}
       refreshVariant="chat"
     >
+      <TabScreenHeader
+        title="Messages"
+        rightSlot={
+          <TextAction
+            label="New"
+            tone="accent"
+            onPress={() => {
+              setFriendPickerOpen((v) => !v);
+              setStartError(null);
+            }}
+          />
+        }
+      />
+
+      <SearchFieldPlaceholder
+        variant="field"
+        placeholder="Search by username, name, or message"
+        value={query}
+        onChangeText={setQuery}
+      />
+
+      <View style={styles.inboxTabs}>
+        <Pressable
+          onPress={() => setInboxTab("chats")}
+          style={[styles.inboxTab, inboxTab === "chats" && styles.inboxTabActive]}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: inboxTab === "chats" }}
+        >
+          <Text style={[styles.inboxTabLabel, inboxTab === "chats" && styles.inboxTabLabelActive]}>
+            Chats
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setInboxTab("requests")}
+          style={[styles.inboxTab, inboxTab === "requests" && styles.inboxTabActive]}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: inboxTab === "requests" }}
+        >
+          <Text style={[styles.inboxTabLabel, inboxTab === "requests" && styles.inboxTabLabelActive]}>
+            Requests
+          </Text>
+          <View style={styles.inboxTabBadgeSlot}>
+            {inboxGateReady && requestUnreadCount > 0 ? (
+              <View style={styles.inboxTabBadge}>
+                <Text style={styles.inboxTabBadgeLabel}>
+                  {requestUnreadCount > 9 ? "9+" : String(requestUnreadCount)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+      </View>
+
       <StableSlot
         loading={listBusy}
-        skeleton={<ChatTabPageSkeleton minHeight={pageMinHeight} />}
-        style={{ minHeight: pageMinHeight, flexGrow: 1 }}
+        skeleton={
+          <ChatListSkeleton
+            rows={chatListSkeletonRowsForMinHeight(
+              Math.max(120, pageMinHeight - chatTabChromeAboveListPx()),
+              6
+            )}
+          />
+        }
+        style={{ minHeight: Math.max(120, pageMinHeight - chatTabChromeAboveListPx()), flexGrow: 1 }}
+        variant="section"
         appSessionBoot
         tabBootKey="chat"
-        lockHeightWhileLoading
       >
-        <TabScreenHeader
-          title="Messages"
-          rightSlot={
-            <TextAction
-              label="New"
-              tone="accent"
-              onPress={() => {
-                setFriendPickerOpen((v) => !v);
-                setStartError(null);
-              }}
-            />
-          }
-        />
-
-        <SearchFieldPlaceholder
-          variant="field"
-          placeholder="Search by username, name, or message"
-          value={query}
-          onChangeText={setQuery}
-        />
-
-        <View style={styles.inboxTabs}>
-          <Pressable
-            onPress={() => setInboxTab("chats")}
-            style={[styles.inboxTab, inboxTab === "chats" && styles.inboxTabActive]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: inboxTab === "chats" }}
-          >
-            <Text style={[styles.inboxTabLabel, inboxTab === "chats" && styles.inboxTabLabelActive]}>
-              Chats
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setInboxTab("requests")}
-            style={[styles.inboxTab, inboxTab === "requests" && styles.inboxTabActive]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: inboxTab === "requests" }}
-          >
-            <Text style={[styles.inboxTabLabel, inboxTab === "requests" && styles.inboxTabLabelActive]}>
-              Requests
-            </Text>
-            <View style={styles.inboxTabBadgeSlot}>
-              {inboxGateReady && requestUnreadCount > 0 ? (
-                <View style={styles.inboxTabBadge}>
-                  <Text style={styles.inboxTabBadgeLabel}>
-                    {requestUnreadCount > 9 ? "9+" : String(requestUnreadCount)}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </Pressable>
-        </View>
-
         {showFriendPicker ? (
           <FadeInView contentKey="friend-picker" style={styles.friendPicker}>
             {friendMatches.length === 0 ? (

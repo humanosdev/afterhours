@@ -7,6 +7,7 @@ import {
 } from "../lib/hubFeedPreviewCache";
 import type { AcceptedFriendPublic } from "../types/friend";
 import type { HubShareFeedItem } from "../types/hubFeed";
+import { mergeOptimisticShareRows } from "../lib/storyPostOptimistic";
 
 /**
  * Read-only Hub “Shares” rail (Phase 2M). Waits for accepted-friends list like web hub deps.
@@ -55,7 +56,7 @@ export function useHubFeedPreview(
         .then(({ shares: next, error: nextError }) => {
           setCachedHubFeedPreview(userId, friendKey, next);
           sharesCountRef.current = next.length;
-          setShares(next);
+          setShares((prev) => mergeOptimisticShareRows(next, prev));
           setError(nextError);
           if (next.length) {
             void fetchHubShareFeedCardStates(

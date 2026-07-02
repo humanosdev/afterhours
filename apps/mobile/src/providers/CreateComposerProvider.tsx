@@ -193,7 +193,6 @@ export function CreateComposerProvider({ children }: { children: ReactNode }) {
         onPosted={(payload: StoryPostStartPayload) => {
           emitStoryPostStarted(payload);
           setComposerOpen(false);
-          bumpStoryEpoch();
         }}
       />
       <StoryViewerModal

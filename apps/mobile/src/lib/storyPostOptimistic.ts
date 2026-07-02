@@ -76,3 +76,33 @@ export function emitStoryPostFailed(tempId: string): void {
 export function makeOptimisticStoryId(): string {
   return `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+export function isOptimisticStoryId(id: string): boolean {
+  return id.startsWith("optimistic-");
+}
+
+export function mergeOptimisticMomentsMap<T extends { id: string }>(
+  server: Map<string, T[]>,
+  prev: Map<string, T[]>
+): Map<string, T[]> {
+  const next = new Map(server);
+  for (const [uid, prevStories] of prev) {
+    const pending = prevStories.filter((story) => isOptimisticStoryId(story.id));
+    if (!pending.length) continue;
+    const serverStories = next.get(uid) ?? [];
+    const serverIds = new Set(serverStories.map((story) => story.id));
+    const toKeep = pending.filter((story) => !serverIds.has(story.id));
+    if (toKeep.length) {
+      next.set(uid, [...serverStories, ...toKeep]);
+    }
+  }
+  return next;
+}
+
+export function mergeOptimisticShareRows<T extends { id: string }>(server: T[], prev: T[]): T[] {
+  const pending = prev.filter((row) => isOptimisticStoryId(row.id));
+  if (!pending.length) return server;
+  const serverIds = new Set(server.map((row) => row.id));
+  const head = pending.filter((row) => !serverIds.has(row.id));
+  return head.length ? [...head, ...server] : server;
+}

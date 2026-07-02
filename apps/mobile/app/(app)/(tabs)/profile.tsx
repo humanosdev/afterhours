@@ -9,7 +9,8 @@ import { TabScreenHeader } from "../../../src/components/TabScreenHeader";
 import { ProfileMenuAnchor } from "../../../src/components/profile/ProfileMenuAnchor";
 import { ProfileTabGrid } from "../../../src/components/profile/ProfileTabGrid";
 import { Screen } from "../../../src/components/Screen";
-import { ProfileTabPageSkeleton } from "../../../src/components/skeletons/ProfileTabPageSkeleton";
+import { ProfilePageSkeleton } from "../../../src/components/skeletons/ProfileSkeleton";
+import { tabScreenHeaderChromeHeight } from "../../../src/theme/skeletonLayout";
 import { StableSlot } from "../../../src/components/ui/StableSlot";
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
 import { useMyAvatar } from "../../../src/hooks/useMyAvatar";
@@ -217,28 +218,34 @@ export default function ProfileTabScreen() {
       onRefresh={onRefresh}
       refreshVariant="profile"
     >
+      <TabScreenHeader
+        title="Profile"
+        subtitle={`@${handle}`}
+        rightSlot={
+          <ProfileMenuAnchor
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            onSignOut={onSignOut}
+            accountLabel={accountLabel}
+          />
+        }
+      />
       <StableSlot
-        style={{ minHeight: profilePageMinHeightPx, flexGrow: 1 }}
+        style={{
+          minHeight: Math.max(360, profilePageMinHeightPx - tabScreenHeaderChromeHeight()),
+          flexGrow: 1,
+        }}
         loading={identityShellBusy}
         skeleton={
-          <ProfileTabPageSkeleton tabCount={TABS.length} minHeight={profilePageMinHeightPx} />
+          <ProfilePageSkeleton
+            tabCount={TABS.length}
+            minHeight={Math.max(360, profilePageMinHeightPx - tabScreenHeaderChromeHeight())}
+          />
         }
+        variant="section"
         appSessionBoot
         tabBootKey="profile"
-        lockHeightWhileLoading
       >
-        <TabScreenHeader
-          title="Profile"
-          subtitle={`@${handle}`}
-          rightSlot={
-            <ProfileMenuAnchor
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
-              onSignOut={onSignOut}
-              accountLabel={accountLabel}
-            />
-          }
-        />
         {profileError ? (
           <Text style={styles.profileError}>Couldn&apos;t load your profile. Check connection or try again.</Text>
         ) : null}

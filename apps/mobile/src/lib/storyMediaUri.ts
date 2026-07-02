@@ -18,10 +18,8 @@ export async function resolveStoryDisplayUri(
   if (cached) return cached;
 
   if (url.startsWith("file://") || url.startsWith("ph://") || url.startsWith("content://")) {
-    if (__DEV__) {
-      console.warn("[story-media] render blocked local uri", url.slice(0, 72));
-    }
-    return null;
+    setCachedStoryDisplayUri(url, url);
+    return url;
   }
 
   if (!url.startsWith("http://") && !url.startsWith("https://")) {

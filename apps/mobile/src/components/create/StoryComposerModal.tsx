@@ -6,7 +6,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   ActivityIndicator,
   Alert,
-  Platform,
+  Animated,
+  Easing,
   Pressable,
   StyleSheet,
   Text,
@@ -40,6 +41,7 @@ import {
 } from "../../theme/momentStageLayout";
 import { colors } from "../../theme/colors";
 import { mediaLayout } from "../../theme/mediaLayout";
+import { motion } from "../../theme/motion";
 import { captureRef } from "react-native-view-shot";
 import { ModalGestureRoot } from "../ModalGestureRoot";
 import { ComposerBottomModeMenu } from "./ComposerBottomModeMenu";
@@ -146,6 +148,8 @@ export function StoryComposerModal({
   const [momentSourceSize, setMomentSourceSize] = useState<{ width: number; height: number } | null>(null);
   const [shareActiveUri, setShareActiveUri] = useState<string | null>(null);
   const [screenFlashActive, setScreenFlashActive] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const previewLift = useRef(new Animated.Value(0)).current;
   const [overlays, setOverlays] = useState<MomentOverlay[]>([]);
   const [activeOverlayId, setActiveOverlayId] = useState<string | null>(null);
   const {
@@ -183,6 +187,13 @@ export function StoryComposerModal({
       setMomentPreviewSize({ width: momentStage.width, height: momentStage.height });
       setPreviewUri(uri);
       setSurface("preview");
+      previewLift.setValue(Math.round(momentStage.height * 0.12));
+      Animated.timing(previewLift, {
+        toValue: 0,
+        duration: motion.sheet.openSheet,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
       void Image.prefetch(uri);
 
       if (size) return;
@@ -193,7 +204,7 @@ export function StoryComposerModal({
         setMomentSourceSize({ width: refined.width, height: refined.height });
       });
     },
-    [momentStage.width, momentStage.height]
+    [momentStage.width, momentStage.height, previewLift]
   );
 
   const resetSession = useCallback(() => {
@@ -210,6 +221,8 @@ export function StoryComposerModal({
     setSurface(mode === "shares" ? "share-library" : "live");
     setCameraReady(false);
     setScreenFlashActive(false);
+    previewLift.setValue(0);
+    setCapturing(false);
     setOverlays([]);
     setActiveOverlayId(null);
   }, [mode]);
@@ -288,7 +301,8 @@ export function StoryComposerModal({
   }
 
   async function capture() {
-    if (surface !== "live" || uploading || !cameraReady) return;
+    if (surface !== "live" || uploading || capturing || !cameraReady) return;
+    setCapturing(true);
     const wantsScreenFlash = facing === "front" && flashOn;
     let flashTimer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -297,9 +311,8 @@ export function StoryComposerModal({
         flashTimer = setTimeout(() => setScreenFlashActive(false), SELFIE_SCREEN_FLASH_MS);
       }
       const photo = await cameraRef.current?.takePictureAsync({
-        quality: 0.92,
-        /** Skip preview-matched downscale — full sensor resolution, fastest delivery. */
-        skipProcessing: Platform.OS === "ios",
+        quality: mediaLayout.ingest.jpegQuality,
+        skipProcessing: true,
         shutterSound: false,
       });
       if (!photo?.uri) return;
@@ -309,6 +322,7 @@ export function StoryComposerModal({
     } finally {
       if (flashTimer) clearTimeout(flashTimer);
       if (wantsScreenFlash) setScreenFlashActive(false);
+      setCapturing(false);
     }
   }
 
@@ -498,7 +512,7 @@ export function StoryComposerModal({
 
   const modalProps = {
     visible: true as const,
-    animationType: "none" as const,
+    animationType: "slide" as const,
     presentationStyle: "fullScreen" as const,
     onRequestClose: close,
     statusBarTranslucent: true,
@@ -575,11 +589,8 @@ export function StoryComposerModal({
               <View style={[StyleSheet.absoluteFill, styles.cameraPlaceholder]} />
             ) : null}
             {isPreview && previewUri ? (
-              <View
-                ref={momentStickerCaptureRef}
-                collapsable={false}
-                style={StyleSheet.absoluteFill}
-              >
+              <View ref={momentStickerCaptureRef} collapsable={false} style={StyleSheet.absoluteFill}>
+                <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: previewLift }] }]}>
                 <MomentMediaCanvas
                   key={previewUri}
                   ref={momentCropRef}
@@ -604,6 +615,7 @@ export function StoryComposerModal({
                       />
                     ))
                   : null}
+                </Animated.View>
               </View>
             ) : null}
             {surface === "unavailable" ? (
@@ -636,8 +648,11 @@ export function StoryComposerModal({
 
                 <Pressable
                   onPress={() => void capture()}
-                  disabled={uploading || surface !== "live" || !cameraReady}
-                  style={[styles.shutterOuter, (surface !== "live" || !cameraReady) && styles.shutterDisabled]}
+                  disabled={uploading || capturing || surface !== "live" || !cameraReady}
+                  style={[
+                    styles.shutterOuter,
+                    (surface !== "live" || !cameraReady || capturing) && styles.shutterDisabled,
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel="Capture photo"
                 >

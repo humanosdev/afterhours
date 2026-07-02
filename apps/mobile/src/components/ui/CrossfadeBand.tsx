@@ -46,8 +46,7 @@ function readMinHeight(style: StyleProp<ViewStyle>): number {
 }
 
 /**
- * Async band — overlay skeleton on cold open (children stay mounted); unmount skeleton elsewhere.
- * Measured height becomes a permanent min-height floor so reveal never shrinks.
+ * Async band — real content stays mounted; skeleton overlays and fades out (no layout jump).
  */
 export function CrossfadeBand({
   loading,
@@ -73,15 +72,13 @@ export function CrossfadeBand({
   const showSkeleton =
     variant === "fitted" ? fittedShow : variant === "section" ? sectionShow : microShow;
 
-  const useOverlay = appSessionBoot && lockHeightWhileLoading;
-
   const [skeletonHeight, setSkeletonHeight] = useState(0);
+  const [skeletonMounted, setSkeletonMounted] = useState(showSkeleton);
   const contentOpacity = useRef(new Animated.Value(showSkeleton ? 0 : 1)).current;
-  const revealStartedRef = useRef(!showSkeleton);
+  const skeletonOpacity = useRef(new Animated.Value(showSkeleton ? 1 : 0)).current;
 
   const styledMin = readMinHeight(style);
   const shellFloorHeight = Math.max(styledMin, skeletonHeight);
-  /** Tab cold-open pin — use declared minHeight, not measured children (feed can be huge). */
   const loadingPinHeight =
     lockHeightWhileLoading && styledMin > 0 ? styledMin : shellFloorHeight;
   const floorHeight =
@@ -95,23 +92,34 @@ export function CrossfadeBand({
 
   useEffect(() => {
     if (showSkeleton) {
-      revealStartedRef.current = false;
+      setSkeletonMounted(true);
+      skeletonOpacity.setValue(1);
       contentOpacity.setValue(0);
       return;
     }
-    if (revealStartedRef.current) {
+
+    if (!skeletonMounted) {
       contentOpacity.setValue(1);
       return;
     }
-    revealStartedRef.current = true;
-    contentOpacity.setValue(0);
-    Animated.timing(contentOpacity, {
-      toValue: 1,
-      duration: motion.fade.skeletonReveal,
-      easing: REVEAL_EASING,
-      useNativeDriver: true,
-    }).start();
-  }, [showSkeleton, contentOpacity]);
+
+    Animated.parallel([
+      Animated.timing(skeletonOpacity, {
+        toValue: 0,
+        duration: motion.fade.skeletonReveal,
+        easing: REVEAL_EASING,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: 1,
+        duration: motion.fade.skeletonReveal,
+        easing: REVEAL_EASING,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setSkeletonMounted(false);
+    });
+  }, [showSkeleton, skeletonMounted, skeletonOpacity, contentOpacity]);
 
   const showTailFill =
     !lockHeightWhileLoading &&
@@ -145,23 +153,29 @@ export function CrossfadeBand({
     pinLoadFrame ? { height: loadingPinHeight, overflow: "hidden" as const } : null,
   ];
 
-  if (useOverlay) {
-    return (
-      <View style={rootStyle}>
-        <Animated.View
-          style={[styles.content, contentLayoutStyle, { opacity: contentOpacity }]}
-          pointerEvents={showSkeleton ? "none" : "auto"}
+  return (
+    <View style={rootStyle}>
+      <Animated.View
+        style={[styles.content, contentLayoutStyle, { opacity: contentOpacity }]}
+        pointerEvents={showSkeleton ? "none" : "auto"}
+      >
+        {children}
+      </Animated.View>
+      {skeletonMounted ? (
+        <View
+          style={[
+            styles.overlay,
+            fillHeight ? styles.overlayFill : null,
+            pinLoadFrame ? { height: loadingPinHeight } : null,
+          ]}
+          pointerEvents="none"
         >
-          {children}
-        </Animated.View>
-        {showSkeleton ? (
-          <View style={styles.overlay} pointerEvents="none">
+          <Animated.View style={[styles.skeletonFade, { opacity: skeletonOpacity }]}>
             <View
               style={[
                 styles.skeletonFrame,
                 fillHeight ? styles.skeletonFrameFill : null,
                 lockedHeight > 0 ? { height: lockedHeight, minHeight: lockedHeight } : null,
-                floorHeight > 0 && fillHeight ? { minHeight: floorHeight } : null,
               ]}
             >
               <View style={skeletonWrapStyle} onLayout={onSkeletonLayout}>
@@ -169,37 +183,9 @@ export function CrossfadeBand({
               </View>
               {showTailFill ? <Skeleton style={styles.skeletonTailFill} borderRadius={14} /> : null}
             </View>
-          </View>
-        ) : null}
-      </View>
-    );
-  }
-
-  if (showSkeleton) {
-    return (
-      <View style={rootStyle}>
-        <View
-          style={[
-            styles.skeletonFrame,
-            fillHeight ? styles.skeletonFrameFill : null,
-            lockedHeight > 0 ? { height: lockedHeight, minHeight: lockedHeight } : null,
-            lockHeightWhileLoading && floorHeight > 0 ? { minHeight: floorHeight } : null,
-          ]}
-        >
-          <View style={skeletonWrapStyle} onLayout={onSkeletonLayout}>
-            {skeleton}
-          </View>
-          {showTailFill ? <Skeleton style={styles.skeletonTailFill} borderRadius={14} /> : null}
+          </Animated.View>
         </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={rootStyle}>
-      <Animated.View style={[styles.content, { opacity: contentOpacity }]}>
-        {children}
-      </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -219,7 +205,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignSelf: "stretch",
   },
-  /** Keep hidden tab content out of scroll layout while the fitted skeleton is pinned. */
   contentLoadPinned: {
     position: "absolute",
     top: 0,
@@ -229,6 +214,13 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.bgPrimary,
+  },
+  overlayFill: {
+    flex: 1,
+  },
+  skeletonFade: {
+    flex: 1,
+    width: "100%",
   },
   skeletonFrame: {
     width: "100%",
