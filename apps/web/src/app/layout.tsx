@@ -54,7 +54,7 @@ export default async function RootLayout({
   if (marketingSite) {
     assertMarketingSiteAccess();
     return (
-      <html lang="en" className="overflow-x-hidden">
+      <html lang="en" className="marketing-site">
         <head>
           {process.env.NODE_ENV === "production" ? (
             <script dangerouslySetInnerHTML={{ __html: PROD_CHUNK_HEAL_SCRIPT }} />
@@ -62,7 +62,7 @@ export default async function RootLayout({
           <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
           <link rel="preload" href={INTENCITY_BRAND_LOCKUP_SRC} as="image" />
         </head>
-        <body className="overflow-x-hidden bg-primary text-text-primary antialiased">
+        <body className="marketing-site bg-primary text-text-primary antialiased">
           <AuthRouteTransitionProvider>{children}</AuthRouteTransitionProvider>
         </body>
       </html>

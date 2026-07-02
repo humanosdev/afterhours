@@ -127,7 +127,7 @@ export function MarketingAppPreview() {
         ))}
       </div>
 
-      <div className="w-full min-w-0 overflow-x-hidden sm:hidden">
+      <div className="w-full min-w-0 overflow-x-clip sm:hidden">
         <div
           ref={scrollerRef}
           className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"
