@@ -15,10 +15,11 @@ export function NativePresenceWriteTracker() {
   const { profile } = useMyProfile(user?.id);
   const { presenceRefreshBoost } = usePresence();
   const locationEnabled = Boolean(user?.id) && isAppForeground;
+  const venues = usePresenceVenueCatalog(Boolean(user?.id));
   const { coords, permission } = useForegroundLocation(locationEnabled, {
     highPrecision: Boolean(presenceRefreshBoost),
+    venues,
   });
-  const venues = usePresenceVenueCatalog(Boolean(user?.id));
 
   useEffect(() => {
     if (!locationEnabled || permission === "granted") return;

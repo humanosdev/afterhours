@@ -141,6 +141,7 @@ export default function MapTabScreen() {
   const { permission: locationPermission, coords: youCoords, refresh: refreshLocation } =
     useForegroundLocation(Boolean(user?.id) && nativeMapReady && isAppForeground, {
       highPrecision: mapTabFocused && isAppForeground,
+      venues,
     });
   const myVenue = useMyVenuePresence(user?.id, venues, {
     youCoords: locationPermission === "granted" ? youCoords : null,

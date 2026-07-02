@@ -1,5 +1,5 @@
 import * as Location from "expo-location";
-import { isValidCoordinatePair } from "@intencity/shared";
+import { isValidCoordinatePair, type GpsDutyCycleMode } from "@intencity/shared";
 import { acceptDeviceFix, type DeviceFixSample } from "./deviceLocationFilters";
 
 export type DeviceCoords = {
@@ -14,7 +14,37 @@ export type ForegroundLocationPermission = "undetermined" | "granted" | "denied"
 export type ForegroundLocationWatchOptions = {
   /** Map tab focus — tighter watch cadence (EVOLVE-1). */
   highPrecision?: boolean;
+  /** Phase 4.2 — low-power watch when stationary inside venue inner zone. */
+  dutyCycleMode?: GpsDutyCycleMode;
 };
+
+type ForegroundWatchProfile = {
+  accuracy: Location.LocationAccuracy;
+  distanceInterval: number;
+  timeInterval: number;
+  fetchHighPrecision: boolean;
+};
+
+function resolveForegroundWatchProfile(
+  options?: ForegroundLocationWatchOptions
+): ForegroundWatchProfile {
+  if (options?.dutyCycleMode === "stationary") {
+    return {
+      accuracy: Location.Accuracy.Balanced,
+      distanceInterval: 25,
+      timeInterval: 15_000,
+      fetchHighPrecision: false,
+    };
+  }
+
+  const highPrecision = options?.highPrecision === true;
+  return {
+    accuracy: highPrecision ? Location.Accuracy.BestForNavigation : Location.Accuracy.High,
+    distanceInterval: highPrecision ? 3 : 8,
+    timeInterval: highPrecision ? 2000 : 5000,
+    fetchHighPrecision: highPrecision,
+  };
+}
 
 /** Mirrors web map `watchPosition` — keep last real fix on error, never invent coords. */
 export async function requestForegroundLocationPermission(): Promise<ForegroundLocationPermission> {
@@ -106,18 +136,18 @@ export async function startForegroundLocationWatch(
   if (perm !== "granted") return null;
 
   const lastAcceptedRef = { current: null as DeviceFixSample | null };
-  const highPrecision = options?.highPrecision === true;
+  const profile = resolveForegroundWatchProfile(options);
 
-  const initial = await fetchCurrentDeviceCoords({ highPrecision });
+  const initial = await fetchCurrentDeviceCoords({ highPrecision: profile.fetchHighPrecision });
   if (initial) {
     applyFilteredFix(initial, lastAcceptedRef, onCoords);
   }
 
   const sub = await Location.watchPositionAsync(
     {
-      accuracy: highPrecision ? Location.Accuracy.BestForNavigation : Location.Accuracy.High,
-      distanceInterval: highPrecision ? 3 : 8,
-      timeInterval: highPrecision ? 2000 : 5000,
+      accuracy: profile.accuracy,
+      distanceInterval: profile.distanceInterval,
+      timeInterval: profile.timeInterval,
     },
     (pos) => {
       const raw = coordsFromPosition(pos);
