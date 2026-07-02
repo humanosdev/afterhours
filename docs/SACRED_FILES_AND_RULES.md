@@ -149,7 +149,7 @@ Safe to change in focused PRs when needed — still test presence if touched:
 | Change `MAP_ACTIVITY_WINDOW_MS` / `FRIEND_ONLINE_BADGE_MS` | Yes — cross-platform display impact |
 | Add second presence writer (mobile) | Yes — [PRESENCE_OWNERSHIP.md](./PRESENCE_OWNERSHIP.md) gates |
 | Dedupe map heat or page-level `distanceMeters` | Yes — dedicated PR, not with 2B scaffold |
-| Schema / RLS on `user_presence` | Yes — phase 2D–2F, rollback |
+| Schema / RLS on `user_presence` | Yes — phase 2D–2F, rollback; **prod apply status:** [SUPABASE_MIGRATION_OPS.md](./SUPABASE_MIGRATION_OPS.md) |
 | Refactor `map/page.tsx` for size | Yes — behavior parity, map QA |
 
 ---

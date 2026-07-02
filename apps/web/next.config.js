@@ -3,7 +3,9 @@ const withPWA = require("next-pwa")({
   customWorkerDir: "worker",
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
+  disable:
+    process.env.NODE_ENV === "development" ||
+    process.env.NEXT_PUBLIC_WEB_SITE_MODE?.trim().toLowerCase() !== "app",
   runtimeCaching: [
     {
       urlPattern: /^https:\/\/fonts\.(?:gstatic)\.com\/.*/i,

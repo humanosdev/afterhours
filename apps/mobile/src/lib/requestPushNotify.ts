@@ -5,6 +5,7 @@ import type { NotificationType } from "../types/notification";
 
 export type PushNotifyParams = {
   recipientId: string;
+  notificationId: string;
   title: string;
   body: string;
   route: string;
@@ -34,6 +35,7 @@ export async function requestPushNotify(params: PushNotifyParams): Promise<void>
     const { data, error } = await supabase.functions.invoke<PushNotifyResponse>("push-notify", {
       body: {
         userId: params.recipientId,
+        notificationId: params.notificationId,
         title: params.title,
         body: params.body,
         route: params.route,

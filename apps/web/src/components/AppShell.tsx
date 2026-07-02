@@ -11,13 +11,7 @@ import { ClientAuthProvider } from "@/contexts/ClientAuthContext";
 import { matchesAuthGatePath } from "@/lib/authGatePaths";
 import { isMarketingSite } from "@/lib/webSiteMode";
 import { OPEN_SHARE_COMMENTS_EVENT, type OpenShareCommentsDetail } from "@/lib/shareCommentsSheet";
-import { geolocationFailureMessage, LOCATION_INSECURE_CONTEXT, PRESENCE_SAVE_FAILED } from "@/lib/geolocationMessages";
-import { isValidCoordinatePair } from "@/lib/presence";
-import { isWebPresenceWriteRetired } from "@intencity/shared";
 import { supabase } from "@/lib/supabaseClient";
-import type { VenueForPresenceSync } from "@/lib/userPresenceVenueSync";
-import { syncUserPresenceWithVenuesFromCoords } from "@/lib/userPresenceVenueSync";
-import { SHELL_GEOLOCATION_OPTIONS, upsertUserPresenceLatLng } from "@/lib/userPresenceWrite";
 import { Circle, Images } from "lucide-react";
 
 /** Session-only: after OK, do not re-show presence/geo toasts until a successful presence write (user fixed location). */
@@ -126,10 +120,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
   /** Bumped on OK so in-flight `getCurrentPosition` callbacks cannot re-open the notice after dismiss. */
   const locationNoticeEpochRef = useRef(0);
-  const shellVenuesCacheRef = useRef<{ list: VenueForPresenceSync[]; fetchedAt: number }>({
-    list: [],
-    fetchedAt: 0,
-  });
   /** Bottom nav mounts here so it sits above Mapbox/WebKit compositor layers (Safari desktop). */
   const [bottomNavHost, setBottomNavHost] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -317,132 +307,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  /**
-   * Write `user_presence` (lat/lng/updated_at) on every main app surface — not only `/map`.
-   * Faster cadence + ping again when you return to the tab. Map still assigns `venue_id`.
-   */
-  useEffect(() => {
-    if (isWebPresenceWriteRetired()) return;
-    if (isMarketingSite()) return;
-    if (!currentUserId) return;
-    const authMarketing = new Set([
-      "/login",
-      "/signup",
-      "/forgot-password",
-      "/reset-password",
-    ]);
-    if (authMarketing.has(pathname)) return;
-    /** `/map` runs `syncUserPresenceWithVenuesFromCoords` from `watchPosition` — avoid double DB writes + duplicate notification dedupe races. */
-    if (pathname === "/map") return;
-    if (typeof window !== "undefined" && !window.isSecureContext) {
-      if (!isLocationNoticeSuppressed()) {
-        setLocationNotice(LOCATION_INSECURE_CONTEXT);
-      }
-      return;
-    }
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      if (!isLocationNoticeSuppressed()) {
-        setLocationNotice("This browser doesn’t support location services.");
-      }
-      return;
-    }
 
-    let cancelled = false;
-
-    const loadVenuesCached = async (): Promise<VenueForPresenceSync[]> => {
-      const TTL = 5 * 60_000;
-      const c = shellVenuesCacheRef.current;
-      if (c.list.length && Date.now() - c.fetchedAt < TTL) return c.list;
-      const { data, error } = await supabase
-        .from("venues")
-        .select("id, name, lat, lng, inner_radius_m, outer_radius_m, halo_radius_m");
-      if (error || !data?.length) {
-        return c.list;
-      }
-      const list: VenueForPresenceSync[] = (data as any[]).map((r) => ({
-        id: r.id,
-        name: String(r.name ?? ""),
-        lat: r.lat,
-        lng: r.lng,
-        inner_radius_m: r.inner_radius_m ?? 35,
-        outer_radius_m: r.outer_radius_m ?? 110,
-        halo_radius_m: r.halo_radius_m ?? null,
-      }));
-      shellVenuesCacheRef.current = { list, fetchedAt: Date.now() };
-      return list;
-    };
-
-    const runPing = () => {
-      const epoch = locationNoticeEpochRef.current;
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          if (cancelled || locationNoticeEpochRef.current !== epoch) return;
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          if (!isValidCoordinatePair(lat, lng)) return;
-
-          const [{ data: prof }, venuesList] = await Promise.all([
-            supabase.from("profiles").select("ghost_mode").eq("id", currentUserId).maybeSingle(),
-            loadVenuesCached(),
-          ]);
-          if (cancelled || locationNoticeEpochRef.current !== epoch) return;
-
-          const myGhost = !!(prof as { ghost_mode?: boolean } | null)?.ghost_mode;
-
-          let error: Error | null = null;
-          if (!venuesList.length) {
-            const res = await upsertUserPresenceLatLng(supabase, {
-              userId: currentUserId,
-              lat,
-              lng,
-            });
-            error = res.error ? new Error(res.error.message) : null;
-          } else {
-            const res = await syncUserPresenceWithVenuesFromCoords(supabase, {
-              userId: currentUserId,
-              lat,
-              lng,
-              venues: venuesList,
-              myGhostMode: myGhost,
-            });
-            error = res.error;
-          }
-
-          if (cancelled || locationNoticeEpochRef.current !== epoch) return;
-          if (error) {
-            if (!isLocationNoticeSuppressed()) {
-              setLocationNotice(PRESENCE_SAVE_FAILED);
-            }
-          } else {
-            clearLocationNoticeSuppressed();
-            setLocationNotice(null);
-          }
-        },
-        (err) => {
-          if (cancelled || locationNoticeEpochRef.current !== epoch) return;
-          if (isLocationNoticeSuppressed()) return;
-          setLocationNotice(geolocationFailureMessage(err.code));
-        },
-        SHELL_GEOLOCATION_OPTIONS
-      );
-    };
-
-    runPing();
-    const interval = window.setInterval(runPing, 12_000);
-
-    const onResume = () => {
-      if (document.visibilityState === "visible") runPing();
-    };
-    window.addEventListener("focus", runPing);
-    document.addEventListener("visibilitychange", onResume);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("focus", runPing);
-      document.removeEventListener("visibilitychange", onResume);
-    };
-  }, [currentUserId, pathname]);
+  /** Phase 6 — AppShell GPS / presence writes removed; native is sole writer. */
 
   useEffect(() => {
     if (isMarketingSite()) return;

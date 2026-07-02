@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_GATE_PATH_PREFIXES } from "@/lib/authGatePaths";
-import { isPublicSitePath } from "@/lib/publicSitePaths";
+import { isPublicSitePath, isMarketingBlockedPath } from "@/lib/publicSitePaths";
 import { isMarketingSite } from "@/lib/webSiteMode";
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 const ONBOARDING_PATH = "/onboarding";
@@ -50,12 +50,18 @@ export async function middleware(req: NextRequest) {
       return withDevDocumentNoStore(NextResponse.next(), req);
     }
 
-    /** Era 2: marketing-only site — block auth/product without deleting PWA routes. */
+    /** Phase 6: marketing-only site — block auth/product without deleting archived PWA routes. */
     if (isMarketingSite()) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
       if (!isPublicSitePath(pathname)) {
         const homeUrl = req.nextUrl.clone();
         homeUrl.pathname = "/";
         homeUrl.search = "";
+        if (isMarketingBlockedPath(pathname)) {
+          homeUrl.hash = "download";
+        }
         return withDevDocumentNoStore(NextResponse.redirect(homeUrl), req);
       }
       return withDevDocumentNoStore(NextResponse.next(), req);
@@ -176,6 +182,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     "/sw.js",
-    "/((?!_next|api|favicon.ico|sw.js|workbox-).*)",
+    "/api/:path*",
+    "/((?!_next|favicon.ico|sw.js|workbox-).*)",
   ],
 };

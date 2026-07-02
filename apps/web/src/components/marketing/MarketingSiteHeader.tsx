@@ -12,6 +12,12 @@ export function MarketingSiteHeader() {
         </Link>
         <nav className="flex items-center gap-1 sm:gap-2" aria-label="Site">
           <Link
+            href="/#features"
+            className="hidden rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white sm:inline sm:px-3 sm:text-sm"
+          >
+            Features
+          </Link>
+          <Link
             href="/contact"
             className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-white/70 transition hover:bg-white/[0.06] hover:text-white sm:px-3 sm:text-sm"
           >

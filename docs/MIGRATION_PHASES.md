@@ -4,6 +4,8 @@
 
 **Governance:** [DOCUMENTATION_GOVERNANCE.md](./DOCUMENTATION_GOVERNANCE.md) · **Drift:** [TRUTH_DRIFT_REGISTER.md](./TRUTH_DRIFT_REGISTER.md)
 
+> **Supabase prod ops (2026-07-02):** Native security hardening + Phase 4.5 presence reconcile are **already applied** on production. **Do not bulk-run** `supabase/migrations/` on prod. Details: [SUPABASE_MIGRATION_OPS.md](./SUPABASE_MIGRATION_OPS.md). Native app must be **rebuilt** for `create_notification_v1` + push `notificationId` changes.
+
 ---
 
 ## Presence trust & believable social geography (architecture lock)

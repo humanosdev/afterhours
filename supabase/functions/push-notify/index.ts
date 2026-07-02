@@ -17,6 +17,7 @@ type PushRow = {
 
 type PushBody = {
   userId?: string;
+  notificationId?: string;
   title?: string;
   body?: string;
   route?: string;
@@ -253,11 +254,30 @@ Deno.serve(async (req) => {
     return json(400, { ok: false, error: "bad_request" });
   }
 
-  if (!body.userId || !body.title || !body.body) {
+  if (!body.userId || !body.notificationId || !body.title || !body.body) {
     return json(400, { ok: false, error: "bad_request" });
   }
 
   const admin = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
+
+  const { data: notif, error: notifError } = await admin
+    .from("notifications")
+    .select("id, actor_user_id, recipient_user_id, created_at")
+    .eq("id", body.notificationId)
+    .maybeSingle();
+
+  if (notifError || !notif) {
+    return json(403, { ok: false, error: "notification_not_found" });
+  }
+
+  if (notif.actor_user_id !== user.id || notif.recipient_user_id !== body.userId) {
+    return json(403, { ok: false, error: "forbidden" });
+  }
+
+  const createdAt = new Date(notif.created_at).getTime();
+  if (Number.isNaN(createdAt) || Date.now() - createdAt > 5 * 60 * 1000) {
+    return json(403, { ok: false, error: "notification_expired" });
+  }
 
   try {
     const result = await sendPushToUser(admin, {

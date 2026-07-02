@@ -49,6 +49,7 @@
 | [FINAL_PRE_PRESENCE_AUDIT.md](./FINAL_PRE_PRESENCE_AUDIT.md) | Pre-presence gate snapshot | Snapshot — check dates |
 | [CORE_FEEL_LOCK_AUDIT.md](./CORE_FEEL_LOCK_AUDIT.md) | L4 loading/skeleton pass | Complete for slice |
 | [NATIVE_ARCHITECTURE.md](./NATIVE_ARCHITECTURE.md) | Monorepo structure | General |
+| [SUPABASE_MIGRATION_OPS.md](./SUPABASE_MIGRATION_OPS.md) | **Prod migration apply status** — what’s live, what not to re-run | Active — update on each DB migration |
 | [DEVICE_QA_PARITY_CHECKLIST.md](./DEVICE_QA_PARITY_CHECKLIST.md) | QA procedure | Active |
 | [VP2_DEVICE_QA_SIGNOFF.md](./VP2_DEVICE_QA_SIGNOFF.md) | Sign-off checklist | Active until signed |
 
@@ -94,6 +95,7 @@
 | SYSTEM_TRUTH_AUDIT | SECONDARY | Map/presence chapters | ✅ with pointer |
 | NATIVE_MAP_EVOLUTION | SECONDARY | Layer porting | ⚠️ reframed 2026-05-18 |
 | MIGRATION_PHASES | PRIMARY | Phases | ⚠️ media gate drift |
+| SUPABASE_MIGRATION_OPS | SECONDARY | Prod DB migration apply status | ✅ 2026-07-02 |
 | PWA_NATIVE_PARITY_AUDIT | SECONDARY | Surface matrix | ⚠️ until VP-2 sign-off |
 | APP_WIDE_INTERACTION_AUDIT | TEMPORARY | Interaction snapshot | Snapshot |
 | AUTH_FAILURE_AUDIT | SECONDARY | Auth errors | Active |

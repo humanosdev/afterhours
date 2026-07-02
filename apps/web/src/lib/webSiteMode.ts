@@ -1,11 +1,12 @@
 /**
- * Era 2 cutover toggle — marketing site vs full PWA app.
- * Set `NEXT_PUBLIC_WEB_SITE_MODE=marketing` to block auth/product routes without deleting PWA logic.
+ * Phase 6 — marketing site is the production default. Set `NEXT_PUBLIC_WEB_SITE_MODE=app` for local PWA archaeology only.
  */
 export type WebSiteMode = "app" | "marketing";
 
 export function getWebSiteMode(): WebSiteMode {
-  return process.env.NEXT_PUBLIC_WEB_SITE_MODE === "marketing" ? "marketing" : "app";
+  const raw = process.env.NEXT_PUBLIC_WEB_SITE_MODE?.trim().toLowerCase();
+  if (raw === "app") return "app";
+  return "marketing";
 }
 
 export function isMarketingSite(): boolean {

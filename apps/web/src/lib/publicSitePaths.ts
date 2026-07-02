@@ -33,6 +33,7 @@ export const MARKETING_BLOCKED_PATH_PREFIXES = [
   "/venue-activity",
   "/stories",
   "/search",
+  "/admin",
 ] as const;
 
 export function isPublicSitePath(pathname: string): boolean {

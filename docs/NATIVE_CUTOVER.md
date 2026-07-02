@@ -1,8 +1,10 @@
 # Native Cutover — Evolution Plan
 
 **Status:** Active roadmap — **Phase 0 signed off** (2026-06-30) · **Part 2 gated** on Apple Developer Program  
-**Last updated:** 2026-06-30  
+**Last updated:** 2026-07-02  
 **Authority:** Native is the sole product client; web becomes marketing/info only.
+
+> **Supabase / prod DB:** Security hardening + presence reconcile are **already applied** on production — see [SUPABASE_MIGRATION_OPS.md](./SUPABASE_MIGRATION_OPS.md). Rebuild native after notification/push client changes; do not bulk-run repo migrations on prod.
 
 > **Part 1 vs Part 2:** [NATIVE_CUTOVER_PT2.md](./NATIVE_CUTOVER_PT2.md) — Apple enrollment **and** the **Unified Instant** program (one ripple → all surfaces). iOS push, background location, and coordinated instant UX are Part 2; small pre-prep items (GPS-triggered writes, clock fix) land in Part 1 before enrollment day.
 
@@ -461,6 +463,7 @@ Phases **2 + 3** can ship as one release if QA passes — writes and windows are
 
 ## Related docs
 
+- [SUPABASE_MIGRATION_OPS.md](./SUPABASE_MIGRATION_OPS.md) — **prod migration apply status** (what’s live, what not to re-run)
 - [NATIVE_CUTOVER_PT2.md](./NATIVE_CUTOVER_PT2.md) — Apple gate + **Unified Instant** plan (one ripple, all surfaces)
 - [PRESENCE_TRUST_ARCHITECTURE.md](./PRESENCE_TRUST_ARCHITECTURE.md)
 - [PRESENCE_WINDOWS_P2O_D.md](./PRESENCE_WINDOWS_P2O_D.md)
