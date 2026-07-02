@@ -46,14 +46,14 @@ function Step({ number, title, body }: { number: string; title: string; body: st
 export function MarketingHomeLanding() {
   return (
     <>
-      <section className="relative px-4 pb-16 pt-10 sm:px-6 sm:pb-24 sm:pt-14">
+      <section className="relative overflow-x-hidden px-4 pb-16 pt-10 sm:px-6 sm:pb-24 sm:pt-14">
         <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
           <div className="absolute -left-24 top-0 h-64 w-64 rounded-full bg-accent-violet/12 blur-[90px]" />
           <div className="absolute -right-16 bottom-0 h-48 w-48 rounded-full bg-indigo-500/10 blur-[72px]" />
         </div>
 
-        <div className="relative z-[1] mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[1fr_minmax(0,1.05fr)] lg:gap-12">
-          <div className="text-center lg:text-left">
+        <div className="relative z-[1] mx-auto grid min-w-0 max-w-6xl items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-12">
+          <div className="min-w-0 text-center lg:text-left">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent-violet-active/85">
               Now in {MARKETING_LAUNCH_CITY_LABEL}
             </p>
@@ -69,7 +69,9 @@ export function MarketingHomeLanding() {
             </div>
           </div>
 
-          <MarketingAppPreview />
+          <div className="min-w-0">
+            <MarketingAppPreview />
+          </div>
         </div>
       </section>
 

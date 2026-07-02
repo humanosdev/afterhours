@@ -29,8 +29,19 @@ export function getMarketingSitePassword(): string | null {
   return readPasswordEnv();
 }
 
+/** Non-sensitive token for Edge middleware when password is marked Sensitive on Vercel. */
+export function getMarketingSiteAccessToken(): string | null {
+  return stripEnvValue(process.env.MARKETING_SITE_ACCESS_TOKEN);
+}
+
 export function isMarketingSiteAccessRequired(): boolean {
-  return Boolean(getMarketingSitePassword());
+  return Boolean(getMarketingSitePassword() || getMarketingSiteAccessToken());
+}
+
+export function accessCookieValueForLogin(): string | null {
+  const password = getMarketingSitePassword();
+  if (!password) return getMarketingSiteAccessToken();
+  return getMarketingSiteAccessToken() ?? accessTokenForPassword(password);
 }
 
 export function accessCookieName(): string {
@@ -75,17 +86,27 @@ export function hasValidMarketingBasicAuth(authHeader: string | null): boolean {
   }
 }
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
 export function hasValidMarketingAccessCookie(cookieValue: string | undefined): boolean {
   if (!isMarketingSiteAccessRequired()) return true;
   if (!cookieValue) return false;
+
+  const accessToken = getMarketingSiteAccessToken();
+  if (accessToken) {
+    return timingSafeEqual(cookieValue, accessToken);
+  }
+
   const expected = expectedAccessToken();
   if (!expected) return false;
-  if (cookieValue.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    mismatch |= cookieValue.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
+  return timingSafeEqual(cookieValue, expected);
 }
 
 export function isStaticAssetPath(pathname: string): boolean {
@@ -100,6 +121,15 @@ export function isMarketingApiPath(pathname: string): boolean {
     pathname === "/api/waitlist" ||
     pathname.startsWith("/api/site-access/") ||
     pathname.startsWith("/api/waitlist/")
+  );
+}
+
+export function isSiteAccessExemptPath(pathname: string): boolean {
+  return (
+    pathname === "/site-access" ||
+    pathname.startsWith("/site-access/") ||
+    isStaticAssetPath(pathname) ||
+    isMarketingApiPath(pathname)
   );
 }
 

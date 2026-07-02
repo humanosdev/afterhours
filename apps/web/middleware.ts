@@ -7,9 +7,9 @@ import {
   accessCookieName,
   hasValidMarketingAccessCookie,
   hasValidMarketingBasicAuth,
-  isMarketingSiteAccessRequired,
-  isStaticAssetPath,
   isMarketingApiPath,
+  isMarketingSiteAccessRequired,
+  isSiteAccessExemptPath,
 } from "@/lib/siteAccess";
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 const ONBOARDING_PATH = "/onboarding";
@@ -22,6 +22,10 @@ function isProtectedPath(pathname: string) {
 
 /** Stops the browser from keeping a stale HTML shell that points at deleted `/_next/static/*` hashes after `next dev` restarts. */
 function withDevDocumentNoStore(res: NextResponse, req: NextRequest) {
+  res.headers.set("x-middleware-pathname", req.nextUrl.pathname);
+  if (req.nextUrl.search) {
+    res.headers.set("x-middleware-search", req.nextUrl.search);
+  }
   if (process.env.NODE_ENV !== "development") return res;
   const p = req.nextUrl.pathname;
   if (/\.(?:ico|png|jpe?g|gif|webp|svg|json|txt|xml|webmanifest|js|css|map|woff2?)$/i.test(p)) {
@@ -40,10 +44,6 @@ const DEV_SW_NULL =
   "return self.registration.unregister();}).then(function(){" +
   "return self.clients.matchAll({type:'window',includeUncontrolled:true});}).then(function(cs){" +
   "cs.forEach(function(c){try{c.navigate(c.url);}catch(_){}});}));});";
-
-function isSiteAccessExemptPath(pathname: string): boolean {
-  return pathname === "/site-access" || isStaticAssetPath(pathname) || isMarketingApiPath(pathname);
-}
 
 async function enforceMarketingSiteAccess(req: NextRequest): Promise<NextResponse | null> {
   const pathname = req.nextUrl.pathname;

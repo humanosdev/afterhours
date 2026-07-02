@@ -27,6 +27,8 @@ const PREVIEWS = [
   },
 ] as const;
 
+const MOBILE_CARD_WIDTH = "min(78vw,280px)";
+
 function PhoneFrame({
   src,
   alt,
@@ -42,7 +44,6 @@ function PhoneFrame({
 }) {
   return (
     <div className="relative w-full overflow-hidden rounded-[1.35rem] border border-white/[0.1] bg-black shadow-[0_16px_48px_rgba(0,0,0,0.45),0_0_0_1px_rgba(59,102,255,0.08)] ring-1 ring-white/[0.04] sm:rounded-[1.5rem] lg:rounded-[1.65rem]">
-      {/* Native img — avoids Next image optimizer downscaling PNG screenshots. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
@@ -66,6 +67,15 @@ export function MarketingAppPreview() {
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
+
+    const centerSlide = (index: number) => {
+      const card = el.querySelector<HTMLElement>(`[data-preview-index="${index}"]`);
+      if (!card) return;
+      const scrollLeft = card.offsetLeft - (el.clientWidth - card.offsetWidth) / 2;
+      el.scrollLeft = Math.max(0, scrollLeft);
+    };
+
+    centerSlide(1);
 
     const onScroll = () => {
       const cards = Array.from(el.querySelectorAll<HTMLElement>("[data-preview-index]"));
@@ -94,13 +104,13 @@ export function MarketingAppPreview() {
   }));
 
   return (
-    <div className="relative mx-auto w-full max-w-[min(100%,22rem)] lg:max-w-none">
+    <div className="relative mx-auto w-full min-w-0 max-w-[min(100%,22rem)] lg:max-w-none">
       <div
         className="pointer-events-none absolute left-1/2 top-1/2 h-56 w-56 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-violet/12 blur-3xl"
         aria-hidden
       />
 
-      <div className="relative hidden sm:grid sm:grid-cols-3 sm:items-end sm:gap-2 md:gap-3 lg:gap-4">
+      <div className="relative hidden min-w-0 sm:grid sm:grid-cols-3 sm:items-end sm:gap-2 md:gap-3 lg:gap-4">
         {shots.map((shot, index) => (
           <div key={shot.file} className="min-w-0">
             <PhoneFrame
@@ -117,16 +127,21 @@ export function MarketingAppPreview() {
         ))}
       </div>
 
-      <div className="sm:hidden">
+      <div className="w-full min-w-0 overflow-x-hidden sm:hidden">
         <div
           ref={scrollerRef}
-          className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden"
+          style={{
+            paddingLeft: `max(1rem, calc(50% - (${MOBILE_CARD_WIDTH} / 2)))`,
+            paddingRight: `max(1rem, calc(50% - (${MOBILE_CARD_WIDTH} / 2)))`,
+          }}
         >
           {shots.map((shot, index) => (
             <div
               key={shot.file}
               data-preview-index={index}
-              className={`w-[min(78vw,280px)] shrink-0 snap-center transition ${active === index ? "opacity-100" : "opacity-80"}`}
+              className={`shrink-0 snap-center transition ${active === index ? "opacity-100" : "opacity-80"}`}
+              style={{ width: MOBILE_CARD_WIDTH }}
             >
               <PhoneFrame
                 src={shot.src}

@@ -7,8 +7,11 @@ import { INTENCITY_BRAND_LOCKUP_SRC } from "@/lib/brandAssets";
 import { PROD_CHUNK_HEAL_SCRIPT } from "@/lib/prodChunkHealScript";
 import { appConfig } from "@/lib/appConfig";
 import { isMarketingSite } from "@/lib/webSiteMode";
+import { assertMarketingSiteAccess } from "@/lib/marketingAccessGate";
 
 const marketingSite = isMarketingSite();
+
+export const dynamic = marketingSite ? "force-dynamic" : "auto";
 
 export const metadata = {
   title: marketingSite
@@ -43,14 +46,15 @@ export const viewport = {
   viewportFit: "cover" as const,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   if (marketingSite) {
+    assertMarketingSiteAccess();
     return (
-      <html lang="en">
+      <html lang="en" className="overflow-x-hidden">
         <head>
           {process.env.NODE_ENV === "production" ? (
             <script dangerouslySetInnerHTML={{ __html: PROD_CHUNK_HEAL_SCRIPT }} />
@@ -58,7 +62,7 @@ export default function RootLayout({
           <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
           <link rel="preload" href={INTENCITY_BRAND_LOCKUP_SRC} as="image" />
         </head>
-        <body className="bg-primary text-text-primary antialiased">
+        <body className="overflow-x-hidden bg-primary text-text-primary antialiased">
           <AuthRouteTransitionProvider>{children}</AuthRouteTransitionProvider>
         </body>
       </html>

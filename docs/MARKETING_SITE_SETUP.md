@@ -66,7 +66,8 @@ Signups land in **Table Editor → `marketing_waitlist`** (service role only; no
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No for marketing pages | Only if you add client Supabase later |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Yes** (waitlist) | Server writes to `marketing_waitlist` via `/api/waitlist` |
 | `MARKETING_SITE_PASSWORD` | Optional | Preview gate — **empty = site is public** |
-| `MARKETING_SITE_ACCESS_SECRET` | Optional | Salts the access cookie (defaults built-in) |
+| `MARKETING_SITE_ACCESS_TOKEN` | Recommended with Sensitive password | Random string (not Sensitive) — cookie value for Edge middleware |
+| `MARKETING_SITE_ACCESS_SECRET` | Optional | Salts the access cookie when no access token is set |
 | `NEXT_PUBLIC_IOS_APP_STORE_URL` | When live | App Store link; until set, shows “Coming soon” + waitlist |
 
 **Password aliases (same behavior):** `SITE_PASSWORD`, `SITE_ACCESS_PASSWORD`
@@ -83,11 +84,23 @@ After **any** env change: **Deployments → … → Redeploy**. Old builds do no
 
 ### How it works
 
-1. Visitor hits any page (runs **before** marketing route checks — works even if other env is misconfigured).
-2. Middleware checks for `MARKETING_SITE_PASSWORD` on the server.
-3. If set and no valid cookie → redirect to `/site-access`.
-4. User enters password → `POST /api/site-access` → httpOnly cookie (30 days).
-5. Full page redirect to original URL.
+1. Visitor hits any page on **any browser or device**.
+2. **Server layout gate** (Node) checks `MARKETING_SITE_PASSWORD` — works even when the password is marked **Sensitive** on Vercel.
+3. **Edge middleware** also checks access when `MARKETING_SITE_ACCESS_TOKEN` is set (non-sensitive).
+4. If no valid cookie → redirect to `/site-access`.
+5. User enters password → server action sets httpOnly cookie (30 days) → full redirect back.
+
+### Sensitive password on Vercel
+
+If `MARKETING_SITE_PASSWORD` is marked **Sensitive**, Edge middleware **cannot read it**. The site still locks via the server layout gate, but for faster redirects also add:
+
+| Variable | Example | Sensitive? |
+|----------|---------|------------|
+| `MARKETING_SITE_ACCESS_TOKEN` | `openssl rand -hex 24` output | **No** |
+
+Login sets the cookie to this token. Middleware can validate it on Edge.
+
+Alternatively: uncheck **Sensitive** on `MARKETING_SITE_PASSWORD` (preview-only password).
 
 ### If the password page never appears
 
@@ -97,6 +110,7 @@ After **any** env change: **Deployments → … → Redeploy**. Old builds do no
 | Env set on Preview only, not Production | Add to Production scope |
 | Old deploy still running | Redeploy latest `main` |
 | Code with `/site-access` not pushed | `git push origin main` |
+| Cached homepage HTML | Hard refresh; layout is now `force-dynamic` when gated |
 
 ### Disable the gate
 

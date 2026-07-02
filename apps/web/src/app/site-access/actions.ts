@@ -3,8 +3,7 @@
 import { cookies, headers } from "next/headers";
 import {
   accessCookieName,
-  accessTokenForPassword,
-  getMarketingSitePassword,
+  accessCookieValueForLogin,
   isMarketingSiteAccessRequired,
   siteAccessCookieOptions,
   verifySiteAccessPassword,
@@ -21,19 +20,15 @@ export async function submitSiteAccessPassword(
     return { ok: false, error: "invalid_password" };
   }
 
-  const expected = getMarketingSitePassword();
-  if (!expected) {
+  const cookieValue = accessCookieValueForLogin();
+  if (!cookieValue) {
     return { ok: false, error: "not_configured" };
   }
 
   const proto = headers().get("x-forwarded-proto");
   const secure = proto === "https" || process.env.NODE_ENV === "production";
 
-  cookies().set(
-    accessCookieName(),
-    accessTokenForPassword(expected),
-    siteAccessCookieOptions(secure)
-  );
+  cookies().set(accessCookieName(), cookieValue, siteAccessCookieOptions(secure));
 
   return { ok: true };
 }

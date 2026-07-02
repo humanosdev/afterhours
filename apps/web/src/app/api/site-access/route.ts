@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   accessCookieName,
-  accessTokenForPassword,
-  getMarketingSitePassword,
+  accessCookieValueForLogin,
   isMarketingSiteAccessRequired,
   siteAccessCookieOptions,
   verifySiteAccessPassword,
@@ -20,8 +19,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_password" }, { status: 401 });
   }
 
-  const expected = getMarketingSitePassword();
-  if (!expected) {
+  const cookieValue = accessCookieValueForLogin();
+  if (!cookieValue) {
     return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
   }
 
@@ -31,10 +30,6 @@ export async function POST(req: NextRequest) {
     process.env.NODE_ENV === "production";
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(
-    accessCookieName(),
-    accessTokenForPassword(expected),
-    siteAccessCookieOptions(secure)
-  );
+  res.cookies.set(accessCookieName(), cookieValue, siteAccessCookieOptions(secure));
   return res;
 }
