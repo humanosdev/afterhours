@@ -70,7 +70,7 @@ comment on function public.reconcile_stale_user_presence_venues() is
   'Phase 4.5 — clears zombie venue_id on user_presence when coords are outside outer radius or row is stale.';
 
 -- Schedule every 2 minutes when pg_cron is available (Supabase hosted).
-do $$
+do $cron_setup$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
     begin
@@ -83,7 +83,7 @@ begin
     perform cron.schedule(
       'reconcile-stale-presence-venues',
       '*/2 * * * *',
-      $$select public.reconcile_stale_user_presence_venues();$$
+      $cron$select public.reconcile_stale_user_presence_venues();$cron$
     );
   end if;
-end $$;
+end $cron_setup$;
