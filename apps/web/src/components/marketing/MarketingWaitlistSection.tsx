@@ -55,11 +55,11 @@ export function MarketingWaitlistSection() {
     <section id="waitlist" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-6 sm:py-20">
       <div className="mx-auto max-w-md">
         <h2 className="text-center text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          iOS early access
+          Join the waitlist
         </h2>
         <p className="mx-auto mt-4 text-center text-sm leading-relaxed text-white/55 sm:text-base">
-          We&apos;re rolling out in <strong className="font-medium text-white/75">{MARKETING_LAUNCH_CITY_LABEL}</strong>{" "}
-          first — day and night. Join the waitlist for a TestFlight invite when the next batch opens.
+          We&apos;re starting in <strong className="font-medium text-white/75">{MARKETING_LAUNCH_CITY_LABEL}</strong>.
+          Leave your info and we&apos;ll email you when you can download the app.
         </p>
 
         {state === "success" ? (
@@ -117,7 +117,7 @@ export function MarketingWaitlistSection() {
         ) : null}
 
         <p className="mt-4 text-center text-xs leading-relaxed text-white/35">
-          iOS only for now. Android is later. Unsubscribe anytime — reply to our invite email.
+          No spam — just a heads-up when it&apos;s your turn.
         </p>
       </div>
     </section>
