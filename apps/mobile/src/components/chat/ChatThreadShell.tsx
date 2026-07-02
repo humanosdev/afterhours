@@ -40,6 +40,7 @@ type ChatThreadShellProps = {
   onDeleteForMe?: (messageId: string) => void;
   onUnsend?: (messageId: string) => void;
   onRetrySend?: (optimisticId: string) => void;
+  peerChatOnline?: boolean;
   isIncomingRequest?: boolean;
   requestBusy?: boolean;
   onAcceptRequest?: () => void;
@@ -60,6 +61,7 @@ export function ChatThreadShell({
   onDeleteForMe,
   onUnsend,
   onRetrySend,
+  peerChatOnline = false,
   isIncomingRequest = false,
   requestBusy = false,
   onAcceptRequest,
@@ -222,6 +224,11 @@ export function ChatThreadShell({
                 @{peerUsername}
               </Text>
             ) : null}
+            {peerChatOnline ? (
+              <Text style={styles.peerOnline} numberOfLines={1}>
+                Active in chat
+              </Text>
+            ) : null}
           </View>
         </Pressable>
 
@@ -332,6 +339,7 @@ export function ChatThreadShell({
                 ) : null}
                 {showMeta && !isPending ? (
                   <Text style={[styles.timestamp, isOwn && styles.timestampOwn]}>
+                    {isOwn && m.seen ? "Read · " : ""}
                     {formatMessageTimestamp(m.created_at)}
                   </Text>
                 ) : null}
@@ -460,6 +468,11 @@ const styles = StyleSheet.create({
   peerHandle: {
     fontSize: 12,
     color: colors.textWhite45,
+  },
+  peerOnline: {
+    fontSize: 11,
+    color: colors.success,
+    marginTop: 2,
   },
   errorBanner: {
     marginHorizontal: 12,

@@ -49,6 +49,11 @@ import {
   type HubShareFeedCardState,
 } from "../../../src/lib/storyFeedInteractions";
 import { subscribeShareLikeUpdated } from "../../../src/lib/shareLikeEvents";
+import {
+  subscribeStoryPostConfirmed,
+  subscribeStoryPostFailed,
+  subscribeStoryPostStarted,
+} from "../../../src/lib/storyPostOptimistic";
 import { pickCachedShareStats, patchShareStatsCache } from "../../../src/lib/shareStatsCache";
 import { useVenuesPreview } from "../../../src/hooks/useVenuesPreview";
 import { useMyAvatar } from "../../../src/hooks/useMyAvatar";
@@ -172,6 +177,82 @@ export default function HubTabScreen() {
   }, [reloadHubMoments, reloadHubShares]);
 
   useHubStoriesRealtime(user?.id, friendIds, refreshHubFeedQuiet);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const unsubs = [
+      subscribeStoryPostStarted((payload) => {
+        if (payload.userId !== user.id) return;
+        if (payload.mode === "shares") {
+          setShares((prev) => [
+            {
+              id: payload.tempId,
+              user_id: payload.userId,
+              image_url: payload.localUri,
+              created_at: payload.createdAt,
+              username: payload.username,
+              avatar_url: payload.avatarUrl,
+              share_aspect: payload.shareAspect ?? "portrait",
+              profile_slug: payload.profileSlug,
+            },
+            ...prev.filter((row) => row.id !== payload.tempId),
+          ]);
+        } else {
+          const story: StoryViewerStory = {
+            id: payload.tempId,
+            user_id: payload.userId,
+            media_url: payload.localUri,
+            created_at: payload.createdAt,
+            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            is_share: false,
+          };
+          setMomentsByUser((prev) => {
+            const next = new Map(prev);
+            next.set(payload.userId, [...(next.get(payload.userId) ?? []), story]);
+            return next;
+          });
+        }
+        void prefetchStoryMediaUri(payload.localUri);
+      }),
+      subscribeStoryPostConfirmed(({ tempId, storyId, imageUrl }) => {
+        setShares((prev) =>
+          prev.map((row) =>
+            row.id === tempId ? { ...row, id: storyId, image_url: imageUrl } : row
+          )
+        );
+        setMomentsByUser((prev) => {
+          const next = new Map(prev);
+          for (const [uid, stories] of next) {
+            next.set(
+              uid,
+              stories.map((story) =>
+                story.id === tempId ? { ...story, id: storyId, media_url: imageUrl } : story
+              )
+            );
+          }
+          return next;
+        });
+      }),
+      subscribeStoryPostFailed((tempId) => {
+        setShares((prev) => prev.filter((row) => row.id !== tempId));
+        setMomentsByUser((prev) => {
+          const next = new Map(prev);
+          for (const [uid, stories] of next) {
+            next.set(
+              uid,
+              stories.filter((story) => story.id !== tempId)
+            );
+          }
+          return next;
+        });
+      }),
+    ];
+
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, [user?.id, setShares]);
 
   useEffect(() => {
     if (!user?.id) {

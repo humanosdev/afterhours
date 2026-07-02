@@ -4,18 +4,15 @@ import { isStoryRowShareFlag } from "./hubFeedSemantics";
 import { profileUsernameLabel } from "./profileDisplay";
 import { supabase } from "./supabase/client";
 
-/**
- * Hub “Shares” use `public.stories` (see web `apps/web/src/app/hub/page.tsx` `loadHubFriendShares`).
- * Phase 2M — no writes, no `user_presence`, no realtime.
- * Production `stories` uses `image_url` only — do not select `media_url` (column may not exist in DB).
- */
+/** Phase 5.3 — server-side share filter (matches web hub). */
+const STORY_SHARE_LIMIT = 120;
+
 const STORY_COLUMN_VARIANTS = [
   "id, user_id, image_url, created_at, expires_at, is_share, share_visible, share_hidden, share_aspect",
   "id, user_id, image_url, created_at, expires_at, is_share, share_visible, share_hidden",
 ] as const;
 
 const PROFILE_COLUMNS = "id, username, display_name, avatar_url" as const;
-const STORY_LIMIT = 200;
 const ID_CHUNK_SIZE = 80;
 
 export type FetchHubFeedPreviewResult = {
@@ -46,6 +43,17 @@ type ProfileRow = {
   avatar_url: string | null;
 };
 
+function filterShareRows(rows: RawStory[], meId: string): RawStory[] {
+  return rows.filter((row) => {
+    if (!row?.id || !row.user_id) return false;
+    if (!isStoryRowShareFlag(row.is_share)) return false;
+    if (row.share_hidden === true) return false;
+    const isOwn = row.user_id === meId;
+    if (!isOwn && row.share_visible === false) return false;
+    return Boolean(shareImageUrlFromRow(row));
+  });
+}
+
 export async function fetchHubFeedPreview(meId: string, friendIds: string[]): Promise<FetchHubFeedPreviewResult> {
   const allowedIds = Array.from(new Set([meId, ...friendIds]));
   if (allowedIds.length === 0) {
@@ -54,18 +62,23 @@ export async function fetchHubFeedPreview(meId: string, friendIds: string[]): Pr
 
   let rows: RawStory[] = [];
   let fetchError: string | null = null;
+  let usedServerShareFilter = false;
 
   for (const columns of STORY_COLUMN_VARIANTS) {
-    const { data, error } = await supabase
+    const query = supabase
       .from("stories")
       .select(columns)
       .in("user_id", allowedIds)
+      .eq("is_share", true)
+      .eq("share_hidden", false)
       .order("created_at", { ascending: false })
-      .limit(STORY_LIMIT);
+      .limit(STORY_SHARE_LIMIT);
 
+    const { data, error } = await query;
     if (!error) {
       rows = (data ?? []) as unknown as RawStory[];
       fetchError = null;
+      usedServerShareFilter = true;
       break;
     }
     fetchError = error.message;
@@ -74,19 +87,32 @@ export async function fetchHubFeedPreview(meId: string, friendIds: string[]): Pr
     }
   }
 
+  if (!usedServerShareFilter) {
+    for (const columns of STORY_COLUMN_VARIANTS) {
+      const { data, error } = await supabase
+        .from("stories")
+        .select(columns)
+        .in("user_id", allowedIds)
+        .order("created_at", { ascending: false })
+        .limit(STORY_SHARE_LIMIT);
+
+      if (!error) {
+        rows = filterShareRows((data ?? []) as unknown as RawStory[], meId);
+        fetchError = null;
+        break;
+      }
+      fetchError = error.message;
+      if (!/column\s+.+\s+does not exist/i.test(fetchError)) {
+        return { shares: [], error: fetchError };
+      }
+    }
+  }
+
   if (fetchError) {
     return { shares: [], error: fetchError };
   }
 
-  const shareRows = rows.filter((row) => {
-    if (!row?.id || !row.user_id) return false;
-    if (!isStoryRowShareFlag(row.is_share)) return false;
-    if (row.share_hidden === true) return false;
-    const isOwn = row.user_id === meId;
-    if (!isOwn && row.share_visible === false) return false;
-    const img = shareImageUrlFromRow(row);
-    return !!img;
-  });
+  const shareRows = usedServerShareFilter ? filterShareRows(rows, meId) : rows;
 
   const ownerIds = Array.from(new Set(shareRows.map((r) => r.user_id).filter(Boolean)));
   const profileById = new Map<string, ProfileRow>();

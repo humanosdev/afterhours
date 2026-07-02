@@ -26,6 +26,8 @@ export type ChatThreadMessage = {
   optimistic?: boolean;
   /** Outbound send lifecycle — native only. */
   sendState?: "sending" | "queued";
+  /** Read receipt — true when receiver opened thread. */
+  seen?: boolean;
 };
 
 export type ChatThreadGateError = "not_found" | "not_participant" | null;

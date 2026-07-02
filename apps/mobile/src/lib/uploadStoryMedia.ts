@@ -45,7 +45,7 @@ export async function uploadStoryFromUri(
   localUri: string,
   mode: ComposerMode,
   opts?: { shareAspect?: ShareAspectFormat }
-): Promise<{ ok: true; imageUrl: string } | { ok: false; message: string; code?: string }> {
+): Promise<{ ok: true; imageUrl: string; storyId: string } | { ok: false; message: string; code?: string }> {
   try {
     const {
       data: { user },
@@ -136,54 +136,78 @@ export async function uploadStoryFromUri(
     };
     const momentPayload = { ...basePayload, media_url: imageUrl, is_share: false };
 
-    let insertError = (await supabase.from("stories").insert(mode === "shares" ? sharePayload : momentPayload))
-      .error;
-
-    const insertMsg = insertError?.message ?? "";
-    if (insertMsg.includes("media_url")) {
-      const withoutMediaUrl =
-        mode === "shares"
-          ? {
-              ...basePayload,
-              is_share: true,
-              share_visible: true,
-              share_hidden: false,
-              share_aspect: opts?.shareAspect ?? "portrait",
-            }
-          : { ...basePayload, is_share: false };
-      insertError = (await supabase.from("stories").insert(withoutMediaUrl)).error;
+    async function insertStoryRow(payload: Record<string, unknown>): Promise<{ id: string } | { error: string }> {
+      const { data, error } = await supabase.from("stories").insert(payload).select("id").single();
+      if (error || !data?.id) return { error: error?.message ?? "insert" };
+      return { id: String(data.id) };
     }
 
-    if (
-      insertError?.message?.includes("is_share") ||
-      insertError?.message?.includes("share_visible") ||
-      insertError?.message?.includes("share_aspect")
-    ) {
-      const legacyShare = {
-        ...basePayload,
-        is_share: true,
-        share_visible: true,
-        share_hidden: false,
-      };
-      const legacy =
-        mode === "shares"
-          ? legacyShare
-          : { ...basePayload, expires_at: expiresAt.toISOString() };
-      insertError = (await supabase.from("stories").insert(legacy)).error;
-    }
+    let storyId: string | null = null;
+    let insertErrorMessage: string | null = null;
 
-    if (insertError) {
-      if (__DEV__) {
-        console.warn("[story-media] insert failed", insertError.message);
+    const primary = await insertStoryRow(mode === "shares" ? sharePayload : momentPayload);
+    if ("id" in primary) {
+      storyId = primary.id;
+    } else {
+      insertErrorMessage = primary.error;
+      if (insertErrorMessage.includes("media_url")) {
+        const withoutMediaUrl =
+          mode === "shares"
+            ? {
+                ...basePayload,
+                is_share: true,
+                share_visible: true,
+                share_hidden: false,
+                share_aspect: opts?.shareAspect ?? "portrait",
+              }
+            : { ...basePayload, is_share: false };
+        const retry = await insertStoryRow(withoutMediaUrl);
+        if ("id" in retry) {
+          storyId = retry.id;
+          insertErrorMessage = null;
+        } else {
+          insertErrorMessage = retry.error;
+        }
       }
-      return { ok: false, message: insertError.message, code: "insert" };
+
+      if (
+        insertErrorMessage &&
+        (insertErrorMessage.includes("is_share") ||
+          insertErrorMessage.includes("share_visible") ||
+          insertErrorMessage.includes("share_aspect"))
+      ) {
+        const legacyShare = {
+          ...basePayload,
+          is_share: true,
+          share_visible: true,
+          share_hidden: false,
+        };
+        const legacy =
+          mode === "shares"
+            ? legacyShare
+            : { ...basePayload, expires_at: expiresAt.toISOString() };
+        const retry = await insertStoryRow(legacy);
+        if ("id" in retry) {
+          storyId = retry.id;
+          insertErrorMessage = null;
+        } else {
+          insertErrorMessage = retry.error;
+        }
+      }
+    }
+
+    if (!storyId) {
+      if (__DEV__) {
+        console.warn("[story-media] insert failed", insertErrorMessage);
+      }
+      return { ok: false, message: insertErrorMessage ?? "insert", code: "insert" };
     }
 
     if (__DEV__) {
       console.log("[story-media] db image_url", imageUrl.slice(0, 96));
     }
 
-    return { ok: true, imageUrl };
+    return { ok: true, imageUrl, storyId };
   } catch (e) {
     const err = serializeError(e);
     log("unexpected", err);

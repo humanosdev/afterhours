@@ -8,6 +8,7 @@ import {
   type StableZoneSnapshot,
 } from "@intencity/shared";
 import { createNotification } from "./createNotification";
+import { notifyFriendOnline } from "./createFriendActivityNotification";
 import { getMyFriendIds } from "./getMyFriendIds";
 import { maybeEarnProfileVenue } from "./maybeEarnProfileVenue";
 import { getNotificationPreferences } from "./presenceNotificationPrefs";
@@ -180,14 +181,11 @@ async function dispatchPresenceSocialNotifications(args: {
     for (const fid of friendIds) {
       const p = prefs.get(fid);
       if (p?.online === false) continue;
-      await createNotification({
+      await notifyFriendOnline({
         recipientId: fid,
         actorId: userId,
-        type: "friend_online",
-        dedupeKey: `friend_online:${fid}:${userId}:${hourBucket}`,
-        pushTitle: `${actorLabel} is active`,
-        pushBody: "Your friend is on the map.",
-        route: "/map",
+        actorLabel,
+        hourBucket,
       });
     }
   }

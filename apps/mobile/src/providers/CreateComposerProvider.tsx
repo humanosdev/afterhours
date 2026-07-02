@@ -12,6 +12,7 @@ import { ShareCommentsBottomSheet } from "../components/shares/ShareCommentsBott
 import { StoryViewerModal } from "../components/stories/StoryViewerModal";
 import type { ComposerMode } from "../lib/uploadStoryMediaTypes";
 import { emitStoryPosted } from "../lib/storyPostEvents";
+import { emitStoryPostStarted, type StoryPostStartPayload } from "../lib/storyPostOptimistic";
 import { patchShareStatsCommentsDelta } from "../lib/shareStatsCache";
 import { warmStoryViewerDeckAsync } from "../lib/warmStoryViewerDeck";
 import type { StoryViewerGroup } from "../lib/storyViewerTypes";
@@ -189,7 +190,8 @@ export function CreateComposerProvider({ children }: { children: ReactNode }) {
         modeSwitchEnabled={composerModeSwitchEnabled}
         onModeChange={setComposerMode}
         onClose={() => setComposerOpen(false)}
-        onPosted={() => {
+        onPosted={(payload: StoryPostStartPayload) => {
+          emitStoryPostStarted(payload);
           setComposerOpen(false);
           bumpStoryEpoch();
         }}

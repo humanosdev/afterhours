@@ -20,7 +20,16 @@ import type { StoryCameraSurface } from "../../lib/storyCameraSurface";
 import { useMomentStickers } from "../../hooks/useMomentStickers";
 import type { MomentOverlay, MomentTextFontId } from "../../lib/momentEditor";
 import type { ShareAspectFormat } from "../../lib/shareAspect";
+import {
+  emitStoryPostConfirmed,
+  emitStoryPostFailed,
+  makeOptimisticStoryId,
+  type StoryPostStartPayload,
+} from "../../lib/storyPostOptimistic";
+import { profileUsernameLabel } from "../../lib/profileDisplay";
 import { uploadStoryFromUri, type ComposerMode } from "../../lib/uploadStoryMedia";
+import { useAuth } from "../../providers/AuthProvider";
+import { useMyProfile } from "../../hooks/useMyProfile";
 import { loadMomentImageLayout, momentLayoutFromDimensions } from "../../lib/momentMediaLayout";
 import { exportMomentCrop } from "../../lib/momentCropExport";
 import { composerChrome } from "../../theme/composerLayout";
@@ -68,7 +77,7 @@ type StoryComposerModalProps = {
   modeSwitchEnabled?: boolean;
   onModeChange?: (mode: ComposerMode) => void;
   onClose: () => void;
-  onPosted: () => void;
+  onPosted: (payload: StoryPostStartPayload) => void;
 };
 
 function uploadErrorMessage(code: string | undefined, fallback: string): string {
@@ -113,6 +122,8 @@ export function StoryComposerModal({
   onPosted,
 }: StoryComposerModalProps) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { profile } = useMyProfile(user?.id);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const copy = mediaComposerCopy.modal;
   const cameraRef = useRef<CameraView>(null);
@@ -372,23 +383,47 @@ export function StoryComposerModal({
     onModeChange?.(next);
   }
 
+  async function publishInBackground(uploadUri: string, format?: ShareAspectFormat) {
+    if (!user?.id) {
+      Alert.alert("Could not publish", mediaLexicon.publish.signIn);
+      return;
+    }
+
+    const payload: StoryPostStartPayload = {
+      tempId: makeOptimisticStoryId(),
+      mode,
+      localUri: uploadUri,
+      shareAspect: format,
+      userId: user.id,
+      username: profile ? profileUsernameLabel(profile, "You") : "You",
+      avatarUrl: profile?.avatar_url ?? null,
+      profileSlug: profile?.username?.trim().replace(/^@/, "") ?? null,
+      createdAt: new Date().toISOString(),
+    };
+
+    resetSession();
+    onPosted(payload);
+
+    void uploadStoryFromUri(uploadUri, mode, { shareAspect: format }).then((result) => {
+      if (!result.ok) {
+        emitStoryPostFailed(payload.tempId);
+        Alert.alert("Could not publish", uploadErrorMessage(result.code, result.message));
+        return;
+      }
+      emitStoryPostConfirmed({
+        tempId: payload.tempId,
+        storyId: result.storyId,
+        imageUrl: result.imageUrl,
+      });
+    });
+  }
+
   async function onShareComposerNext(croppedUri: string, format: ShareAspectFormat) {
     if (uploading) return;
     setShareAspect(format);
     setUploading(true);
     try {
-      const result = await uploadStoryFromUri(croppedUri, mode, { shareAspect: format });
-      if (!result.ok) {
-        Alert.alert("Could not publish", uploadErrorMessage(result.code, result.message));
-        return;
-      }
-      resetSession();
-      onPosted();
-    } catch (error) {
-      if (__DEV__) {
-        console.warn("[story-composer] share publish failed", error);
-      }
-      Alert.alert("Could not publish", copy.uploadFailed);
+      await publishInBackground(croppedUri, format);
     } finally {
       setUploading(false);
     }
@@ -439,13 +474,7 @@ export function StoryComposerModal({
     try {
       const uploadUri = await resolveUploadUri();
       if (!uploadUri) return;
-      const result = await uploadStoryFromUri(uploadUri, "moments");
-      if (!result.ok) {
-        Alert.alert("Could not publish", uploadErrorMessage(result.code, result.message));
-        return;
-      }
-      resetSession();
-      onPosted();
+      await publishInBackground(uploadUri);
     } catch (error) {
       if (__DEV__) {
         console.warn("[story-composer] moment publish failed", error);

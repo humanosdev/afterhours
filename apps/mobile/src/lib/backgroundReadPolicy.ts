@@ -50,6 +50,14 @@ export const REALTIME_HEALTHY_GRACE_MS = 30_000;
 /** Foreground poll when `user_presence` realtime is SUBSCRIBED and stable. */
 export const REALTIME_HEALTHY_PRESENCE_POLL_MS = 60_000;
 
+/** Phase 5 — skip interval poll while realtime channel is healthy. */
+export function resolveRealtimePollFallbackMs(
+  realtimeHealthy: boolean,
+  fallbackMs: number
+): number | null {
+  return realtimeHealthy ? null : fallbackMs;
+}
+
 export type PresenceRefreshPolicy = {
   pollMs: number;
   clockMs: number;

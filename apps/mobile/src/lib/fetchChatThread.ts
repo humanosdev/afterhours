@@ -17,7 +17,7 @@ import { supabase } from "./supabase/client";
 
 const CHAT_MEMBERSHIP_COLUMNS = "id, user1_id, user2_id" as const;
 const PEER_PROFILE_COLUMNS = "id, username, display_name, avatar_url" as const;
-const MESSAGE_COLUMNS = "id, sender_id, receiver_id, content, created_at, story_id" as const;
+const MESSAGE_COLUMNS = "id, sender_id, receiver_id, content, created_at, story_id, seen" as const;
 
 type ChatMembershipRow = {
   id: string;

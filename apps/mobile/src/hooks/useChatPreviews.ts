@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CHAT_POLL_FALLBACK_MS } from "../lib/backgroundReadPolicy";
+import { CHAT_POLL_FALLBACK_MS, resolveRealtimePollFallbackMs } from "../lib/backgroundReadPolicy";
 import {
   getCachedChatPreviews,
   setCachedChatPreviews,
@@ -13,6 +13,7 @@ import {
 } from "../lib/patchChatPreviewFromMessage";
 import { fetchChatPreviews } from "../lib/fetchChatPreviews";
 import { supabase } from "../lib/supabase/client";
+import { useRealtimeChannelHealth } from "./useRealtimeChannelHealth";
 import type { ChatConversationPreview } from "../types/chatPreview";
 
 export function useChatPreviews(userId: string | undefined) {
@@ -23,6 +24,7 @@ export function useChatPreviews(userId: string | undefined) {
     () => Boolean(userId) && getCachedChatPreviews(userId ?? "") == null
   );
   const [error, setError] = useState<string | null>(null);
+  const { realtimeHealthy, onChannelStatus } = useRealtimeChannelHealth();
 
   const reload = useCallback((opts?: { quiet?: boolean }) => {
     if (!userId) return;
@@ -92,6 +94,7 @@ export function useChatPreviews(userId: string | undefined) {
               return next;
             });
           },
+          onChannelStatus,
         })
       );
     }
@@ -99,13 +102,16 @@ export function useChatPreviews(userId: string | undefined) {
     return () => {
       for (const u of unsubs) u();
     };
-  }, [userId]);
+  }, [userId, onChannelStatus]);
 
   useEffect(() => {
     if (!userId) return;
-    const id = setInterval(() => reloadRef.current({ quiet: true }), CHAT_POLL_FALLBACK_MS);
+    const pollMs = resolveRealtimePollFallbackMs(realtimeHealthy, CHAT_POLL_FALLBACK_MS);
+    if (pollMs == null) return;
+    reloadRef.current({ quiet: true });
+    const id = setInterval(() => reloadRef.current({ quiet: true }), pollMs);
     return () => clearInterval(id);
-  }, [userId]);
+  }, [userId, realtimeHealthy]);
 
   return { previews, loading, error, reload };
 }

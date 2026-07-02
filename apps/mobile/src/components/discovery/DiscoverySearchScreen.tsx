@@ -26,6 +26,8 @@ import { useAcceptedFriends } from "../../hooks/useAcceptedFriends";
 import { useLocalSearchQuery } from "../../hooks/useLocalSearchQuery";
 import { usePullToRefresh } from "../../hooks/usePullToRefresh";
 import { useVenuesPreview } from "../../hooks/useVenuesPreview";
+import { LIVE_PLACES_PRESENCE_POLL_MS } from "../../lib/backgroundReadPolicy";
+import { buildLivePlacesVenueRows } from "../../lib/livePlaces";
 import {
   fetchDiscoverySocialGraph,
   type DiscoverySocialGraph,
@@ -42,6 +44,7 @@ import { formatVenueCategoryLabel } from "../../lib/venueDisplay";
 import { supabase } from "../../lib/supabase/client";
 import { useFittedPageShell } from "../../hooks/useMinimumSkeleton";
 import { useAuth } from "../../providers/AuthProvider";
+import { usePresence } from "../../providers/PresenceProvider";
 import { colors } from "../../theme/colors";
 import { layout } from "../../theme/layout";
 import type { VenuePublic } from "../../types/venue";
@@ -58,6 +61,7 @@ export function DiscoverySearchScreen() {
   const { query, setQuery, debouncedQuery } = useLocalSearchQuery(240);
   const { friends, loading: friendsLoading, reloadFriends } = useAcceptedFriends(user?.id);
   const { venues, loading: venuesLoading, reload: reloadVenues } = useVenuesPreview(Boolean(user?.id));
+  const { presence, ghostByUserId, friendIdSet, presenceClock, reloadPresence } = usePresence();
 
   const [recent, setRecent] = useState<RecentSearchItem[]>([]);
   const [recentExpanded, setRecentExpanded] = useState(false);
@@ -101,6 +105,14 @@ export function DiscoverySearchScreen() {
   useEffect(() => {
     void reloadExplore();
   }, [reloadExplore]);
+
+  useEffect(() => {
+    if (!user?.id || !showExplore) return;
+    const id = setInterval(() => {
+      void reloadPresence();
+    }, LIVE_PLACES_PRESENCE_POLL_MS);
+    return () => clearInterval(id);
+  }, [user?.id, showExplore, reloadPresence]);
 
   const onDiscoveryRefresh = useCallback(async () => {
     await Promise.all([
@@ -181,8 +193,28 @@ export function DiscoverySearchScreen() {
   const otherPeople = useMemo(() => peopleHits.filter((p) => !friendSet.has(p.id)), [peopleHits, friendSet]);
 
   const trending = useMemo(() => {
-    return [...venues].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 16);
-  }, [venues]);
+    return buildLivePlacesVenueRows(
+      venues,
+      presence,
+      friendIdSet,
+      user?.id ?? null,
+      ghostByUserId,
+      Date.now()
+    ).slice(0, 16);
+  }, [venues, presence, friendIdSet, user?.id, ghostByUserId, presenceClock]);
+
+  const rankedVenueHits = useMemo(() => {
+    if (venueHits.length === 0) return [];
+    const ranked = buildLivePlacesVenueRows(
+      venueHits,
+      presence,
+      friendIdSet,
+      user?.id ?? null,
+      ghostByUserId,
+      Date.now()
+    );
+    return ranked;
+  }, [venueHits, presence, friendIdSet, user?.id, ghostByUserId, presenceClock]);
 
   const openUser = useCallback(
     async (p: ProfileDiscoveryHit) => {
@@ -341,17 +373,21 @@ export function DiscoverySearchScreen() {
                 )}
 
                 <Text style={[styles.sectionTitle, styles.sectionTop]}>Venues</Text>
-                {venueHits.length === 0 ? (
+                {rankedVenueHits.length === 0 ? (
                   <Text style={styles.empty}>No venues found.</Text>
                 ) : (
                   <View style={styles.listGap}>
-                    {venueHits.map((v) => (
+                    {rankedVenueHits.map((v) => (
                       <DiscoverySearchRow
                         key={v.id}
                         onPress={() => void openVenue(v)}
                         leading={<VenueDiscoveryThumb venue={v} size={44} />}
                         title={v.name}
-                        subtitle={formatVenueCategoryLabel(v.category)}
+                        subtitle={
+                          v.friendsTotal > 0
+                            ? `${v.vibe} · ${v.friendsTotal} friend${v.friendsTotal === 1 ? "" : "s"} live`
+                            : `${v.vibe} · ${v.total} here now`
+                        }
                         style={styles.rowMb}
                       />
                     ))}
@@ -450,8 +486,7 @@ export function DiscoverySearchScreen() {
             <View style={styles.exploreSection}>
               <SectionHeader title="Trending venues" />
               <Text style={styles.exploreHint}>
-                Live ranking uses friend presence on the web app. Native lists catalog venues alphabetically until
-                the presence slice ships — no fake live counts.
+                Ranked by live heat and friend activity — refreshes every 20 seconds.
               </Text>
               {trending.length === 0 ? (
                 <Text style={styles.emptyExplore}>No venues in catalog yet.</Text>
@@ -463,7 +498,11 @@ export function DiscoverySearchScreen() {
                       onPress={() => void openVenue(v)}
                       leading={<VenueDiscoveryThumb venue={v} size={48} />}
                       title={v.name}
-                      subtitle={formatVenueCategoryLabel(v.category)}
+                      subtitle={
+                        v.friendsTotal > 0
+                          ? `${v.vibe} · ${v.friendsTotal} friend${v.friendsTotal === 1 ? "" : "s"} live`
+                          : `${v.vibe} · ${v.total} here now`
+                      }
                       style={styles.rowMb}
                     />
                   ))}

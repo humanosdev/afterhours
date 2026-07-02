@@ -11,6 +11,7 @@ import {
   MAP_PRESENCE_POLL_MS,
   REALTIME_HEALTHY_PRESENCE_POLL_MS,
   resolvePresenceRefreshPolicy,
+  resolveRealtimePollFallbackMs,
 } from "./backgroundReadPolicy";
 import { MAP_PRESENCE_REFRESH_BOOST } from "./mapPresenceRefresh";
 
@@ -62,4 +63,9 @@ test("resolvePresenceRefreshPolicy realtime healthy uses health-check poll", () 
   });
   assert.equal(map.pollMs, REALTIME_HEALTHY_PRESENCE_POLL_MS);
   assert.equal(map.clockMs, MAP_PRESENCE_CLOCK_MS);
+});
+
+test("resolveRealtimePollFallbackMs skips poll when channel healthy", () => {
+  assert.equal(resolveRealtimePollFallbackMs(true, CHAT_POLL_FALLBACK_MS), null);
+  assert.equal(resolveRealtimePollFallbackMs(false, CHAT_POLL_FALLBACK_MS), CHAT_POLL_FALLBACK_MS);
 });

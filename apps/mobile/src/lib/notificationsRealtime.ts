@@ -68,7 +68,8 @@ export function subscribeNotificationInbox(
 export function subscribeNotificationFeed(
   supabase: SupabaseClient,
   meId: string,
-  onPayload: (payload: NotificationRealtimePayload) => void
+  onPayload: (payload: NotificationRealtimePayload) => void,
+  onChannelStatus?: (status: string) => void
 ): () => void {
   const channel = supabase
     .channel(`notifications-page:${meId}`)
@@ -92,7 +93,9 @@ export function subscribeNotificationFeed(
         onPayload({ eventType, row });
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      onChannelStatus?.(status);
+    });
 
   return () => {
     void supabase.removeChannel(channel);

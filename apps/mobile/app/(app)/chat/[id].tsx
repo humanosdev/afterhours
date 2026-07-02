@@ -8,6 +8,7 @@ import { CHAT_THREAD_BUILD_MARKER, logChatThreadDebug } from "../../../src/lib/c
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
 import { useChatInboxPrefs } from "../../../src/hooks/useChatInboxPrefs";
 import { useChatThread } from "../../../src/hooks/useChatThread";
+import { usePeerChatOnline } from "../../../src/hooks/useChatAppActiveHeartbeat";
 import { isChatRequestApproved } from "../../../src/lib/chatInboxPrefs";
 import { markChatMessageNotificationsRead } from "../../../src/lib/notificationMutations";
 import { useAuth } from "../../../src/providers/AuthProvider";
@@ -39,6 +40,7 @@ export default function ChatThreadScreen() {
     unsendMessage,
     retryFailedSend,
   } = useChatThread(meId, chatId);
+  const peerChatOnline = usePeerChatOnline(otherId);
   const { friends } = useAcceptedFriends(meId);
   const { prefs, ready: prefsReady, busyChatId, acceptRequest, denyRequest } =
     useChatInboxPrefs(meId);
@@ -112,6 +114,7 @@ export default function ChatThreadScreen() {
           <ChatThreadShell
             meId={meId}
             peer={peer}
+            peerChatOnline={peerChatOnline}
             messages={messages}
             pairBlock={pairBlock}
             messagesError={messagesError}

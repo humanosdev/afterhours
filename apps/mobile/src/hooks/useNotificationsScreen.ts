@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
+import {
+  FOREGROUND_UNREAD_POLL_MS,
+  resolveRealtimePollFallbackMs,
+} from "../lib/backgroundReadPolicy";
 import { enrichNotificationRows } from "../lib/enrichNotifications";
 import { fetchNotificationFeed } from "../lib/fetchNotificationFeed";
 import { fetchPendingFriendRequests, type PendingFriendRequest } from "../lib/fetchPendingFriendRequests";
@@ -19,9 +23,11 @@ import {
   denyIncomingFriendRequest,
 } from "../lib/respondIncomingFriendRequest";
 import { navigateStoryEngagementNotification } from "../lib/notificationStoryEngagement";
+import { subscribeNotificationFeedRefresh } from "../lib/notificationFeedRefresh";
 import { useCreateComposer } from "../providers/CreateComposerProvider";
 import { useNotificationDeliveryOptional } from "../providers/NotificationDeliveryProvider";
 import { supabase } from "../lib/supabase/client";
+import { useRealtimeChannelHealth } from "./useRealtimeChannelHealth";
 import type { NotificationRow, NotificationWithMeta } from "../types/notification";
 
 export function useNotificationsScreen(meId: string | undefined) {
@@ -34,6 +40,7 @@ export function useNotificationsScreen(meId: string | undefined) {
   const [friendRequests, setFriendRequests] = useState<PendingFriendRequest[]>([]);
   const [requestsError, setRequestsError] = useState<string | null>(null);
   const [requestBusyId, setRequestBusyId] = useState<string | null>(null);
+  const { realtimeHealthy, onChannelStatus } = useRealtimeChannelHealth();
 
   const loadFeed = useCallback(async (uid: string) => {
     const { items: rows, error } = await fetchNotificationFeed(uid);
@@ -60,6 +67,13 @@ export function useNotificationsScreen(meId: string | undefined) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (!meId) return;
+    return subscribeNotificationFeedRefresh(() => {
+      void loadFeed(meId);
+    });
+  }, [meId, loadFeed]);
 
   useEffect(() => {
     if (!meId) return;
@@ -100,12 +114,22 @@ export function useNotificationsScreen(meId: string | undefined) {
             void loadRequests(meId);
           }
         }
-      }),
+      }, onChannelStatus),
     ];
     return () => {
       for (const u of unsubs) u();
     };
-  }, [meId, loadRequests]);
+  }, [meId, loadRequests, onChannelStatus]);
+
+  useEffect(() => {
+    if (!meId) return;
+    const pollMs = resolveRealtimePollFallbackMs(realtimeHealthy, FOREGROUND_UNREAD_POLL_MS);
+    if (pollMs == null) return;
+    const poll = () => void loadFeed(meId);
+    poll();
+    const id = setInterval(poll, pollMs);
+    return () => clearInterval(id);
+  }, [meId, loadFeed, realtimeHealthy]);
 
   const groupedItems = useMemo(() => groupNotificationItems(items), [items]);
 

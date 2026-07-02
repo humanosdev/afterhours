@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CHAT_POLL_FALLBACK_MS } from "../lib/backgroundReadPolicy";
+import { CHAT_POLL_FALLBACK_MS, resolveRealtimePollFallbackMs } from "../lib/backgroundReadPolicy";
 import { subscribeChatThreadMessageEvents } from "../lib/chatMessagesRealtime";
 import {
   loadHiddenMessageIds,
@@ -23,6 +23,7 @@ import {
 import { makeOptimisticMessageId, sendChatMessage } from "../lib/sendChatMessage";
 import { unsendChatMessage } from "../lib/unsendChatMessage";
 import { supabase } from "../lib/supabase/client";
+import { useRealtimeChannelHealth } from "./useRealtimeChannelHealth";
 import type { PairBlockStatus } from "../lib/pairBlockStatus";
 import type { ChatThreadGateError, ChatThreadMessage, ChatThreadPeer } from "../types/chatThread";
 
@@ -66,6 +67,7 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const { realtimeHealthy, onChannelStatus } = useRealtimeChannelHealth();
 
   useEffect(() => {
     setThreadGateReady(false);
@@ -146,6 +148,7 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
 
     return subscribeChatThreadMessageEvents(supabase, {
       chatId,
+      onChannelStatus,
       onInsert: (row) => {
         if (row.receiver_id === meId) {
           void markMessageSeen(row.id, chatId);
@@ -153,6 +156,19 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
         void hydrateChatStoryReplies([row]).then(([hydrated]) => {
           setMessages((curr) => mergeIncomingChatMessage(curr, hydrated));
         });
+      },
+      onUpdate: (row) => {
+        setMessages((curr) =>
+          curr.map((m) =>
+            m.id === row.id
+              ? {
+                  ...m,
+                  content: row.content,
+                  seen: row.seen ?? m.seen,
+                }
+              : m
+          )
+        );
       },
       onDelete: (messageId) => {
         setMessages((curr) => curr.filter((m) => m.id !== messageId));
@@ -165,7 +181,7 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
         });
       },
     });
-  }, [meId, chatId, gateError, threadGateReady]);
+  }, [meId, chatId, gateError, threadGateReady, onChannelStatus]);
 
   useEffect(() => {
     if (!meId || !chatId || gateError || !threadGateReady) return;
@@ -179,6 +195,9 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
   useEffect(() => {
     if (!meId || !chatId || gateError || !threadGateReady) return;
 
+    const pollMs = resolveRealtimePollFallbackMs(realtimeHealthy, CHAT_POLL_FALLBACK_MS);
+    if (pollMs == null) return;
+
     const poll = () => {
       void fetchChatThreadMessages(chatId).then(({ messages: rows, messagesError: msgErr }) => {
         if (msgErr) return;
@@ -186,9 +205,10 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
       });
     };
 
-    const id = setInterval(poll, CHAT_POLL_FALLBACK_MS);
+    poll();
+    const id = setInterval(poll, pollMs);
     return () => clearInterval(id);
-  }, [meId, chatId, gateError, threadGateReady]);
+  }, [meId, chatId, gateError, threadGateReady, realtimeHealthy]);
 
   const visibleMessages = useMemo(
     () => messages.filter((m) => !hiddenIds.has(m.id)),

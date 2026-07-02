@@ -1,5 +1,6 @@
 import { Redirect, Stack } from "expo-router";
 import { ChatSendQueueProcessor } from "../../src/components/ChatSendQueueProcessor";
+import { ChatAppActiveTracker } from "../../src/components/ChatAppActiveTracker";
 import { AppOpenTracker } from "../../src/components/AppOpenTracker";
 import { ProfileOnboardingGate } from "../../src/components/ProfileOnboardingRedirect";
 import { ProfilePlaceEarnTracker } from "../../src/components/ProfilePlaceEarnTracker";
@@ -36,6 +37,7 @@ export default function AppStackLayout() {
         <ProfilePlaceEarnTracker />
         <AppOpenTracker />
         <ChatSendQueueProcessor />
+        <ChatAppActiveTracker />
         <TabShellPrewarm />
         <Stack
           screenOptions={{

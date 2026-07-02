@@ -11,6 +11,7 @@ export function subscribeChatListChanges(
   opts: {
     onInsert: (row: ChatListMessageRow) => void;
     onUpdate: (row: ChatListMessageRow) => void;
+    onChannelStatus?: (status: string) => void;
   }
 ): () => void {
   const channelName = `chat-list:${meId}`;
@@ -39,7 +40,9 @@ export function subscribeChatListChanges(
           if (row?.chat_id) opts.onUpdate(row);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        opts.onChannelStatus?.(status);
+      });
   })();
 
   return () => {
