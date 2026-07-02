@@ -3,6 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { AUTH_GATE_PATH_PREFIXES } from "@/lib/authGatePaths";
 import { isPublicSitePath, isMarketingBlockedPath } from "@/lib/publicSitePaths";
 import { isMarketingSite } from "@/lib/webSiteMode";
+import {
+  accessCookieName,
+  hasValidMarketingAccessCookie,
+  isMarketingSiteAccessRequired,
+  isStaticAssetPath,
+} from "@/lib/siteAccess";
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 const ONBOARDING_PATH = "/onboarding";
 
@@ -53,8 +59,25 @@ export async function middleware(req: NextRequest) {
     /** Phase 6: marketing-only site — block auth/product without deleting archived PWA routes. */
     if (isMarketingSite()) {
       if (pathname.startsWith("/api/")) {
+        if (pathname === "/api/site-access") {
+          return withDevDocumentNoStore(NextResponse.next(), req);
+        }
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
+
+      if (isMarketingSiteAccessRequired() && !isStaticAssetPath(pathname)) {
+        const accessCookie = req.cookies.get(accessCookieName())?.value;
+        const allowed =
+          pathname === "/site-access" || (await hasValidMarketingAccessCookie(accessCookie));
+
+        if (!allowed) {
+          const gateUrl = req.nextUrl.clone();
+          gateUrl.pathname = "/site-access";
+          gateUrl.searchParams.set("next", pathname === "/" ? "/" : `${pathname}${req.nextUrl.search}`);
+          return withDevDocumentNoStore(NextResponse.redirect(gateUrl), req);
+        }
+      }
+
       if (!isPublicSitePath(pathname)) {
         const homeUrl = req.nextUrl.clone();
         homeUrl.pathname = "/";

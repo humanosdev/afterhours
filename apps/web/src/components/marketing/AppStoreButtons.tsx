@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { appConfig } from "@/lib/appConfig";
+import { waitlistMailtoHref } from "@/components/marketing/MarketingWaitlistSection";
 import { Apple, Mail, Play } from "lucide-react";
 
 type AppStoreButtonsProps = {
@@ -91,12 +92,19 @@ export function AppStoreButtons({ size = "default", className = "" }: AppStoreBu
       </div>
       {!storesLive ? (
         <a
-          href={`mailto:${appConfig.contactEmail}?subject=${encodeURIComponent("Intencity app launch")}`}
+          href={waitlistMailtoHref()}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] py-2.5 text-sm font-medium text-white/70 transition hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
         >
           <Mail size={16} strokeWidth={1.75} aria-hidden />
-          Get notified at launch
+          Join the waitlist
         </a>
+      ) : null}
+      {!storesLive ? (
+        <p className="mt-2 text-center text-xs text-white/35">
+          <a href="#waitlist" className="underline underline-offset-2 hover:text-white/55">
+            How the waitlist works
+          </a>
+        </p>
       ) : null}
     </div>
   );

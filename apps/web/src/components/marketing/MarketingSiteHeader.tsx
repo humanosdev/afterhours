@@ -7,6 +7,7 @@ import { MarketingBrandMark } from "@/components/marketing/MarketingBrandMark";
 
 const navLinks = [
   { href: "/#features", label: "Features" },
+  { href: "/#waitlist", label: "Waitlist" },
   { href: "/contact", label: "Contact" },
 ] as const;
 

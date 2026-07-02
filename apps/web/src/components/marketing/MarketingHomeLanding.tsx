@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { AppStoreButtons } from "@/components/marketing/AppStoreButtons";
 import { MarketingAppPreview } from "@/components/marketing/MarketingAppPreview";
+import { MarketingWaitlistSection } from "@/components/marketing/MarketingWaitlistSection";
 import { MessageCircle, Radio, Shield, Sparkles, UsersRound } from "lucide-react";
 
 function FeatureCard({
@@ -67,6 +68,8 @@ export function MarketingHomeLanding() {
           <MarketingAppPreview />
         </div>
       </section>
+
+      <MarketingWaitlistSection />
 
       <section id="features" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-6 sm:py-20">
         <div className="mx-auto max-w-5xl">

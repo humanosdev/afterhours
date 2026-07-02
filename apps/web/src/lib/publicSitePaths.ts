@@ -8,6 +8,7 @@ export const PUBLIC_SITE_PATHS = [
   "/privacy",
   "/guidelines",
   "/contact",
+  "/site-access",
 ] as const;
 
 export const PUBLIC_SITE_PATH_PREFIXES = PUBLIC_SITE_PATHS;
