@@ -8,6 +8,7 @@ import {
   hasValidMarketingAccessCookie,
   isMarketingSiteAccessRequired,
   isStaticAssetPath,
+  isMarketingApiPath,
 } from "@/lib/siteAccess";
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 const ONBOARDING_PATH = "/onboarding";
@@ -39,6 +40,30 @@ const DEV_SW_NULL =
   "return self.clients.matchAll({type:'window',includeUncontrolled:true});}).then(function(cs){" +
   "cs.forEach(function(c){try{c.navigate(c.url);}catch(_){}});}));});";
 
+function isSiteAccessExemptPath(pathname: string): boolean {
+  return pathname === "/site-access" || isStaticAssetPath(pathname) || isMarketingApiPath(pathname);
+}
+
+async function enforceMarketingSiteAccess(req: NextRequest): Promise<NextResponse | null> {
+  const pathname = req.nextUrl.pathname;
+  if (!isMarketingSiteAccessRequired() || isSiteAccessExemptPath(pathname)) {
+    return null;
+  }
+
+  const accessCookie = req.cookies.get(accessCookieName())?.value;
+  if (await hasValidMarketingAccessCookie(accessCookie)) {
+    return null;
+  }
+
+  const gateUrl = req.nextUrl.clone();
+  gateUrl.pathname = "/site-access";
+  gateUrl.searchParams.set(
+    "next",
+    pathname === "/" ? "/" : `${pathname}${req.nextUrl.search}`
+  );
+  return withDevDocumentNoStore(NextResponse.redirect(gateUrl), req);
+}
+
 export async function middleware(req: NextRequest) {
   try {
     const pathname = req.nextUrl.pathname;
@@ -56,26 +81,16 @@ export async function middleware(req: NextRequest) {
       return withDevDocumentNoStore(NextResponse.next(), req);
     }
 
+    const accessRedirect = await enforceMarketingSiteAccess(req);
+    if (accessRedirect) return accessRedirect;
+
     /** Phase 6: marketing-only site — block auth/product without deleting archived PWA routes. */
     if (isMarketingSite()) {
       if (pathname.startsWith("/api/")) {
-        if (pathname === "/api/site-access") {
+        if (isMarketingApiPath(pathname)) {
           return withDevDocumentNoStore(NextResponse.next(), req);
         }
         return NextResponse.json({ error: "Not found" }, { status: 404 });
-      }
-
-      if (isMarketingSiteAccessRequired() && !isStaticAssetPath(pathname)) {
-        const accessCookie = req.cookies.get(accessCookieName())?.value;
-        const allowed =
-          pathname === "/site-access" || (await hasValidMarketingAccessCookie(accessCookie));
-
-        if (!allowed) {
-          const gateUrl = req.nextUrl.clone();
-          gateUrl.pathname = "/site-access";
-          gateUrl.searchParams.set("next", pathname === "/" ? "/" : `${pathname}${req.nextUrl.search}`);
-          return withDevDocumentNoStore(NextResponse.redirect(gateUrl), req);
-        }
       }
 
       if (!isPublicSitePath(pathname)) {

@@ -1,87 +1,125 @@
-import { appConfig } from "@/lib/appConfig";
-import { Mail } from "lucide-react";
+"use client";
 
-const WAITLIST_SUBJECT = "Intencity early access waitlist";
-const WAITLIST_BODY = `Hi Intencity team,
+import { FormEvent, useState } from "react";
+import { MARKETING_LAUNCH_CITY_LABEL } from "@/lib/marketingContent";
 
-Please add me to the early access waitlist.
+type FormState = "idle" | "submitting" | "success" | "duplicate" | "error";
 
-Name:
-City:
-Phone (optional):
-Platform: iOS / Android / Both
-
-Thanks!`;
-
-function waitlistMailtoHref(): string {
-  const params = new URLSearchParams({
-    subject: WAITLIST_SUBJECT,
-    body: WAITLIST_BODY,
-  });
-  return `mailto:${appConfig.contactEmail}?${params.toString()}`;
-}
-
-/** Explains the manual email waitlist (no backend list yet). */
 export function MarketingWaitlistSection() {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [state, setState] = useState<FormState>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setState("submitting");
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, phone: phone.trim() || null }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; duplicate?: boolean; error?: string };
+
+      if (res.ok && data?.duplicate) {
+        setState("duplicate");
+        return;
+      }
+      if (!res.ok || !data?.ok) {
+        setState("error");
+        setErrorMessage(
+          data?.error === "invalid_email"
+            ? "Enter a valid email address."
+            : data?.error === "invalid_name"
+              ? "Enter your name."
+              : "Could not save your spot. Try again in a moment."
+        );
+        return;
+      }
+
+      setState("success");
+      setName("");
+      setEmail("");
+      setPhone("");
+    } catch {
+      setState("error");
+      setErrorMessage("Could not save your spot. Try again in a moment.");
+    }
+  }
+
   return (
     <section id="waitlist" className="scroll-mt-24 border-t border-white/[0.06] px-4 py-16 sm:px-6 sm:py-20">
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-md">
         <h2 className="text-center text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          Early access waitlist
+          iOS early access
         </h2>
-        <p className="mx-auto mt-4 max-w-lg text-center text-sm leading-relaxed text-white/55 sm:text-base">
-          We&apos;re not on the App Store or Google Play yet. Join the waitlist and we&apos;ll email you
-          when TestFlight or the Android beta opens in your city.
+        <p className="mx-auto mt-4 text-center text-sm leading-relaxed text-white/55 sm:text-base">
+          We&apos;re rolling out in <strong className="font-medium text-white/75">{MARKETING_LAUNCH_CITY_LABEL}</strong>{" "}
+          first — day and night. Join the waitlist for a TestFlight invite when the next batch opens.
         </p>
 
-        <ol className="mx-auto mt-10 max-w-md space-y-4 text-sm text-white/60">
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-violet/15 text-xs font-bold text-accent-violet-active">
-              1
-            </span>
-            <span>
-              Tap <strong className="font-medium text-white/80">Join the waitlist</strong> — it opens an
-              email to{" "}
-              <a href={`mailto:${appConfig.contactEmail}`} className="text-accent-violet-active hover:underline">
-                {appConfig.contactEmail}
-              </a>
-              .
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-violet/15 text-xs font-bold text-accent-violet-active">
-              2
-            </span>
-            <span>
-              Send the pre-filled note with your <strong className="font-medium text-white/80">name</strong>,{" "}
-              <strong className="font-medium text-white/80">city</strong>, and{" "}
-              <strong className="font-medium text-white/80">iOS or Android</strong>.
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-violet/15 text-xs font-bold text-accent-violet-active">
-              3
-            </span>
-            <span>
-              We add you manually and reply when your invite is ready — usually in batches before launch.
-            </span>
-          </li>
-        </ol>
+        {state === "success" ? (
+          <div className="mt-8 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 text-center text-sm text-emerald-100">
+            You&apos;re on the list. We&apos;ll email you when your invite is ready.
+          </div>
+        ) : null}
 
-        <p className="mx-auto mt-8 max-w-md text-center text-xs leading-relaxed text-white/35">
-          No spam, no automated list yet — just a direct line to the team while we&apos;re in closed beta.
+        {state === "duplicate" ? (
+          <div className="mt-8 rounded-2xl border border-accent-violet/20 bg-accent-violet/10 px-4 py-4 text-center text-sm text-white/80">
+            That email is already on the waitlist — we&apos;ll be in touch.
+          </div>
+        ) : null}
+
+        {state !== "success" && state !== "duplicate" ? (
+          <form onSubmit={onSubmit} className="mt-8 space-y-3">
+            <input
+              type="text"
+              name="name"
+              autoComplete="name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name"
+              className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-violet/40 focus:ring-2 focus:ring-accent-violet/25"
+            />
+            <input
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-violet/40 focus:ring-2 focus:ring-accent-violet/25"
+            />
+            <input
+              type="tel"
+              name="phone"
+              autoComplete="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone (optional)"
+              className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-violet/40 focus:ring-2 focus:ring-accent-violet/25"
+            />
+            {errorMessage ? <p className="text-sm text-red-400">{errorMessage}</p> : null}
+            <button
+              type="submit"
+              disabled={state === "submitting"}
+              className="w-full rounded-full bg-accent-violet py-3 text-sm font-semibold text-white transition hover:bg-accent-violet-active disabled:opacity-50"
+            >
+              {state === "submitting" ? "Joining…" : "Join the waitlist"}
+            </button>
+          </form>
+        ) : null}
+
+        <p className="mt-4 text-center text-xs leading-relaxed text-white/35">
+          iOS only for now. Android is later. Unsubscribe anytime — reply to our invite email.
         </p>
-
-        <a
-          href={waitlistMailtoHref()}
-          className="mx-auto mt-6 flex w-full max-w-md items-center justify-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] py-3 text-sm font-semibold text-white transition hover:border-white/[0.16] hover:bg-white/[0.07]"
-        >
-          <Mail size={16} strokeWidth={1.75} aria-hidden />
-          Join the waitlist
-        </a>
       </div>
     </section>
   );
 }
-
-export { waitlistMailtoHref, WAITLIST_SUBJECT, WAITLIST_BODY };

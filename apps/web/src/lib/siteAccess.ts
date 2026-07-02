@@ -1,8 +1,20 @@
 const ACCESS_COOKIE = "intencity_marketing_access";
 
+function readPasswordEnv(): string | null {
+  const candidates = [
+    process.env.MARKETING_SITE_PASSWORD,
+    process.env.SITE_PASSWORD,
+    process.env.SITE_ACCESS_PASSWORD,
+  ];
+  for (const raw of candidates) {
+    const pw = raw?.trim();
+    if (pw) return pw;
+  }
+  return null;
+}
+
 export function getMarketingSitePassword(): string | null {
-  const pw = process.env.MARKETING_SITE_PASSWORD?.trim();
-  return pw || null;
+  return readPasswordEnv();
 }
 
 export function isMarketingSiteAccessRequired(): boolean {
@@ -30,9 +42,10 @@ export async function expectedAccessToken(): Promise<string | null> {
 }
 
 export async function hasValidMarketingAccessCookie(cookieValue: string | undefined): Promise<boolean> {
+  if (!isMarketingSiteAccessRequired()) return true;
   if (!cookieValue) return false;
   const expected = await expectedAccessToken();
-  if (!expected) return true;
+  if (!expected) return false;
   if (cookieValue.length !== expected.length) return false;
   let mismatch = 0;
   for (let i = 0; i < expected.length; i += 1) {
@@ -44,5 +57,14 @@ export async function hasValidMarketingAccessCookie(cookieValue: string | undefi
 export function isStaticAssetPath(pathname: string): boolean {
   return /\.(?:ico|png|jpe?g|gif|webp|svg|json|txt|xml|webmanifest|js|css|map|woff2?)$/i.test(
     pathname
+  );
+}
+
+export function isMarketingApiPath(pathname: string): boolean {
+  return (
+    pathname === "/api/site-access" ||
+    pathname === "/api/waitlist" ||
+    pathname.startsWith("/api/site-access/") ||
+    pathname.startsWith("/api/waitlist/")
   );
 }

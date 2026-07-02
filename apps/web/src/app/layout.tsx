@@ -15,7 +15,7 @@ export const metadata = {
     ? `${appConfig.appName} — Live nightlife awareness`
     : appConfig.appName,
   description: marketingSite
-    ? "Download Intencity for iOS and Android — live venue heat, friends on the map, and native nightlife awareness."
+    ? "Download Intencity for iOS — live venue activity and friends on the map in Philadelphia."
     : appConfig.description,
   ...(marketingSite
     ? {}

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const PREVIEWS = [
   {
@@ -32,71 +32,93 @@ function PhoneFrame({
   alt,
   width,
   height,
-  className = "",
   priority = false,
 }: {
   src: string;
   alt: string;
   width: number;
   height: number;
-  className?: string;
   priority?: boolean;
 }) {
   return (
-    <div
-      className={`relative overflow-hidden rounded-[1.75rem] border border-white/[0.1] bg-black shadow-[0_24px_64px_rgba(0,0,0,0.5),0_0_0_1px_rgba(59,102,255,0.08)] ring-1 ring-white/[0.04] ${className}`.trim()}
-    >
+    <div className="relative w-full overflow-hidden rounded-[1.35rem] border border-white/[0.1] bg-black shadow-[0_16px_48px_rgba(0,0,0,0.45),0_0_0_1px_rgba(59,102,255,0.08)] ring-1 ring-white/[0.04] sm:rounded-[1.5rem] lg:rounded-[1.65rem]">
       <Image
         src={src}
         alt={alt}
         width={width}
         height={height}
-        className="h-auto w-full"
+        className="block h-auto w-full"
         priority={priority}
-        sizes="(max-width: 640px) 240px, 220px"
+        sizes="(max-width: 640px) 72vw, (max-width: 1024px) 28vw, 140px"
       />
     </div>
   );
 }
 
-/** Three real app screenshots — fan on desktop, swipe carousel on mobile. */
+/** Three app screenshots — side-by-side on desktop, swipe carousel on mobile. No overlap. */
 export function MarketingAppPreview() {
   const [active, setActive] = useState(1);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      const cards = Array.from(el.querySelectorAll<HTMLElement>("[data-preview-index]"));
+      if (!cards.length) return;
+      const center = el.scrollLeft + el.clientWidth / 2;
+      let closest = 0;
+      let closestDist = Number.POSITIVE_INFINITY;
+      cards.forEach((card) => {
+        const cardCenter = card.offsetLeft + card.offsetWidth / 2;
+        const dist = Math.abs(center - cardCenter);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = Number(card.dataset.previewIndex);
+        }
+      });
+      setActive(closest);
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <div className="relative mx-auto w-full max-w-[520px] lg:max-w-none">
+    <div className="relative mx-auto w-full max-w-[min(100%,22rem)] lg:max-w-none">
       <div
-        className="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-violet/15 blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-56 w-56 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-violet/12 blur-3xl"
         aria-hidden
       />
 
-      {/* Desktop: three-phone fan */}
-      <div className="relative hidden h-[420px] items-end justify-center sm:flex lg:h-[460px]">
-        <div className="absolute bottom-0 w-[200px] -translate-x-[118%] rotate-[-8deg] opacity-85 lg:w-[220px]">
-          <PhoneFrame {...PREVIEWS[0]} />
-        </div>
-        <div className="relative z-10 w-[220px] lg:w-[240px]">
-          <PhoneFrame {...PREVIEWS[1]} priority />
-        </div>
-        <div className="absolute bottom-0 w-[200px] translate-x-[18%] rotate-[8deg] opacity-85 lg:w-[220px]">
-          <PhoneFrame {...PREVIEWS[2]} />
-        </div>
+      {/* Tablet/desktop: three equal columns — all fully visible */}
+      <div className="relative hidden sm:grid sm:grid-cols-3 sm:items-end sm:gap-2 md:gap-3 lg:gap-4">
+        {PREVIEWS.map((shot, index) => (
+          <div key={shot.src} className="min-w-0">
+            <PhoneFrame {...shot} priority={index === 1} />
+            <p className="mt-2 text-center text-[10px] font-medium text-white/40 md:text-[11px]">
+              {shot.label}
+            </p>
+          </div>
+        ))}
       </div>
 
-      {/* Mobile: snap carousel */}
+      {/* Mobile: horizontal snap carousel */}
       <div className="sm:hidden">
-        <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          ref={scrollerRef}
+          className="flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {PREVIEWS.map((shot, index) => (
-            <button
+            <div
               key={shot.src}
-              type="button"
-              onClick={() => setActive(index)}
-              className={`w-[min(72vw,260px)] shrink-0 snap-center text-left transition ${active === index ? "scale-100 opacity-100" : "scale-[0.96] opacity-70"}`}
-              aria-label={`Show ${shot.label} preview`}
+              data-preview-index={index}
+              className={`w-[min(72vw,240px)] shrink-0 snap-center transition ${active === index ? "opacity-100" : "opacity-80"}`}
             >
               <PhoneFrame {...shot} priority={index === 1} />
               <p className="mt-2 text-center text-xs font-medium text-white/45">{shot.label}</p>
-            </button>
+            </div>
           ))}
         </div>
         <div className="mt-3 flex justify-center gap-1.5" aria-hidden>

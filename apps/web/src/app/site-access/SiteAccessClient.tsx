@@ -1,11 +1,10 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { MarketingBrandMark } from "@/components/marketing/MarketingBrandMark";
 
 export default function SiteAccessClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
   const [password, setPassword] = useState("");
@@ -26,8 +25,7 @@ export default function SiteAccessClient() {
         setError("Wrong password. Try again.");
         return;
       }
-      router.replace(nextPath.startsWith("/") ? nextPath : "/");
-      router.refresh();
+      window.location.assign(nextPath.startsWith("/") ? nextPath : "/");
     } catch {
       setError("Something went wrong. Try again.");
     } finally {

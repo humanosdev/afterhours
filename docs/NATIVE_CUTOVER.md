@@ -402,6 +402,8 @@ README, MIGRATION_PHASES, ERA docs updated: “native sole client.” Remove dua
 - [ ] Zero `user_presence` upserts from web in production logs
 - [ ] Native app fully functional with web product code removed
 
+**Ops:** [MARKETING_SITE_SETUP.md](./MARKETING_SITE_SETUP.md) — Vercel env, password gate, waitlist, deploy checklist.
+
 ---
 
 ## Phase 7 — Native Superpowers (post-cutover moat)
@@ -463,6 +465,7 @@ Phases **2 + 3** can ship as one release if QA passes — writes and windows are
 
 ## Related docs
 
+- [MARKETING_SITE_SETUP.md](./MARKETING_SITE_SETUP.md) — **Vercel deploy, password gate, Supabase waitlist**
 - [SUPABASE_MIGRATION_OPS.md](./SUPABASE_MIGRATION_OPS.md) — **prod migration apply status** (what’s live, what not to re-run)
 - [NATIVE_CUTOVER_PT2.md](./NATIVE_CUTOVER_PT2.md) — Apple gate + **Unified Instant** plan (one ripple, all surfaces)
 - [PRESENCE_TRUST_ARCHITECTURE.md](./PRESENCE_TRUST_ARCHITECTURE.md)

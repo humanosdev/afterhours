@@ -32,7 +32,7 @@ export function MarketingSiteFooter() {
           <div>
             <MarketingBrandMark showSlogan={false} iconClassName="h-9 w-9" />
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-white/50">
-              iOS &amp; Android app. This site is policies and contact only.
+              iOS app · live in Philadelphia. This site is policies and contact only.
             </p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2">

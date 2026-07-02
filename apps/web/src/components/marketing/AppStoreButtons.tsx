@@ -1,12 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { appConfig } from "@/lib/appConfig";
-import { waitlistMailtoHref } from "@/components/marketing/MarketingWaitlistSection";
-import { Apple, Mail, Play } from "lucide-react";
+import { MARKETING_LAUNCH_CITY_LABEL } from "@/lib/marketingContent";
+import { Apple } from "lucide-react";
 
 type AppStoreButtonsProps = {
-  /** Larger buttons for hero sections */
   size?: "default" | "large";
   className?: string;
 };
@@ -67,43 +67,29 @@ function StoreButton({
 
 export function AppStoreButtons({ size = "default", className = "" }: AppStoreButtonsProps) {
   const iosUrl = appConfig.iosAppStoreUrl.trim();
-  const androidUrl = appConfig.androidPlayStoreUrl.trim();
-  const storesLive = Boolean(iosUrl || androidUrl);
+  const storesLive = Boolean(iosUrl);
 
   return (
     <div className={className}>
-      <div className={`grid gap-3 ${size === "large" ? "sm:grid-cols-2" : ""}`}>
-        <StoreButton
-          href={iosUrl}
-          disabled={!iosUrl}
-          size={size}
-          icon={<Apple size={20} strokeWidth={1.75} aria-hidden />}
-          sublabel={iosUrl ? "Download on the" : "Coming soon to the"}
-          label="App Store"
-        />
-        <StoreButton
-          href={androidUrl}
-          disabled={!androidUrl}
-          size={size}
-          icon={<Play size={20} strokeWidth={1.75} className="ml-0.5" aria-hidden />}
-          sublabel={androidUrl ? "Get it on" : "Coming soon on"}
-          label="Google Play"
-        />
-      </div>
+      <StoreButton
+        href={iosUrl}
+        disabled={!iosUrl}
+        size={size}
+        icon={<Apple size={20} strokeWidth={1.75} aria-hidden />}
+        sublabel={iosUrl ? "Download on the" : "Coming soon to the"}
+        label="App Store"
+      />
       {!storesLive ? (
-        <a
-          href={waitlistMailtoHref()}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] py-2.5 text-sm font-medium text-white/70 transition hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white"
+        <Link
+          href="#waitlist"
+          className="mt-4 flex w-full items-center justify-center rounded-full bg-accent-violet px-4 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(59,102,255,0.2)] transition hover:bg-accent-violet-active"
         >
-          <Mail size={16} strokeWidth={1.75} aria-hidden />
           Join the waitlist
-        </a>
+        </Link>
       ) : null}
       {!storesLive ? (
-        <p className="mt-2 text-center text-xs text-white/35">
-          <a href="#waitlist" className="underline underline-offset-2 hover:text-white/55">
-            How the waitlist works
-          </a>
+        <p className="mt-3 text-center text-xs leading-relaxed text-white/40">
+          Launching in {MARKETING_LAUNCH_CITY_LABEL} · iOS TestFlight first
         </p>
       ) : null}
     </div>
