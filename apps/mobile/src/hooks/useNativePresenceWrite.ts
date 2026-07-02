@@ -7,6 +7,7 @@ import {
 } from "../lib/nativePresenceWrite";
 import { writeDevicePresence } from "../lib/writeDevicePresence";
 import { getCachedMapLastLocation } from "../lib/mapLastLocationCache";
+import type { StableZoneSnapshot } from "@intencity/shared";
 import type { DeviceCoords } from "../lib/nativeForegroundLocation";
 import type { VenuePublic } from "../types/venue";
 import type { MyProfile } from "../types/profile";
@@ -30,6 +31,7 @@ export function useNativePresenceWrite(args: {
   const inFlightRef = useRef(false);
   const lastWriteAtRef = useRef(0);
   const lastWrittenFixRef = useRef<{ lat: number; lng: number } | null>(null);
+  const stableZoneRef = useRef<StableZoneSnapshot | null>(null);
 
   coordsRef.current = coords;
   profileRef.current = profile;
@@ -39,6 +41,12 @@ export function useNativePresenceWrite(args: {
   const venuesKey = venues.map((v) => v.id).join(",");
   const coordsKey =
     coords == null ? null : `${coords.lat}:${coords.lng}:${coords.recordedAtMs ?? 0}`;
+
+  useEffect(() => {
+    stableZoneRef.current = null;
+    lastWriteAtRef.current = 0;
+    lastWrittenFixRef.current = null;
+  }, [userId]);
 
   useEffect(() => {
     if (!enabled || !userId) return;
@@ -94,10 +102,15 @@ export function useNativePresenceWrite(args: {
         venues: venuesRef.current,
         myGhostMode: !!currentProfile?.ghost_mode,
         actorLabel,
+        accuracyM: fix.accuracyM,
+        stableZone: stableZoneRef.current,
       })
-        .then(({ error }) => {
+        .then(({ error, stableZone }) => {
           if (error) console.warn("[presence-write]", error.message);
-          else lastWrittenFixRef.current = { lat: fix.lat, lng: fix.lng };
+          else {
+            lastWrittenFixRef.current = { lat: fix.lat, lng: fix.lng };
+            if (stableZone) stableZoneRef.current = stableZone;
+          }
         })
         .finally(() => {
           inFlightRef.current = false;

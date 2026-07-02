@@ -1,9 +1,11 @@
 import {
+  applyPresenceWriteConfidence,
   computePresenceFromGps,
   isFriendOnlineNow,
   isPresenceLive,
   isValidCoordinatePair,
   NEARBY_THRESHOLD_M,
+  type StableZoneSnapshot,
 } from "@intencity/shared";
 import { createNotification } from "./createNotification";
 import { getMyFriendIds } from "./getMyFriendIds";
@@ -44,15 +46,17 @@ export async function syncUserPresenceWithVenuesFromCoords(args: {
   venues: VenuePublic[];
   myGhostMode: boolean;
   actorLabel?: string | null;
-}): Promise<{ error: Error | null }> {
-  const { userId, lat, lng, myGhostMode } = args;
+  accuracyM?: number | null;
+  stableZone?: StableZoneSnapshot | null;
+}): Promise<{ error: Error | null; stableZone: StableZoneSnapshot | null }> {
+  const { userId, lat, lng, myGhostMode, accuracyM = null, stableZone = null } = args;
   if (!isValidCoordinatePair(lat, lng)) {
-    return { error: new Error("invalid coordinates") };
+    return { error: new Error("invalid coordinates"), stableZone };
   }
 
   if (myGhostMode) {
     const { error } = await upsertUserPresenceGhostSafeCoords({ userId, lat, lng });
-    return { error: error ? new Error(error.message) : null };
+    return { error: error ? new Error(error.message) : null, stableZone };
   }
 
   const syncVenues: VenueForPresenceSync[] = venuesForPresenceSync(args.venues);
@@ -64,7 +68,7 @@ export async function syncUserPresenceWithVenuesFromCoords(args: {
     .maybeSingle();
 
   if (prevErr) {
-    return { error: new Error(prevErr.message) };
+    return { error: new Error(prevErr.message), stableZone };
   }
 
   const prev = (prevRow ?? null) as PrevPresence | null;
@@ -78,7 +82,17 @@ export async function syncUserPresenceWithVenuesFromCoords(args: {
     prevEnteredInnerAt: prev?.entered_inner_at ?? null,
   });
 
-  const { venueId, zoneType, venueState: nextVenueState, enteredInnerAt } = computed;
+  const { result, stableZone: nextStableZone } = applyPresenceWriteConfidence({
+    computed,
+    prev,
+    accuracyM,
+    lat,
+    lng,
+    venues: syncVenues,
+    stableZone,
+  });
+
+  const { venueId, zoneType, venueState: nextVenueState, enteredInnerAt } = result;
 
   const { error: upErr } = await supabase.from("user_presence").upsert(
     {
@@ -95,7 +109,7 @@ export async function syncUserPresenceWithVenuesFromCoords(args: {
   );
 
   if (upErr) {
-    return { error: new Error(upErr.message) };
+    return { error: new Error(upErr.message), stableZone };
   }
 
   await maybeEarnProfileVenue({
@@ -118,7 +132,7 @@ export async function syncUserPresenceWithVenuesFromCoords(args: {
     console.warn("[presence-write] notifications:", err instanceof Error ? err.message : err);
   });
 
-  return { error: null };
+  return { error: null, stableZone: nextStableZone };
 }
 
 async function dispatchPresenceSocialNotifications(args: {

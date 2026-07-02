@@ -5,6 +5,7 @@ export * from "./presence/freshness";
 export * from "./presence/venueRadii";
 export * from "./presence/friendSocialGate";
 export * from "./presence/friendPresenceCopy";
+export * from "./presence/presenceWriteConfidence";
 export * from "./geo/distanceMeters";
 export * from "./venue/types";
 export * from "./venue/haloLimitM";
