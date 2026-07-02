@@ -20,12 +20,18 @@ function isProtectedPath(pathname: string) {
   );
 }
 
-/** Stops the browser from keeping a stale HTML shell that points at deleted `/_next/static/*` hashes after `next dev` restarts. */
-function withDevDocumentNoStore(res: NextResponse, req: NextRequest) {
-  res.headers.set("x-middleware-pathname", req.nextUrl.pathname);
+function buildRequestHeaders(req: NextRequest): Headers {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-middleware-pathname", req.nextUrl.pathname);
   if (req.nextUrl.search) {
-    res.headers.set("x-middleware-search", req.nextUrl.search);
+    requestHeaders.set("x-middleware-search", req.nextUrl.search);
+  } else {
+    requestHeaders.delete("x-middleware-search");
   }
+  return requestHeaders;
+}
+
+function applyDevDocumentNoStore(res: NextResponse, req: NextRequest): NextResponse {
   if (process.env.NODE_ENV !== "development") return res;
   const p = req.nextUrl.pathname;
   if (/\.(?:ico|png|jpe?g|gif|webp|svg|json|txt|xml|webmanifest|js|css|map|woff2?)$/i.test(p)) {
@@ -34,6 +40,17 @@ function withDevDocumentNoStore(res: NextResponse, req: NextRequest) {
   res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.headers.set("Pragma", "no-cache");
   return res;
+}
+
+function middlewareNext(req: NextRequest): NextResponse {
+  return applyDevDocumentNoStore(
+    NextResponse.next({ request: { headers: buildRequestHeaders(req) } }),
+    req
+  );
+}
+
+function middlewareRedirect(url: URL | string, req: NextRequest): NextResponse {
+  return applyDevDocumentNoStore(NextResponse.redirect(url), req);
 }
 
 /** Dev-only: replace production Workbox `sw.js` so browsers never precache stale `/_next/static` hashes. */
@@ -66,7 +83,7 @@ async function enforceMarketingSiteAccess(req: NextRequest): Promise<NextRespons
     "next",
     pathname === "/" ? "/" : `${pathname}${req.nextUrl.search}`
   );
-  return withDevDocumentNoStore(NextResponse.redirect(gateUrl), req);
+  return middlewareRedirect(gateUrl, req);
 }
 
 export async function middleware(req: NextRequest) {
@@ -83,7 +100,7 @@ export async function middleware(req: NextRequest) {
           },
         });
       }
-      return withDevDocumentNoStore(NextResponse.next(), req);
+      return middlewareNext(req);
     }
 
     const accessRedirect = await enforceMarketingSiteAccess(req);
@@ -93,7 +110,7 @@ export async function middleware(req: NextRequest) {
     if (isMarketingSite()) {
       if (pathname.startsWith("/api/")) {
         if (isMarketingApiPath(pathname)) {
-          return withDevDocumentNoStore(NextResponse.next(), req);
+          return middlewareNext(req);
         }
         return NextResponse.json({ error: "Not found" }, { status: 404 });
       }
@@ -105,14 +122,14 @@ export async function middleware(req: NextRequest) {
         if (isMarketingBlockedPath(pathname)) {
           homeUrl.hash = "download";
         }
-        return withDevDocumentNoStore(NextResponse.redirect(homeUrl), req);
+        return middlewareRedirect(homeUrl, req);
       }
-      return withDevDocumentNoStore(NextResponse.next(), req);
+      return middlewareNext(req);
     }
 
     let res = NextResponse.next({
       request: {
-        headers: req.headers,
+        headers: buildRequestHeaders(req),
       },
     });
 
@@ -128,7 +145,7 @@ export async function middleware(req: NextRequest) {
             req.cookies.set({ name, value, ...options });
             res = NextResponse.next({
               request: {
-                headers: req.headers,
+                headers: buildRequestHeaders(req),
               },
             });
             res.cookies.set({ name, value, ...options });
@@ -137,7 +154,7 @@ export async function middleware(req: NextRequest) {
             req.cookies.set({ name, value: "", ...options });
             res = NextResponse.next({
               request: {
-                headers: req.headers,
+                headers: buildRequestHeaders(req),
               },
             });
             res.cookies.set({ name, value: "", ...options });
@@ -156,7 +173,7 @@ export async function middleware(req: NextRequest) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
       loginUrl.searchParams.set("next", pathname);
-      return withDevDocumentNoStore(NextResponse.redirect(loginUrl), req);
+      return middlewareRedirect(loginUrl, req);
     }
 
     if (session) {
@@ -176,7 +193,7 @@ export async function middleware(req: NextRequest) {
         const removedUrl = req.nextUrl.clone();
         removedUrl.pathname = "/login";
         removedUrl.searchParams.set("account", "removed");
-        return withDevDocumentNoStore(NextResponse.redirect(removedUrl), req);
+        return middlewareRedirect(removedUrl, req);
       }
 
       const onboardingComplete = !!profile?.onboarding_complete;
@@ -185,7 +202,7 @@ export async function middleware(req: NextRequest) {
         const appUrl = req.nextUrl.clone();
         appUrl.pathname = onboardingComplete ? "/hub" : ONBOARDING_PATH;
         appUrl.search = "";
-        return withDevDocumentNoStore(NextResponse.redirect(appUrl), req);
+        return middlewareRedirect(appUrl, req);
       }
 
       /** Allow password recovery page even when onboarding is incomplete (hash tokens are client-only). */
@@ -197,33 +214,33 @@ export async function middleware(req: NextRequest) {
         const onboardingUrl = req.nextUrl.clone();
         onboardingUrl.pathname = ONBOARDING_PATH;
         onboardingUrl.search = "";
-        return withDevDocumentNoStore(NextResponse.redirect(onboardingUrl), req);
+        return middlewareRedirect(onboardingUrl, req);
       }
 
       if (onboardingComplete && pathname === ONBOARDING_PATH) {
         const appUrl = req.nextUrl.clone();
         appUrl.pathname = "/hub";
         appUrl.search = "";
-        return withDevDocumentNoStore(NextResponse.redirect(appUrl), req);
+        return middlewareRedirect(appUrl, req);
       }
 
       if (onboardingComplete && pathname === "/") {
         const appUrl = req.nextUrl.clone();
         appUrl.pathname = "/hub";
         appUrl.search = "";
-        return withDevDocumentNoStore(NextResponse.redirect(appUrl), req);
+        return middlewareRedirect(appUrl, req);
       }
     }
 
-    return withDevDocumentNoStore(res, req);
+    return applyDevDocumentNoStore(res, req);
   } catch (e) {
     console.error("[middleware]", e);
     if (isMarketingSiteAccessRequired()) {
       const gateUrl = req.nextUrl.clone();
       gateUrl.pathname = "/site-access";
-      return withDevDocumentNoStore(NextResponse.redirect(gateUrl), req);
+      return middlewareRedirect(gateUrl, req);
     }
-    return withDevDocumentNoStore(NextResponse.next(), req);
+    return middlewareNext(req);
   }
 }
 

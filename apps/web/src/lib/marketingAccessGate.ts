@@ -8,13 +8,16 @@ import {
 } from "@/lib/siteAccess";
 
 function requestPathname(): string {
-  const fromMiddleware = headers().get("x-middleware-pathname");
+  const h = headers();
+  const fromMiddleware = h.get("x-middleware-pathname");
   if (fromMiddleware) return fromMiddleware;
 
-  const url = headers().get("x-url") ?? headers().get("next-url");
-  if (url) {
+  for (const key of ["x-invoke-path", "x-matched-path", "x-url", "next-url"] as const) {
+    const raw = h.get(key);
+    if (!raw) continue;
+    if (raw.startsWith("/")) return raw.split("?")[0] ?? raw;
     try {
-      return new URL(url).pathname;
+      return new URL(raw).pathname;
     } catch {
       /* ignore */
     }
