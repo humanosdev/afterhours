@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MarketingBrandMark } from "@/components/marketing/MarketingBrandMark";
+import { submitSiteAccessPassword } from "./actions";
 
 export default function SiteAccessClient() {
   const searchParams = useSearchParams();
@@ -16,13 +17,13 @@ export default function SiteAccessClient() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/site-access", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      if (!res.ok) {
-        setError("Wrong password. Try again.");
+      const result = await submitSiteAccessPassword(password);
+      if (!result.ok) {
+        if (result.error === "not_configured") {
+          setError("Preview password is not configured on the server.");
+        } else {
+          setError("Wrong password. Try again.");
+        }
         return;
       }
       window.location.assign(nextPath.startsWith("/") ? nextPath : "/");

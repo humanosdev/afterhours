@@ -6,6 +6,7 @@ import { isMarketingSite } from "@/lib/webSiteMode";
 import {
   accessCookieName,
   hasValidMarketingAccessCookie,
+  hasValidMarketingBasicAuth,
   isMarketingSiteAccessRequired,
   isStaticAssetPath,
   isMarketingApiPath,
@@ -51,7 +52,11 @@ async function enforceMarketingSiteAccess(req: NextRequest): Promise<NextRespons
   }
 
   const accessCookie = req.cookies.get(accessCookieName())?.value;
-  if (await hasValidMarketingAccessCookie(accessCookie)) {
+  const authHeader = req.headers.get("authorization");
+  if (
+    hasValidMarketingAccessCookie(accessCookie) ||
+    hasValidMarketingBasicAuth(authHeader)
+  ) {
     return null;
   }
 
@@ -213,6 +218,11 @@ export async function middleware(req: NextRequest) {
     return withDevDocumentNoStore(res, req);
   } catch (e) {
     console.error("[middleware]", e);
+    if (isMarketingSiteAccessRequired()) {
+      const gateUrl = req.nextUrl.clone();
+      gateUrl.pathname = "/site-access";
+      return withDevDocumentNoStore(NextResponse.redirect(gateUrl), req);
+    }
     return withDevDocumentNoStore(NextResponse.next(), req);
   }
 }

@@ -4,29 +4,37 @@ import {
   accessTokenForPassword,
   getMarketingSitePassword,
   isMarketingSiteAccessRequired,
+  siteAccessCookieOptions,
+  verifySiteAccessPassword,
 } from "@/lib/siteAccess";
 
 export async function POST(req: NextRequest) {
   if (!isMarketingSiteAccessRequired()) {
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
   }
 
   const body = await req.json().catch(() => null);
   const password = typeof body?.password === "string" ? body.password : "";
-  const expected = getMarketingSitePassword();
 
-  if (!expected || password !== expected) {
+  if (!verifySiteAccessPassword(password)) {
     return NextResponse.json({ ok: false, error: "invalid_password" }, { status: 401 });
   }
 
-  const token = await accessTokenForPassword(password);
+  const expected = getMarketingSitePassword();
+  if (!expected) {
+    return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  }
+
+  const secure =
+    req.nextUrl.protocol === "https:" ||
+    req.headers.get("x-forwarded-proto") === "https" ||
+    process.env.NODE_ENV === "production";
+
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(accessCookieName(), token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  res.cookies.set(
+    accessCookieName(),
+    accessTokenForPassword(expected),
+    siteAccessCookieOptions(secure)
+  );
   return res;
 }
