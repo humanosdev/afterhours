@@ -4,7 +4,6 @@ import {
   resolveNativeStickerUri,
 } from "intencity-message-stickers";
 import { Alert, Platform } from "react-native";
-import { MOMENT_BUILTIN_STICKERS } from "./momentDefaultStickers";
 import type { MomentStickerItem } from "./momentEditor";
 import { loadSavedMomentStickers, savePickedMomentSticker } from "./savedMomentStickers";
 
@@ -13,12 +12,6 @@ const uriCache = new Map<string, string>();
 /** Stickers the user picked via + iMessage in this app (local files, no lazy resolve). */
 export async function loadPersonalMomentStickers(): Promise<MomentStickerItem[]> {
   return loadSavedMomentStickers();
-}
-
-/** Built-in packs plus personal stickers. */
-export async function loadMomentStickers(): Promise<MomentStickerItem[]> {
-  const personal = await loadPersonalMomentStickers();
-  return [...MOMENT_BUILTIN_STICKERS, ...personal];
 }
 
 export async function importIMessageStickerFromPicker(): Promise<MomentStickerItem | null> {

@@ -1,4 +1,4 @@
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView, useCameraPermissions, type CameraCapturedPicture } from "expo-camera";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { ImagePlus, RotateCcw, X, Zap, ZapOff } from "lucide-react-native";
@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Easing,
   Pressable,
   StyleSheet,
   Text,
@@ -18,8 +17,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mediaComposerCopy } from "../../content/mediaComposerCopy";
 import { mediaLexicon } from "../../content/mediaLexicon";
 import type { StoryCameraSurface } from "../../lib/storyCameraSurface";
-import { useMomentStickers } from "../../hooks/useMomentStickers";
-import type { MomentOverlay, MomentTextFontId } from "../../lib/momentEditor";
 import type { ShareAspectFormat } from "../../lib/shareAspect";
 import {
   emitStoryPostConfirmed,
@@ -35,14 +32,10 @@ import { loadMomentImageLayout, momentLayoutFromDimensions } from "../../lib/mom
 import { exportMomentCrop } from "../../lib/momentCropExport";
 import { composerChrome } from "../../theme/composerLayout";
 import {
-  MOMENT_PUBLISH_HEIGHT,
-  MOMENT_PUBLISH_WIDTH,
   momentStageMetrics,
 } from "../../theme/momentStageLayout";
 import { colors } from "../../theme/colors";
 import { mediaLayout } from "../../theme/mediaLayout";
-import { motion } from "../../theme/motion";
-import { captureRef } from "react-native-view-shot";
 import { ModalGestureRoot } from "../ModalGestureRoot";
 import { ComposerBottomModeMenu } from "./ComposerBottomModeMenu";
 import { ComposerViewportFrame } from "./ComposerViewportFrame";
@@ -50,8 +43,6 @@ import {
   MomentMediaCanvas,
   type MomentMediaCanvasHandle,
 } from "../moments/MomentMediaCanvas";
-import { MomentDraggableOverlay } from "../moments/MomentDraggableOverlay";
-import { MomentEditorRail } from "../moments/MomentEditorRail";
 import { ShareNewPostComposer } from "../shares/ShareNewPostComposer";
 
 /** Front-camera flash — brief overlay after shutter (never blocks capture). */
@@ -129,9 +120,8 @@ export function StoryComposerModal({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const copy = mediaComposerCopy.modal;
   const cameraRef = useRef<CameraView>(null);
+  const capturingRef = useRef(false);
   const momentCropRef = useRef<MomentMediaCanvasHandle>(null);
-  const momentStickerCaptureRef = useRef<View>(null);
-  const publishCaptureRef = useRef<View>(null);
   const previewUriRef = useRef<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -141,8 +131,8 @@ export function StoryComposerModal({
   const [flashOn, setFlashOn] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [shareAspect, setShareAspect] = useState<ShareAspectFormat>("portrait");
-  const [uploading, setUploading] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [momentFillCutout, setMomentFillCutout] = useState(true);
   const [momentPreviewSize, setMomentPreviewSize] = useState<{ width: number; height: number } | null>(null);
   const [momentSourceSize, setMomentSourceSize] = useState<{ width: number; height: number } | null>(null);
@@ -150,17 +140,6 @@ export function StoryComposerModal({
   const [screenFlashActive, setScreenFlashActive] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const previewLift = useRef(new Animated.Value(0)).current;
-  const [overlays, setOverlays] = useState<MomentOverlay[]>([]);
-  const [activeOverlayId, setActiveOverlayId] = useState<string | null>(null);
-  const {
-    builtinStickers,
-    deviceStickers,
-    loading: stickersLoading,
-    importing: importingStickers,
-    refresh: refreshDeviceStickers,
-    importFromIMessage,
-    ensureUri: ensureStickerUri,
-  } = useMomentStickers(visible && mode === "moments");
   const isPreview = surface === "preview" && !!previewUri;
   const shareLibraryActive = surface === "share-library";
   const showLiveCamera =
@@ -187,13 +166,7 @@ export function StoryComposerModal({
       setMomentPreviewSize({ width: momentStage.width, height: momentStage.height });
       setPreviewUri(uri);
       setSurface("preview");
-      previewLift.setValue(Math.round(momentStage.height * 0.12));
-      Animated.timing(previewLift, {
-        toValue: 0,
-        duration: motion.sheet.openSheet,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      previewLift.setValue(0);
       void Image.prefetch(uri);
 
       if (size) return;
@@ -212,8 +185,8 @@ export function StoryComposerModal({
     setShareAspect("portrait");
     setFacing("back");
     setFlashOn(false);
-    setUploading(false);
     setPicking(false);
+    setPosting(false);
     setMomentFillCutout(true);
     setMomentPreviewSize(null);
     setMomentSourceSize(null);
@@ -223,8 +196,6 @@ export function StoryComposerModal({
     setScreenFlashActive(false);
     previewLift.setValue(0);
     setCapturing(false);
-    setOverlays([]);
-    setActiveOverlayId(null);
   }, [mode]);
 
   const initCamera = useCallback(async () => {
@@ -263,15 +234,26 @@ export function StoryComposerModal({
   }
 
   function flipCamera() {
+    setCameraReady(false);
     setFacing((f) => (f === "back" ? "front" : "back"));
   }
+
+  useEffect(() => {
+    if (!showLiveCamera) {
+      setCameraReady(false);
+      return;
+    }
+    setCameraReady(false);
+    const fallback = setTimeout(() => setCameraReady(true), 80);
+    return () => clearTimeout(fallback);
+  }, [showLiveCamera, facing]);
 
   const handleCameraReady = useCallback(() => {
     setCameraReady(true);
   }, []);
 
   async function pickLibrary() {
-    if (picking || uploading) return;
+    if (picking || posting) return;
     setPicking(true);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -301,28 +283,52 @@ export function StoryComposerModal({
   }
 
   async function capture() {
-    if (surface !== "live" || uploading || capturing || !cameraReady) return;
+    if (surface !== "live" || posting || capturingRef.current) return;
+    const camera = cameraRef.current;
+    if (!camera) return;
+
+    capturingRef.current = true;
     setCapturing(true);
-    const wantsScreenFlash = facing === "front" && flashOn;
-    let flashTimer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      if (wantsScreenFlash) {
-        setScreenFlashActive(true);
-        flashTimer = setTimeout(() => setScreenFlashActive(false), SELFIE_SCREEN_FLASH_MS);
-      }
-      const photo = await cameraRef.current?.takePictureAsync({
-        quality: mediaLayout.ingest.jpegQuality,
-        skipProcessing: true,
-        shutterSound: false,
-      });
-      if (!photo?.uri) return;
+
+    if (facing === "front" && flashOn) {
+      setScreenFlashActive(true);
+      setTimeout(() => setScreenFlashActive(false), SELFIE_SCREEN_FLASH_MS);
+    }
+
+    let delivered = false;
+    const deliverPhoto = (photo: CameraCapturedPicture | null | undefined) => {
+      if (delivered || !photo?.uri) return;
+      delivered = true;
       showMomentPreview(photo.uri, photo.width, photo.height);
+    };
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        void camera
+          .takePictureAsync({
+            quality: mediaLayout.ingest.jpegQuality,
+            skipProcessing: true,
+            shutterSound: false,
+            fastMode: true,
+            onPictureSaved: (photo) => {
+              deliverPhoto(photo);
+              resolve();
+            },
+          })
+          .then((result) => {
+            if (result && typeof result === "object" && "uri" in result) {
+              deliverPhoto(result);
+            }
+            resolve();
+          })
+          .catch(reject);
+      });
     } catch {
       Alert.alert("Camera", copy.cameraStartFailed);
     } finally {
-      if (flashTimer) clearTimeout(flashTimer);
-      if (wantsScreenFlash) setScreenFlashActive(false);
+      capturingRef.current = false;
       setCapturing(false);
+      setScreenFlashActive(false);
     }
   }
 
@@ -331,42 +337,8 @@ export function StoryComposerModal({
     setMomentFillCutout(true);
     setMomentPreviewSize(null);
     setMomentSourceSize(null);
-    setOverlays([]);
-    setActiveOverlayId(null);
     setSurface(permission?.granted ? "live" : "unavailable");
   }
-
-  const updateOverlay = useCallback((id: string, patch: Partial<MomentOverlay>) => {
-    setOverlays((prev) =>
-      prev.map((row) => (row.id === id ? ({ ...row, ...patch } as MomentOverlay) : row))
-    );
-  }, []);
-
-  const addStickerOverlay = useCallback((overlay: Extract<MomentOverlay, { kind: "sticker" }>) => {
-    setOverlays((prev) => [...prev, overlay]);
-    setActiveOverlayId(overlay.id);
-  }, []);
-
-  const addEmojiOverlay = useCallback((overlay: Extract<MomentOverlay, { kind: "emoji" }>) => {
-    setOverlays((prev) => [...prev, overlay]);
-    setActiveOverlayId(overlay.id);
-  }, []);
-
-  const addTextOverlay = useCallback((overlay: Extract<MomentOverlay, { kind: "text" }>) => {
-    setOverlays((prev) => [...prev, overlay]);
-    setActiveOverlayId(overlay.id);
-  }, []);
-
-  const updateTextOverlay = useCallback(
-    (overlayId: string, text: string, fontId: MomentTextFontId) => {
-      setOverlays((prev) =>
-        prev.map((row) =>
-          row.id === overlayId && row.kind === "text" ? { ...row, text, fontId } : row
-        )
-      );
-    },
-    []
-  );
 
   function handleTopClose() {
     if (isPreview) {
@@ -377,7 +349,7 @@ export function StoryComposerModal({
   }
 
   function handleModeChange(next: ComposerMode) {
-    if (next === mode || uploading || picking) return;
+    if (next === mode || posting || picking) return;
     if (previewUri) {
       setPreviewUri(null);
       setShareAspect("portrait");
@@ -433,36 +405,13 @@ export function StoryComposerModal({
   }
 
   async function onShareComposerNext(croppedUri: string, format: ShareAspectFormat) {
-    if (uploading) return;
+    if (posting) return;
     setShareAspect(format);
-    setUploading(true);
-    try {
-      await publishInBackground(croppedUri, format);
-    } finally {
-      setUploading(false);
-    }
+    await publishInBackground(croppedUri, format);
   }
 
   async function resolveUploadUri(): Promise<string | null> {
     if (!previewUri) return null;
-    if (momentStickerCaptureRef.current && momentPreviewSize) {
-      try {
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        });
-        const captured = await captureRef(momentStickerCaptureRef, {
-          format: "jpg",
-          quality: 1,
-          width: MOMENT_PUBLISH_WIDTH,
-          height: MOMENT_PUBLISH_HEIGHT,
-        });
-        if (captured) return captured;
-      } catch (error) {
-        if (__DEV__) {
-          console.warn("[story-composer] preview capture failed", error);
-        }
-      }
-    }
     if (momentPreviewSize) {
       const transform =
         momentCropRef.current?.getTransform() ?? {
@@ -483,8 +432,8 @@ export function StoryComposerModal({
   }
 
   async function post() {
-    if (!previewUri || uploading) return;
-    setUploading(true);
+    if (!previewUri || posting) return;
+    setPosting(true);
     try {
       const uploadUri = await resolveUploadUri();
       if (!uploadUri) return;
@@ -495,12 +444,12 @@ export function StoryComposerModal({
       }
       Alert.alert("Could not publish", copy.uploadFailed);
     } finally {
-      setUploading(false);
+      setPosting(false);
     }
   }
 
   function close() {
-    if (uploading || picking) return;
+    if (picking) return;
     resetSession();
     onClose();
   }
@@ -539,14 +488,9 @@ export function StoryComposerModal({
               mode={mode}
               switchEnabled={modeSwitchEnabled}
               onModeChange={handleModeChange}
-              disabled={uploading || picking}
+              disabled={posting || picking}
             />
           </View>
-          {uploading ? (
-            <View style={styles.postingOverlay} pointerEvents="none">
-              <Text style={styles.postingText}>{copy.publishing}</Text>
-            </View>
-          ) : null}
         </View>
       </ModalGestureRoot>
     );
@@ -589,8 +533,7 @@ export function StoryComposerModal({
               <View style={[StyleSheet.absoluteFill, styles.cameraPlaceholder]} />
             ) : null}
             {isPreview && previewUri ? (
-              <View ref={momentStickerCaptureRef} collapsable={false} style={StyleSheet.absoluteFill}>
-                <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: previewLift }] }]}>
+              <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: previewLift }] }]}>
                 <MomentMediaCanvas
                   key={previewUri}
                   ref={momentCropRef}
@@ -602,21 +545,7 @@ export function StoryComposerModal({
                   onLayoutSize={setMomentPreviewSize}
                   style={StyleSheet.absoluteFill}
                 />
-                {momentPreviewSize
-                  ? overlays.map((overlay) => (
-                      <MomentDraggableOverlay
-                        key={overlay.id}
-                        overlay={overlay}
-                        frameWidth={momentPreviewSize.width}
-                        frameHeight={momentPreviewSize.height}
-                        isActive={activeOverlayId === overlay.id}
-                        onActivate={() => setActiveOverlayId(overlay.id)}
-                        onChange={(patch) => updateOverlay(overlay.id, patch)}
-                      />
-                    ))
-                  : null}
-                </Animated.View>
-              </View>
+              </Animated.View>
             ) : null}
             {surface === "unavailable" ? (
               <View style={[StyleSheet.absoluteFill, styles.unavailableStage]}>
@@ -634,7 +563,7 @@ export function StoryComposerModal({
               <View style={styles.captureRow}>
                 <Pressable
                   onPress={() => void pickLibrary()}
-                  disabled={uploading || picking}
+                  disabled={picking}
                   style={styles.galleryBtn}
                   accessibilityRole="button"
                   accessibilityLabel={copy.openLibrary}
@@ -648,10 +577,10 @@ export function StoryComposerModal({
 
                 <Pressable
                   onPress={() => void capture()}
-                  disabled={uploading || capturing || surface !== "live" || !cameraReady}
+                  disabled={posting || capturing || surface !== "live"}
                   style={[
                     styles.shutterOuter,
-                    (surface !== "live" || !cameraReady || capturing) && styles.shutterDisabled,
+                    (surface !== "live" || capturing) && styles.shutterDisabled,
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel="Capture photo"
@@ -661,7 +590,7 @@ export function StoryComposerModal({
 
                 <Pressable
                   onPress={flipCamera}
-                  disabled={surface !== "live" || uploading}
+                  disabled={surface !== "live" || posting}
                   style={[styles.flipBtn, surface !== "live" && styles.flipBtnDisabled]}
                   accessibilityRole="button"
                   accessibilityLabel="Flip camera"
@@ -674,84 +603,55 @@ export function StoryComposerModal({
         </View>
 
         <View style={[styles.topBar, { paddingTop: insets.top + 4 }]} pointerEvents="box-none">
-          <IgIconButton onPress={handleTopClose} label="Close">
+          <IgIconButton onPress={handleTopClose} label={isPreview ? "Retake" : "Close"}>
             <X size={26} color="#fff" strokeWidth={2} />
           </IgIconButton>
-          <IgIconButton
-            onPress={toggleFlash}
-            label={
-              !flashAvailable
-                ? "Flash unavailable"
-                : flashAccessibilityLabel(flashOn, facing)
-            }
-            disabled={!flashAvailable}
-          >
-            {flashOn ? (
-              <Zap size={24} color="#fff" fill="#fff" strokeWidth={1.5} />
-            ) : (
-              <ZapOff size={24} color="#fff" strokeWidth={2} />
-            )}
-          </IgIconButton>
-          <View style={styles.topBarSpacer} />
-        </View>
-
-        {isPreview && previewUri && !momentFillCutout ? (
-          <View
-            ref={publishCaptureRef}
-            collapsable={false}
-            style={styles.publishCapture}
-            pointerEvents="none"
-          >
-            <MomentMediaCanvas
-              uri={previewUri}
-              fillCutout={false}
-              knownImageSize={momentSourceSize}
-              style={{ width: MOMENT_PUBLISH_WIDTH, height: MOMENT_PUBLISH_HEIGHT }}
-            />
-          </View>
-        ) : null}
-
-        <View
-          style={[
-            styles.bottomDock,
-            styles.bottomDockMoment,
-            isPreview && styles.bottomDockPreview,
-            { paddingBottom: insets.bottom + 2 },
-          ]}
-          pointerEvents="box-none"
-        >
           {isPreview ? (
-            <MomentEditorRail
-              builtinStickers={builtinStickers}
-              deviceStickers={deviceStickers}
-              stickersLoading={stickersLoading}
-              overlays={overlays}
-              activeOverlayId={activeOverlayId}
-              onAddSticker={addStickerOverlay}
-              onAddEmoji={addEmojiOverlay}
-              onAddText={addTextOverlay}
-              onUpdateText={updateTextOverlay}
-              onSelectOverlay={setActiveOverlayId}
-              onEnsureStickerUri={ensureStickerUri}
-              onRefreshDeviceStickers={refreshDeviceStickers}
-              onImportFromIMessage={importFromIMessage}
-              importingFromIMessage={importingStickers}
-              publishing={uploading}
-              onPublish={() => void post()}
-            />
-          ) : null}
-
-          <ComposerBottomModeMenu
-            mode={mode}
-            switchEnabled={modeSwitchEnabled}
-            onModeChange={handleModeChange}
-            disabled={uploading || picking}
-          />
+            <>
+              <View style={styles.topBarSpacer} />
+              <Pressable
+                onPress={() => void post()}
+                disabled={posting}
+                style={[styles.postTopBtn, posting && styles.postTopBtnDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel={mediaLexicon.publish.post}
+              >
+                <Text style={styles.postTopLabel}>{mediaLexicon.publish.post}</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <IgIconButton
+                onPress={toggleFlash}
+                label={
+                  !flashAvailable
+                    ? "Flash unavailable"
+                    : flashAccessibilityLabel(flashOn, facing)
+                }
+                disabled={!flashAvailable}
+              >
+                {flashOn ? (
+                  <Zap size={24} color="#fff" fill="#fff" strokeWidth={1.5} />
+                ) : (
+                  <ZapOff size={24} color="#fff" strokeWidth={2} />
+                )}
+              </IgIconButton>
+              <View style={styles.topBarSpacer} />
+            </>
+          )}
         </View>
 
-        {uploading ? (
-          <View style={styles.postingOverlay} pointerEvents="none">
-            <Text style={styles.postingText}>{copy.publishing}</Text>
+        {!isPreview ? (
+          <View
+            style={[styles.bottomDock, styles.bottomDockMoment, { paddingBottom: insets.bottom + 4 }]}
+            pointerEvents="box-none"
+          >
+            <ComposerBottomModeMenu
+              mode={mode}
+              switchEnabled={modeSwitchEnabled}
+              onModeChange={handleModeChange}
+              disabled={posting || picking}
+            />
           </View>
         ) : null}
 
@@ -779,15 +679,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 20,
-  },
-  publishCapture: {
-    position: "absolute",
-    left: -9999,
-    top: 0,
-    width: MOMENT_PUBLISH_WIDTH,
-    height: MOMENT_PUBLISH_HEIGHT,
-    opacity: 0,
-    zIndex: 1,
   },
   cameraPlaceholder: {
     backgroundColor: "#000",
@@ -846,7 +737,22 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   topBarSpacer: {
-    width: 44,
+    flex: 1,
+  },
+  postTopBtn: {
+    minWidth: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  postTopBtnDisabled: {
+    opacity: 0.45,
+  },
+  postTopLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.accent,
   },
   screenFlash: {
     ...StyleSheet.absoluteFillObject,
@@ -863,9 +769,6 @@ const styles = StyleSheet.create({
   },
   bottomDockMoment: {
     backgroundColor: "#000",
-  },
-  bottomDockPreview: {
-    gap: 4,
   },
   captureRow: {
     flexDirection: "row",
@@ -915,17 +818,5 @@ const styles = StyleSheet.create({
   },
   shutterDisabled: {
     opacity: 0.45,
-  },
-  postingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-  },
-  postingText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#fff",
   },
 });

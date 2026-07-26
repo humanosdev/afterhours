@@ -153,6 +153,7 @@ export function ProfileTabGrid({
 
   const archiveSlotLoading = tab === "Archive" && archiveLoading && archive.length === 0 && !suppressShellSkeleton;
   const gridCellSize = profileGridCellSize();
+  const shellGridMinHeight = gridCellSize * 3 + 4;
 
   return (
     <View style={styles.panel}>
@@ -175,7 +176,7 @@ export function ProfileTabGrid({
             loading={sharesSlotLoading}
             skeleton={<ProfileSharesGridSkeleton />}
             contentKey={shares.length > 0 ? `shares-${shares.length}` : "shares-empty"}
-            style={{ minHeight: gridCellSize }}
+            style={{ minHeight: suppressShellSkeleton ? shellGridMinHeight : gridCellSize }}
             variant="section"
           >
             {shares.length > 0 ? (
@@ -259,7 +260,7 @@ export function ProfileTabGrid({
             loading={archiveSlotLoading}
             skeleton={<ProfileSharesGridSkeleton />}
             contentKey={`archive-${archiveSubview}-${archiveRows.length}`}
-            style={{ minHeight: gridCellSize }}
+            style={{ minHeight: suppressShellSkeleton ? shellGridMinHeight : gridCellSize }}
             variant="section"
           >
             {archiveRows.length > 0 ? (

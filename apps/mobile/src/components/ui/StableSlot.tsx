@@ -10,18 +10,11 @@ type StableSlotProps = {
   /** @deprecated No longer animates — kept so call sites stay stable. */
   contentKey?: string | number;
   minDisplayMs?: number;
-  /** `fitted` = full page boot hold. `section` = band-only while loading (hub rows, lists). */
   variant?: "fitted" | "section" | "micro";
-  /** One fitted boot hold per cold app start (main tabs). */
-  appSessionBoot?: boolean;
-  /** Tab route id — one boot skeleton on first focus per cold launch. */
-  tabBootKey?: string;
-  /** Pin scroll band height while skeleton is up (tab cold open). */
-  lockHeightWhileLoading?: boolean;
   fillHeight?: boolean;
 };
 
-/** Async band with crossfade — skeleton reserves layout, content fades in. */
+/** Async band for stacks/subpages — not main tabs (use `TabBootBody`). */
 export function StableSlot({
   style,
   loading,
@@ -29,10 +22,7 @@ export function StableSlot({
   children,
   contentKey,
   minDisplayMs,
-  variant = "fitted",
-  appSessionBoot = false,
-  tabBootKey,
-  lockHeightWhileLoading = false,
+  variant = "section",
   fillHeight = false,
 }: StableSlotProps) {
   return (
@@ -43,9 +33,6 @@ export function StableSlot({
       minDisplayMs={minDisplayMs}
       variant={variant}
       sessionKey={contentKey != null ? String(contentKey) : undefined}
-      appSessionBoot={appSessionBoot}
-      tabBootKey={tabBootKey}
-      lockHeightWhileLoading={lockHeightWhileLoading}
       fillHeight={fillHeight}
     >
       {children}

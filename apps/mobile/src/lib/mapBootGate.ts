@@ -19,6 +19,7 @@ export function resetMapBootGate(): void {
   for (const listener of listeners) listener();
 }
 
+/** Root boot overlay — release when map reveal completes. */
 export function subscribeMapBootGate(listener: MapBootGateListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

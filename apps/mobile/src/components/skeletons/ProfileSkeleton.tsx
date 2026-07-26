@@ -96,30 +96,6 @@ export function profilePageMinHeight(tabCount = 3, gridRows = 3): number {
   );
 }
 
-/** Edit profile form shell. */
-export function ProfileEditSkeleton() {
-  return (
-    <View style={styles.page}>
-      <View style={styles.editAvatarRow}>
-        <SkeletonCircle size={96} />
-        <SkeletonLine width={120} height={14} style={{ marginTop: 12 }} />
-      </View>
-      {Array.from({ length: 3 }).map((_, i) => (
-        <View key={i} style={styles.fieldBlock}>
-          <SkeletonLine width={72} height={12} />
-          <Skeleton style={styles.fieldInput} borderRadius={12} />
-        </View>
-      ))}
-      <Skeleton style={styles.saveBtn} borderRadius={profileLayout.actionRadius} />
-    </View>
-  );
-}
-
-/** @deprecated Use ProfileSharesGridSkeleton */
-export function ProfileGridSkeleton() {
-  return <ProfileSharesGridSkeleton />;
-}
-
 const styles = StyleSheet.create({
   header: {
     paddingTop: profileLayout.identityTop,
@@ -184,22 +160,5 @@ const styles = StyleSheet.create({
   newBtnSk: {
     width: 72,
     height: 32,
-  },
-  editAvatarRow: {
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  fieldBlock: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  fieldInput: {
-    height: 48,
-    width: "100%",
-  },
-  saveBtn: {
-    height: profileLayout.actionHeight,
-    width: "100%",
-    marginTop: 8,
   },
 });

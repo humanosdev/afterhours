@@ -1,0 +1,49 @@
+---
+description: Prevent main-tab cold-open layout jump (safe area, boot skeleton, tab navigator)
+globs: apps/mobile/**/*
+alwaysApply: false
+---
+
+# Mobile tab layout stability (do not regress)
+
+Whole-page **downward shift** on Hub / Chat / Profile cold open was fixed 2026-07. Do not reintroduce it while working on other features (stories, shares, composer, etc.).
+
+## Root causes (what broke it before)
+
+1. **`SafeAreaView` + live `useSafeAreaInsets()` on tab screens** — Pre-rendered tabs measure device-only insets, then re-measure when focused; top padding increases one frame later → entire page drops down.
+2. **`detachInactiveScreens: true` (default)** — Tab scenes detach/remount on switch; safe-area + layout remeasure on every first focus.
+3. **Skeleton hard-swap** — `{booting ? skeleton : children}` unmounts real content at 1.2s; height changes even when chrome is stable.
+4. **Skeleton crossfade** — Fading overlay exposed mismatched geometry under skeleton (looked like jump).
+5. **Boot marked consumed too early** — `markTabBootConsumed` on first focus blip skipped skeleton forever or desynced overlay state.
+6. **Second boot overlay** — `ProfileOnboardingGate` + root `BootLoadingOverlay` stacked; extra layout passes after dismiss.
+7. **Chat `fixedHeader` split** — Header/search/tabs pinned outside scroll while list used old `minHeight` math → broken spacing (Chat must stay **single scroll**).
+
+## Required patterns (keep these)
+
+| Area | Do |
+|------|-----|
+| Tab screen padding | `Screen` uses `layoutSafeAreaPadding()` + `layoutInsets` from `src/theme/layoutInsets.ts` — **not** `SafeAreaView` |
+| Layout math | `tabBodyLockedHeight`, `tabBarScrollInset`, map chrome: `layoutInsets` or `useStableLayoutInsets()` — **not** live `useSafeAreaInsets()` |
+| Tab navigator | `detachInactiveScreens={false}`, `lazy: false` in `app/(app)/(tabs)/_layout.tsx` |
+| First-open skeleton | `TabBootBody` — mount **children immediately**, opaque skeleton **overlay** until boot ends; **no fade** |
+| Boot timer | `useTabColdOpenBoot` — `markTabBootConsumed` only after 1.2s **while focused**; cancel on blur |
+| Chat layout | One `Screen scroll` — header + search + tabs + `TabBootBody` in same scroll (no `fixedHeader`) |
+| Hub / Profile | May use `Screen` `fixedHeader` for chrome; body in scroll only |
+
+## Do not
+
+- Re-add `SafeAreaView` to `Screen.tsx` or main tab pages for top inset
+- Use live `useSafeAreaInsets()` for page chrome / `tabBodyLockedHeight` on tab screens
+- Swap skeleton ↔ content with conditional mount only (no overlay)
+- Fade skeleton overlay out (opacity reveal)
+- Split Chat into fixed header + nested scroll without redoing height math
+- Add another full-screen boot overlay on top of root boot without explicit reason
+- Set `detachInactiveScreens: true` on main tabs
+
+## If changing tab/skeleton code
+
+1. Cold-open Hub, Chat, Profile once each — chrome must not move down after skeleton dismisses.
+2. Chat: friend picker + inbox list spacing must match pre-change rhythm.
+3. Map is separate (checkpoint bar / venue pill) — do not “fix” tabs by changing map boot gate unless asked.
+
+Reference: `apps/mobile/docs/TAB_LAYOUT_STABILITY.md`

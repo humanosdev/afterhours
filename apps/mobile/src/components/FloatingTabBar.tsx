@@ -1,7 +1,7 @@
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { Home, Map, MessageCircle, Plus } from "lucide-react-native";
 import { Pressable, StyleSheet, useWindowDimensions, View, type ViewStyle } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStableLayoutInsets } from "../hooks/useStableLayoutInsets";
 import { useMyAvatar } from "../hooks/useMyAvatar";
 import { useCreateComposerOptional } from "../providers/CreateComposerProvider";
 import { useNotificationDeliveryOptional } from "../providers/NotificationDeliveryProvider";
@@ -54,7 +54,7 @@ type FloatingTabBarProps = BottomTabBarProps;
  * PWA `BottomNav.tsx` — glass pill, clustered side tabs, center create anchor.
  */
 export function FloatingTabBar({ state, navigation, descriptors }: FloatingTabBarProps) {
-  const insets = useSafeAreaInsets();
+  const insets = useStableLayoutInsets();
   const { width: screenWidth } = useWindowDimensions();
   const { avatarUrl, label } = useMyAvatar();
   const composer = useCreateComposerOptional();

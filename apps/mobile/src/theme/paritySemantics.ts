@@ -27,16 +27,3 @@ export type ProfileGridVisualState = "populated" | "empty" | "loading";
 export function defaultFriendStoryRingState(): StoryRingVisualState {
   return "none";
 }
-
-/**
- * @deprecated Hub own ring uses `hubOwnStoryRingState` + `story_views`.
- * `add-own` is only for `StoryRing` `variant="add"` composer affordance.
- */
-export function defaultOwnStoryRingState(): StoryRingVisualState {
-  return "add-own";
-}
-
-/** Venue cards / sheet density — no presence reads yet. */
-export function defaultVenueHeatState(): VenueHeatVisualState {
-  return "unknown";
-}

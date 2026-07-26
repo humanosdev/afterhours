@@ -10,6 +10,7 @@ export default function AppTabLayout() {
     <AppTabBootProvider>
     <MapVenueSheetProvider>
     <Tabs
+      detachInactiveScreens={false}
       initialRouteName="map"
       tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{
@@ -21,6 +22,7 @@ export default function AppTabLayout() {
           flex: 1,
         },
         lazy: false,
+        freezeOnBlur: false,
       }}
     >
       <Tabs.Screen name="hub" options={{ title: "Hub", lazy: false }} />

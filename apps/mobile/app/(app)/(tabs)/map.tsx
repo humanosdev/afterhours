@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image } from "expo-image";
 import { AppState, Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStableLayoutInsets } from "../../../src/hooks/useStableLayoutInsets";
 import { MapAtmosphereOverlay } from "../../../src/components/map/MapAtmosphereOverlay";
 import { markMapBootReady } from "../../../src/lib/mapBootGate";
 import { MapCategoryFilterTray } from "../../../src/components/map/MapCategoryFilterTray";
@@ -85,9 +86,10 @@ const MAP_AVATAR_PREFETCH_CAP_MS = 900;
 
 export default function MapTabScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{ venueId?: string }>();
   const { user } = useAuth();
-  const insets = useSafeAreaInsets();
+  const insets = useStableLayoutInsets();
   const mapboxToken = getMapboxAccessToken();
   const nativeMapReady = Boolean(mapboxToken) && isRnMapboxNativeAvailable();
   const { venues, loading: venuesLoading, error: venuesError } = useVenuesPreview(Boolean(user?.id));
@@ -450,8 +452,8 @@ export default function MapTabScreen() {
   const mapSettled = mapSettleForced || mapSettledOnceRef.current;
 
   useEffect(() => {
-    if (mapSettled) markMapBootReady();
-  }, [mapSettled]);
+    if (mapRevealReady) markMapBootReady();
+  }, [mapRevealReady]);
 
   useFocusEffect(
     useCallback(() => {
@@ -876,7 +878,7 @@ export default function MapTabScreen() {
   return (
     <View style={styles.root}>
       <View style={StyleSheet.absoluteFill}>
-        {nativeMapReady && mapboxToken ? (
+        {nativeMapReady && mapboxToken && isFocused ? (
           <VenuesMapCanvas
             ref={mapCanvasRef}
             accessToken={mapboxToken}
@@ -901,6 +903,8 @@ export default function MapTabScreen() {
             onPressPresenceMarker={onPressPresenceMarker}
             venueActivityGeoJson={venueActivityGeoJson}
           />
+        ) : nativeMapReady && mapboxToken ? (
+          <View style={styles.fallbackMap} />
         ) : null}
         {!nativeMapReady || !mapboxToken ? (
           <View style={styles.fallbackMap}>
@@ -957,17 +961,22 @@ export default function MapTabScreen() {
         </View>
       </View>
 
-      {!sheetOpen &&
-      myVenue.isAtVenue &&
-      myVenue.venue &&
-      activeCheckpoint?.id === myVenue.venue.id ? (
-        <View style={[styles.atVenueWrap, { bottom: atVenuePillBottom }]} pointerEvents="box-none">
-          <AtVenueIndicator
-            venueName={myVenue.venue.name}
-            live={myVenue.isLiveHere}
-            settling={myVenue.isSettlingHere}
-            onPress={onOpenCheckpointVenue}
-          />
+      {!sheetOpen && myVenue.venue ? (
+        <View
+          style={[
+            styles.atVenueWrap,
+            { bottom: atVenuePillBottom, minHeight: 32 },
+          ]}
+          pointerEvents="box-none"
+        >
+          {myVenue.isAtVenue && activeCheckpoint?.id === myVenue.venue.id ? (
+            <AtVenueIndicator
+              venueName={myVenue.venue.name}
+              live={myVenue.isLiveHere}
+              settling={myVenue.isSettlingHere}
+              onPress={onOpenCheckpointVenue}
+            />
+          ) : null}
         </View>
       ) : null}
 

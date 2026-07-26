@@ -10,7 +10,7 @@ import {
   type ScrollView as ScrollViewType,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStableLayoutInsets } from "../../../src/hooks/useStableLayoutInsets";
 import { ChatThreadRow } from "../../../src/components/ChatThreadRow";
 import { TabScreenHeader } from "../../../src/components/TabScreenHeader";
 import { TextAction } from "../../../src/components/TextAction";
@@ -19,7 +19,7 @@ import { Screen } from "../../../src/components/Screen";
 import { SearchFieldPlaceholder } from "../../../src/components/SearchFieldPlaceholder";
 import { ChatListSkeleton, chatListSkeletonRowsForMinHeight } from "../../../src/components/skeletons/ChatListSkeleton";
 import { chatTabChromeAboveListPx } from "../../../src/theme/skeletonLayout";
-import { StableSlot } from "../../../src/components/ui/StableSlot";
+import { TabBootBody } from "../../../src/components/ui/TabBootBody";
 import { FadeInView } from "../../../src/components/ui/FadeInView";
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
 import { useChatInboxPrefs } from "../../../src/hooks/useChatInboxPrefs";
@@ -39,7 +39,7 @@ type InboxTab = "chats" | "requests";
 
 export default function ChatTabScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const insets = useStableLayoutInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { user } = useAuth();
   const { previews, loading, error, reload } = useChatPreviews(user?.id);
@@ -98,6 +98,7 @@ export default function ChatTabScreen() {
 
   const listBusy = loading || !inboxGateReady;
   const pageMinHeight = tabBodyLockedHeight(windowHeight, insets, 0);
+  const chatBodyMinHeight = Math.max(120, pageMinHeight - chatTabChromeAboveListPx());
 
   const searchNoMatches =
     !listBusy &&
@@ -189,20 +190,14 @@ export default function ChatTabScreen() {
         </Pressable>
       </View>
 
-      <StableSlot
-        loading={listBusy}
+      <TabBootBody
+        tabKey="chat"
+        minHeight={chatBodyMinHeight}
         skeleton={
           <ChatListSkeleton
-            rows={chatListSkeletonRowsForMinHeight(
-              Math.max(120, pageMinHeight - chatTabChromeAboveListPx()),
-              6
-            )}
+            rows={chatListSkeletonRowsForMinHeight(chatBodyMinHeight, 6)}
           />
         }
-        style={{ minHeight: Math.max(120, pageMinHeight - chatTabChromeAboveListPx()), flexGrow: 1 }}
-        variant="section"
-        appSessionBoot
-        tabBootKey="chat"
       >
         {showFriendPicker ? (
           <FadeInView contentKey="friend-picker" style={styles.friendPicker}>
@@ -295,7 +290,7 @@ export default function ChatTabScreen() {
             />
           ))
         )}
-      </StableSlot>
+      </TabBootBody>
     </Screen>
   );
 }

@@ -17,7 +17,7 @@ import { supabase } from "../../../src/lib/supabase/client";
 import type { StoryViewerGroup } from "../../../src/lib/storyViewerTypes";
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStableLayoutInsets } from "../../../src/hooks/useStableLayoutInsets";
 import { HubShareFeedList } from "../../../src/components/shares/HubShareFeedList";
 import { HubTopChrome } from "../../../src/components/HubTopChrome";
 import { Screen } from "../../../src/components/Screen";
@@ -26,15 +26,16 @@ import { HubActiveFriendChip } from "../../../src/components/hub/HubActiveFriend
 import { HubSearchLauncher } from "../../../src/components/hub/HubSearchLauncher";
 import { HubSuggestedFriendsCoach } from "../../../src/components/hub/HubSuggestedFriendsCoach";
 import { shouldShowHubSuggestionsOnHubVisit, clearHubSuggestionsPending } from "../../../src/lib/appOpenPreference";
+import { TAB_COLD_OPEN_BOOT_MS } from "../../../src/hooks/useTabColdOpenBoot";
 import { OwnMomentRing } from "../../../src/components/hub/OwnMomentRing";
 import { FriendHubRing } from "../../../src/components/FriendHubRing";
-import { HubFeedPageSkeleton } from "../../../src/components/skeletons/HubFeedSkeleton";
+import { HubTabBootSkeleton } from "../../../src/components/skeletons/HubFeedSkeleton";
 import {
   getCachedHubMoments,
   hubMomentsCacheKey,
   setCachedHubMoments,
 } from "../../../src/lib/hubMomentsCache";
-import { StableSlot } from "../../../src/components/ui/StableSlot";
+import { TabBootBody } from "../../../src/components/ui/TabBootBody";
 import { hubSlotLayout } from "../../../src/theme/hubSlotLayout";
 import { Image } from "expo-image";
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
@@ -92,7 +93,7 @@ export default function HubTabScreen() {
     useHubFeedPreview(user?.id, friends, friendsLoading, storyEpoch);
   const [shareStatsById, setShareStatsById] = useState<Record<string, HubShareFeedCardState>>({});
   const [shareStatsReady, setShareStatsReady] = useState(true);
-  const insets = useSafeAreaInsets();
+  const insets = useStableLayoutInsets();
   const { height: windowHeight } = useWindowDimensions();
 
   const patchShareStats = useCallback(
@@ -297,6 +298,11 @@ export default function HubTabScreen() {
   }, [user?.id]);
 
   const ownStories = momentsByUser.get(user?.id ?? "") ?? [];
+  const ownStoryUploading = useMemo(
+    () => ownStories.some((story) => isOptimisticStoryId(story.id)),
+    [ownStories]
+  );
+  const ownHasConfirmedStory = ownStories.some((story) => !isOptimisticStoryId(story.id));
 
   const friendMomentGroups = useMemo(() => {
     return friends
@@ -438,46 +444,18 @@ export default function HubTabScreen() {
     });
   }, [setShares]);
 
-  const showActiveFriendsSection = friends.length > 0 || friendsLoading;
-
-  /** Match skeleton geometry while friends band is still resolving — avoids rail ↔ empty height jump. */
+  /** Rail height when chips show; compact empty band otherwise (matches `HubTabBootSkeleton` empty variant). */
   const activeFriendsBlockMinHeight =
-    friends.length > 0 || friendsLoading
+    onlineFriends.length > 0
       ? hubSlotLayout.activeFriendsBlockWithRailMinHeight
       : hubSlotLayout.activeFriendsBlockEmptyMinHeight;
 
-  const hasOptimisticMoments = useMemo(() => {
-    for (const stories of momentsByUser.values()) {
-      if (stories.some((story) => isOptimisticStoryId(story.id))) return true;
-    }
-    return false;
-  }, [momentsByUser]);
-
-  const hubFeedBusy = useMemo(() => {
-    if (!user?.id) return false;
-    const momentsGateReady =
-      momentsByUser.size === 0 || viewedIdsReady || hasOptimisticMoments;
-    return friendsLoading || momentsLoading || sharesLoading || !shareStatsReady || !momentsGateReady;
-  }, [
-    user?.id,
-    friendsLoading,
-    momentsLoading,
-    sharesLoading,
-    shareStatsReady,
-    momentsByUser.size,
-    viewedIdsReady,
-    hasOptimisticMoments,
-  ]);
-
-  const hubSkeletonShowsActiveFriends = friends.length > 0 || friendsLoading || hubFeedBusy;
-  const hubSkeletonActiveFriendsLatch = useRef<boolean | null>(null);
-  if (hubSkeletonShowsActiveFriends) {
-    hubSkeletonActiveFriendsLatch.current = true;
-  }
-  const hubSkeletonActiveFriends =
-    hubSkeletonActiveFriendsLatch.current ?? hubSkeletonShowsActiveFriends;
+  const showActiveFriendsSection = true;
+  const activeFriendsEmptyLayout =
+    onlineFriends.length === 0 && !friendsLoading;
 
   const hubPageMinHeight = tabBodyLockedHeight(windowHeight, insets, 0);
+  const hubBodyMinHeight = Math.max(320, hubPageMinHeight - hubTabChromeAboveFeedPx());
 
   const onHubRefresh = useCallback(async () => {
     await Promise.all([
@@ -498,7 +476,7 @@ export default function HubTabScreen() {
 
       void (async () => {
         try {
-          await new Promise((resolve) => setTimeout(resolve, 450));
+          await new Promise((resolve) => setTimeout(resolve, TAB_COLD_OPEN_BOOT_MS + 200));
           if (cancelled) return;
 
           const show = await shouldShowHubSuggestionsOnHubVisit(user.id);
@@ -537,18 +515,10 @@ export default function HubTabScreen() {
     >
       <HubTopChrome />
       <HubSearchLauncher />
-      <StableSlot
-        loading={hubFeedBusy}
-        skeleton={
-          <HubFeedPageSkeleton
-            showActiveFriends={hubSkeletonActiveFriends}
-            minHeight={Math.max(320, hubPageMinHeight - hubTabChromeAboveFeedPx())}
-          />
-        }
-        style={{ minHeight: Math.max(320, hubPageMinHeight - hubTabChromeAboveFeedPx()), flexGrow: 1 }}
-        variant="section"
-        appSessionBoot
-        tabBootKey="hub"
+      <TabBootBody
+        tabKey="hub"
+        minHeight={hubBodyMinHeight}
+        skeleton={<HubTabBootSkeleton minHeight={hubBodyMinHeight} />}
       >
       <>
           <View style={styles.momentsBlock}>
@@ -564,10 +534,15 @@ export default function HubTabScreen() {
                 avatarUrl={myAvatarUrl}
                 label="Your moment"
                 loading={avatarLoading}
-                ringState={hubOwnStoryRingState(ownStories, viewedIds, {
-                  viewedReady: viewedIdsReady,
-                })}
-                hasActiveStory={ownStories.length > 0}
+                storyUploading={ownStoryUploading}
+                ringState={
+                  ownStoryUploading
+                    ? "none"
+                    : hubOwnStoryRingState(ownStories, viewedIds, {
+                        viewedReady: viewedIdsReady,
+                      })
+                }
+                hasActiveStory={ownHasConfirmedStory}
                 onPressIn={() => warmMomentDeckOnPressIn(ownStories)}
                 onPress={() => {
                   if (!user?.id) return;
@@ -611,8 +586,12 @@ export default function HubTabScreen() {
               ))}
               </ScrollView>
             {friendsError ? <Text style={styles.inlineError}>{friendsError}</Text> : null}
-            {!friendsLoading && !friendsError && friends.length === 0 ? (
-              <Text style={styles.friendsHint}>Add friends to see their moments here.</Text>
+            {!friendsError && (friendsLoading || friends.length === 0) ? (
+              <View style={styles.friendsHintSlot}>
+                {!friendsLoading && friends.length === 0 ? (
+                  <Text style={styles.friendsHint}>Add friends to see their moments here.</Text>
+                ) : null}
+              </View>
             ) : null}
           </View>
 
@@ -667,11 +646,23 @@ export default function HubTabScreen() {
             </>
           ) : null}
 
-          <View style={styles.majorDivider} />
+          <View
+            style={[
+              styles.majorDivider,
+              activeFriendsEmptyLayout && styles.majorDividerAfterEmptyActiveFriends,
+            ]}
+          />
 
           <View style={styles.sharesBlock}>
             <SectionHeader title={mediaLexicon.hub.sectionTitle} prominence="hub" />
-          <View style={styles.sharesFeed}>
+          <View
+            style={[
+              styles.sharesFeed,
+              shares.length === 0 && !sharesError
+                ? { minHeight: hubSlotLayout.sharesLoadingMinHeight }
+                : null,
+            ]}
+          >
           {sharesError ? <Text style={styles.inlineError}>{sharesError}</Text> : null}
           {shares.length === 0 ? (
             <View style={styles.sharesEmptyCard}>
@@ -694,7 +685,7 @@ export default function HubTabScreen() {
           </View>
           </View>
       </>
-      </StableSlot>
+      </TabBootBody>
 
       <HubSuggestedFriendsCoach
         visible={hubSuggestionsVisible}
@@ -721,6 +712,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     marginTop: hubLayout.majorDividerMarginTop,
     marginBottom: hubLayout.majorDividerMarginBottom,
+  },
+  majorDividerAfterEmptyActiveFriends: {
+    marginTop: 10,
   },
   activeFriendsEmpty: {
     paddingVertical: hubLayout.activeFriendsEmptyPy,
@@ -784,11 +778,15 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 300,
   },
+  friendsHintSlot: {
+    minHeight: 28,
+    marginTop: -4,
+    marginBottom: layout.sectionGap,
+    justifyContent: "center",
+  },
   friendsHint: {
     fontSize: 12,
     color: colors.textMuted,
-    marginTop: -4,
-    marginBottom: layout.sectionGap,
     paddingHorizontal: 2,
   },
   inlineError: {

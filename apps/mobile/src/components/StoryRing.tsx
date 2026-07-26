@@ -1,5 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import type { StoryRingVisualState } from "../theme/paritySemantics";
 import { ringTokens } from "../theme/ring";
 import { colors } from "../theme/colors";
@@ -41,6 +42,8 @@ type StoryRingProps = {
   variant?: "avatar" | "add";
   avatarUrl?: string | null;
   ringState?: StoryRingVisualState;
+  /** Spinning accent ring while an optimistic upload is in flight. */
+  uploadingRing?: boolean;
   showCaption?: boolean;
   size?: StoryRingSize;
 };
@@ -61,10 +64,34 @@ export function StoryRing({
   variant = "avatar",
   avatarUrl = null,
   ringState = "none",
+  uploadingRing = false,
   showCaption = true,
   size = "storyLg",
 }: StoryRingProps) {
   const m = ringMetrics(size);
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!uploadingRing) {
+      spin.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 900,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [uploadingRing, spin]);
+
+  const spinRotate = spin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
 
   if (variant === "add") {
     return (
@@ -83,6 +110,33 @@ export function StoryRing({
           <View style={styles.plusBadge}>
             <Text style={styles.plus}>+</Text>
           </View>
+        </View>
+        {showCaption ? (
+          <Text style={styles.caption} numberOfLines={1}>
+            {label}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (uploadingRing) {
+    const plainSize = plainAvatarSize(size);
+    return (
+      <View style={[styles.column, { width: m.columnWidth }]} accessibilityLabel={label}>
+        <View style={[styles.uploadRingWrap, { width: m.outer, height: m.outer }]}>
+          <Animated.View
+            style={[
+              styles.uploadRingArc,
+              {
+                width: m.outer,
+                height: m.outer,
+                borderRadius: m.outer / 2,
+                transform: [{ rotate: spinRotate }],
+              },
+            ]}
+          />
+          <ProfileAvatar avatarUrl={avatarUrl} label={label} size={plainSize} bordered />
         </View>
         {showCaption ? (
           <Text style={styles.caption} numberOfLines={1}>
@@ -150,6 +204,17 @@ const styles = StyleSheet.create({
   },
   ringOuter: {
     overflow: "visible",
+  },
+  uploadRingWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  uploadRingArc: {
+    position: "absolute",
+    borderWidth: 3,
+    borderColor: "transparent",
+    borderTopColor: colors.accent,
+    borderRightColor: colors.accent,
   },
   gradientPad: {
     overflow: "hidden",

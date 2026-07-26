@@ -5,7 +5,6 @@ import {
   loadHiddenMessageIds,
   persistHiddenMessageIds,
 } from "../lib/chatHiddenMessages";
-import { logChatThreadDebug } from "../lib/chatThreadDebug";
 import { fetchChatThreadGate, fetchChatThreadMessages } from "../lib/fetchChatThread";
 import { flushChatSendQueue } from "../lib/flushChatSendQueue";
 import { hydrateChatStoryReplies } from "../lib/hydrateChatStoryReplies";
@@ -96,7 +95,6 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
     let cancelled = false;
 
     void (async () => {
-      logChatThreadDebug("route_open", { chatId, meId });
       setThreadGateReady(false);
       setMessagesLoading(true);
 
@@ -113,7 +111,6 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
         setMessagesError(null);
         setMessagesLoading(false);
         setThreadGateReady(true);
-        logChatThreadDebug("hydrate_abort", { chatId, gateError: gate.gateError });
         return;
       }
 
@@ -123,14 +120,6 @@ export function useChatThread(meId: string | undefined, chatId: string | null) {
       setMessagesError(msgErr);
       setMessagesLoading(false);
       setThreadGateReady(true);
-
-      logChatThreadDebug("hydrate_complete", {
-        chatId,
-        messageCount: rows.length,
-        messagesError: msgErr,
-        peerUsername: gate.peer?.username ?? null,
-        emptyTranscript: rows.length === 0 && !msgErr,
-      });
     })();
 
     return () => {

@@ -5,8 +5,6 @@ import { needsProfileOnboarding } from "./profileOnboarding";
 
 /** Signed-in home tab — map is the default landing surface. */
 export const POST_AUTH_HOME = "/map" as const;
-/** @deprecated Use `POST_AUTH_HOME` — kept for imports that still say "hub". */
-export const POST_AUTH_HUB = POST_AUTH_HOME;
 export const POST_AUTH_ONBOARDING = "/onboarding" as const;
 
 export type PostAuthHref = typeof POST_AUTH_HOME | typeof POST_AUTH_ONBOARDING;
@@ -104,15 +102,5 @@ export async function completeProfileOnboarding(
   if (!error) {
     postAuthHrefCache = { userId, href: POST_AUTH_HOME };
   }
-  return { error: error?.message ?? null };
-}
-
-/** @deprecated Prefer `completeProfileOnboarding` — kept for callers that only flip the flag. */
-export async function markOnboardingComplete(userId: string): Promise<{ error: string | null }> {
-  await ensureProfileExists(userId);
-  const { error } = await supabase
-    .from("profiles")
-    .update({ onboarding_complete: true })
-    .eq("id", userId);
   return { error: error?.message ?? null };
 }

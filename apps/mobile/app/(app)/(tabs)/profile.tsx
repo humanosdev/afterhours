@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Share, StyleSheet, Text, View, useWindowDimensions, type ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStableLayoutInsets } from "../../../src/hooks/useStableLayoutInsets";
 import { ProfileIdentityBlock } from "../../../src/components/profile/ProfileIdentityBlock";
 import { ProfileSectionTabs } from "../../../src/components/profile/ProfileSectionTabs";
 import { ProfileVenuesIntroCoach } from "../../../src/components/profile/ProfileVenuesIntroCoach";
@@ -11,7 +11,7 @@ import { ProfileTabGrid } from "../../../src/components/profile/ProfileTabGrid";
 import { Screen } from "../../../src/components/Screen";
 import { ProfilePageSkeleton } from "../../../src/components/skeletons/ProfileSkeleton";
 import { tabScreenHeaderChromeHeight } from "../../../src/theme/skeletonLayout";
-import { StableSlot } from "../../../src/components/ui/StableSlot";
+import { TabBootBody } from "../../../src/components/ui/TabBootBody";
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
 import { useMyAvatar } from "../../../src/hooks/useMyAvatar";
 import { useMyVenuePresence } from "../../../src/hooks/useMyVenuePresence";
@@ -43,7 +43,7 @@ const TABS = ["Shares", "Archive", "Venues"] as const;
 
 export default function ProfileTabScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const insets = useStableLayoutInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { user, signOut } = useAuth();
   const { profile, loading: profileLoading, error: profileError, refresh: refreshProfile } =
@@ -169,8 +169,11 @@ export default function ProfileTabScreen() {
     };
   }, [user?.id, storyEpoch]);
 
-  const identityShellBusy = profileLoading || friendsLoading || !sharesReady || !venuesReady;
   const profilePageMinHeightPx = tabBodyLockedHeight(windowHeight, insets, 0);
+  const profileBodyMinHeight = Math.max(
+    360,
+    profilePageMinHeightPx - tabScreenHeaderChromeHeight()
+  );
 
   const maybeShowVenuesIntro = useCallback(async () => {
     if (!user?.id || venuesIntroGateDoneRef.current || venuesIntroPendingRef.current) return;
@@ -230,21 +233,12 @@ export default function ProfileTabScreen() {
           />
         }
       />
-      <StableSlot
-        style={{
-          minHeight: Math.max(360, profilePageMinHeightPx - tabScreenHeaderChromeHeight()),
-          flexGrow: 1,
-        }}
-        loading={identityShellBusy}
+      <TabBootBody
+        tabKey="profile"
+        minHeight={profileBodyMinHeight}
         skeleton={
-          <ProfilePageSkeleton
-            tabCount={TABS.length}
-            minHeight={Math.max(360, profilePageMinHeightPx - tabScreenHeaderChromeHeight())}
-          />
+          <ProfilePageSkeleton tabCount={TABS.length} minHeight={profileBodyMinHeight} />
         }
-        variant="section"
-        appSessionBoot
-        tabBootKey="profile"
       >
         {profileError ? (
           <Text style={styles.profileError}>Couldn&apos;t load your profile. Check connection or try again.</Text>
@@ -298,7 +292,7 @@ export default function ProfileTabScreen() {
           onVenuesCount={setVenuesCount}
           suppressShellSkeleton
         />
-      </StableSlot>
+      </TabBootBody>
 
       {signOutError ? (
         <View style={styles.errorBox}>

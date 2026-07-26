@@ -9,10 +9,6 @@ const ROW_META_MIN_W = 44;
 const CHAT_LIST_ROW_HEIGHT = ROW_PADDING_Y * 2 + ROW_AVATAR;
 const CHAT_LIST_WRAP_PADDING = 8;
 
-export function chatListSkeletonMinHeight(rows = 6): number {
-  return CHAT_LIST_WRAP_PADDING + rows * CHAT_LIST_ROW_HEIGHT;
-}
-
 /** Enough inbox rows to fill a fitted tab body slot. */
 export function chatListSkeletonRowsForMinHeight(minHeight: number, minRows = 6): number {
   const rows = Math.ceil((minHeight - CHAT_LIST_WRAP_PADDING) / CHAT_LIST_ROW_HEIGHT);

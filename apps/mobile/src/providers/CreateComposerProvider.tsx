@@ -13,6 +13,7 @@ import { StoryViewerModal } from "../components/stories/StoryViewerModal";
 import type { ComposerMode } from "../lib/uploadStoryMediaTypes";
 import { emitStoryPosted } from "../lib/storyPostEvents";
 import { emitStoryPostStarted, type StoryPostStartPayload } from "../lib/storyPostOptimistic";
+import { emitTabScrollToTop } from "../lib/tabScrollToTop";
 import { patchShareStatsCommentsDelta } from "../lib/shareStatsCache";
 import { warmStoryViewerDeckAsync } from "../lib/warmStoryViewerDeck";
 import type { StoryViewerGroup } from "../lib/storyViewerTypes";
@@ -193,6 +194,9 @@ export function CreateComposerProvider({ children }: { children: ReactNode }) {
         onPosted={(payload: StoryPostStartPayload) => {
           emitStoryPostStarted(payload);
           setComposerOpen(false);
+          if (payload.mode === "moments") {
+            emitTabScrollToTop("hub");
+          }
         }}
       />
       <StoryViewerModal

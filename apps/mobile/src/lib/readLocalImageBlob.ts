@@ -172,9 +172,3 @@ export async function readLocalImageArrayBuffer(localUri: string): Promise<Array
     throw error;
   }
 }
-
-/** @deprecated Prefer `readLocalImageArrayBuffer` — kept for callers that need Blob. */
-export async function readLocalImageBlob(localUri: string): Promise<Blob> {
-  const buffer = await readLocalImageArrayBuffer(localUri);
-  return new Blob([buffer], { type: inferMimeType(localUri) });
-}

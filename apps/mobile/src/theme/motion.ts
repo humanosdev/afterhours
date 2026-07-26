@@ -3,8 +3,14 @@ export const motion = {
   boot: {
     /** Hub logo loading screen — minimum dwell before app shell. */
     loadingScreenMinMs: 2000,
-    /** Boot overlay dismiss — matches map/skeleton reveal cadence. */
+    /** Logo bloom-in after native splash hands off. */
+    logoEntranceMs: 720,
+    /** Final progress bar fill once boot gates are ready. */
+    progressFillCompleteMs: 480,
+    /** Boot overlay dismiss — starts only after the bar + pulse finish. */
     loadingFadeOutMs: 320,
+    /** Safety net if bar completion callback is missed. */
+    completeFailsafeMs: 900,
   },
   fade: {
     content: 220,

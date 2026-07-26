@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import { Image } from "expo-image";
 import { resolveAvatarUri } from "../lib/avatar";
 import { profileAvatarLabel, profileDisplayName, profileUsernameLabel } from "../lib/profileDisplay";
 import { useAuth } from "../providers/AuthProvider";
@@ -19,6 +20,11 @@ export function useMyAvatar() {
     lastAvatarRef.current = null;
   }
   const avatarUrl = resolved ?? (loading ? lastAvatarRef.current : null);
+
+  useEffect(() => {
+    if (!avatarUrl) return;
+    void Image.prefetch(avatarUrl);
+  }, [avatarUrl]);
 
   const label = profileAvatarLabel(profile, user?.email);
   const displayName = profileDisplayName(profile);

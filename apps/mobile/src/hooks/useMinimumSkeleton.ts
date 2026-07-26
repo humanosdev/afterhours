@@ -12,18 +12,8 @@ export const SKELETON_SECTION_MIN_DISPLAY_MS = motion.skeleton.sectionMinDisplay
 
 const fittedSessionRevealed = new Set<string>();
 
-/** Reset on sign-out / dev fast refresh — call from clearSessionCaches if needed later. */
-export function markFittedShellRevealed(sessionKey: string): void {
-  if (sessionKey) fittedSessionRevealed.add(sessionKey);
-}
-
 export function clearFittedShellRevealCache(): void {
   fittedSessionRevealed.clear();
-}
-
-/** @deprecated Tab boot is driven by AppTabBootProvider remount — kept for cache reset. */
-export function resetAppSessionBootShell(): void {
-  /* no-op — resetTabBootSession handles consumed keys */
 }
 
 /**

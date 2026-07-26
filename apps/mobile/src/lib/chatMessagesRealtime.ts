@@ -86,14 +86,3 @@ export function subscribeChatThreadMessageEvents(
     void supabase.removeChannel(channel);
   };
 }
-
-/** @deprecated Use subscribeChatThreadMessageEvents */
-export function subscribeChatThreadInserts(
-  supabase: SupabaseClient,
-  opts: {
-    chatId: string;
-    onInsert: (row: ChatThreadMessage) => void;
-  }
-): () => void {
-  return subscribeChatThreadMessageEvents(supabase, opts);
-}

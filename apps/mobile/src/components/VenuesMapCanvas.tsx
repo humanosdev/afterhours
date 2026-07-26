@@ -191,7 +191,15 @@ export const VenuesMapCanvas = memo(
   const programmaticCameraUntilRef = useRef(0);
   /** Edge-trigger so we don't spam `onMapUserPan` every camera frame during a pan. */
   const userGestureActiveRef = useRef(false);
+  const mapAliveRef = useRef(true);
   const labelChrome = mapDayMode ? mapDayChrome : mapNightChrome;
+
+  useEffect(() => {
+    mapAliveRef.current = true;
+    return () => {
+      mapAliveRef.current = false;
+    };
+  }, []);
 
   const mapbox = useMemo<RnMapboxMaps | null>(() => {
     if (!isRnMapboxNativeAvailable()) return null;
@@ -558,6 +566,7 @@ export const VenuesMapCanvas = memo(
         defaultSettings={mapDefaultSettings}
         onPress={() => onMapUserPan?.()}
         onCameraChanged={(e) => {
+          if (!mapAliveRef.current) return;
           const z = e.properties?.zoom;
           if (typeof z === "number" && Number.isFinite(z)) {
             setCameraZoom(z);

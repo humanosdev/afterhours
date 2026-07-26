@@ -1,7 +1,7 @@
 import { Dimensions, ScrollView, StyleSheet, View } from "react-native";
 import { Skeleton, SkeletonCircle, SkeletonLine } from "../ui/Skeleton";
-import { hubLayout, hubVenueCardWidth } from "../../theme/hubLayout";
-import { hubSlotLayout, hubFeedPageMinHeight } from "../../theme/hubSlotLayout";
+import { hubLayout } from "../../theme/hubLayout";
+import { hubSlotLayout, hubFeedPageMinHeight, type HubActiveFriendsSkeletonVariant } from "../../theme/hubSlotLayout";
 import { layout } from "../../theme/layout";
 import { mediaLayout, shareFeedDisplayFrameStyle } from "../../theme/mediaLayout";
 
@@ -65,44 +65,38 @@ export function HubActiveFriendsSkeleton() {
   );
 }
 
-export function HubActiveFriendsBlockSkeleton() {
+export function HubActiveFriendsEmptyBlockSkeleton() {
   return (
-    <View style={{ minHeight: hubSlotLayout.activeFriendsBlockWithRailMinHeight }}>
+    <View style={{ minHeight: hubSlotLayout.activeFriendsBlockEmptyMinHeight }}>
       <View style={styles.sectionTitleRow}>
         <HubSectionTitleSkeleton width={96} />
         <SkeletonLine width={72} height={14} />
       </View>
-      <HubActiveFriendsSkeleton />
-    </View>
-  );
-}
-
-export function HubLivePlacesSkeleton() {
-  const cardW = hubVenueCardWidth();
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.railScroll}
-      contentContainerStyle={styles.placesRail}
-    >
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} style={{ width: cardW, aspectRatio: 5 / 6 }} borderRadius={layout.cardRadius} />
-      ))}
-    </ScrollView>
-  );
-}
-
-export function HubLivePlacesBlockSkeleton() {
-  return (
-    <View>
-      <View style={styles.sectionTitleRow}>
-        <HubSectionTitleSkeleton width={84} />
-        <SkeletonLine width={56} height={14} />
+      <View style={styles.activeFriendsEmptyBody}>
+        <SkeletonLine width="88%" height={13} />
+        <SkeletonLine width="72%" height={13} style={styles.activeFriendsEmptyLine} />
       </View>
-      <HubLivePlacesSkeleton />
     </View>
   );
+}
+
+export function HubActiveFriendsBlockSkeleton({
+  variant = "empty",
+}: {
+  variant?: "rail" | "empty";
+}) {
+  if (variant === "rail") {
+    return (
+      <View style={{ minHeight: hubSlotLayout.activeFriendsBlockWithRailMinHeight }}>
+        <View style={styles.sectionTitleRow}>
+          <HubSectionTitleSkeleton width={96} />
+          <SkeletonLine width={72} height={14} />
+        </View>
+        <HubActiveFriendsSkeleton />
+      </View>
+    );
+  }
+  return <HubActiveFriendsEmptyBlockSkeleton />;
 }
 
 export function HubShareCardSkeleton() {
@@ -142,26 +136,28 @@ export function HubSharesBlockSkeleton({ shareCards = 2 }: { shareCards?: number
 /** Full hub feed below search — matches section stack for fitted cold-open shell. */
 export function HubFeedPageSkeleton({
   showActiveFriends = true,
+  activeFriendsVariant = "empty",
   minHeight,
 }: {
   showActiveFriends?: boolean;
+  activeFriendsVariant?: HubActiveFriendsSkeletonVariant;
   minHeight?: number;
 }) {
-  const baseMin = hubFeedPageMinHeight(showActiveFriends);
+  const baseMin = hubFeedPageMinHeight(showActiveFriends, activeFriendsVariant);
   const extraH = minHeight ? Math.max(0, minHeight - baseMin) : 0;
   const cardStride = hubSlotLayout.shareCardMinHeight + 12;
   const extraCards = extraH > 0 ? Math.ceil(extraH / cardStride) : 0;
   const shareCards = Math.max(2, 2 + extraCards);
 
   return (
-    <View style={[styles.feedPage, minHeight != null && minHeight > 0 ? { minHeight, flex: 1 } : null]}>
+    <View style={[styles.feedPage, minHeight != null && minHeight > 0 ? { minHeight, flex: 1 } : styles.feedPageFill]}>
       <View style={styles.feedMomentsBlock}>
         <HubMomentsBlockSkeleton />
       </View>
       {showActiveFriends ? (
         <>
           <View style={styles.feedMajorDivider} />
-          <HubActiveFriendsBlockSkeleton />
+          <HubActiveFriendsBlockSkeleton variant={activeFriendsVariant} />
         </>
       ) : null}
       <View style={styles.feedMajorDivider} />
@@ -172,9 +168,19 @@ export function HubFeedPageSkeleton({
   );
 }
 
+/** Full hub feed below search — cold-open boot shell (stable empty active-friends geometry). */
+export function HubTabBootSkeleton({ minHeight }: { minHeight: number }) {
+  return (
+    <HubFeedPageSkeleton showActiveFriends activeFriendsVariant="empty" minHeight={minHeight} />
+  );
+}
+
 const styles = StyleSheet.create({
   feedPage: {
     width: "100%",
+  },
+  feedPageFill: {
+    flex: 1,
   },
   feedMomentsBlock: {
     marginBottom: hubLayout.momentsBlockBottom,
@@ -233,10 +239,15 @@ const styles = StyleSheet.create({
   friendSub: {
     marginTop: 2,
   },
-  placesRail: {
-    gap: hubLayout.placesRailGap,
-    paddingHorizontal: layout.screenPaddingX,
-    paddingBottom: hubLayout.placesRailPaddingBottom,
+  activeFriendsEmptyBody: {
+    paddingVertical: hubLayout.activeFriendsEmptyPy,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  activeFriendsEmptyLine: {
+    marginTop: 0,
   },
   share: {
     gap: 12,

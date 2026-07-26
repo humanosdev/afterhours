@@ -3,8 +3,8 @@ import { Dimensions, StyleSheet, View, type StyleProp, type ViewStyle } from "re
 
 const HUB_LOGO = require("../../assets/hub-logo.png");
 
-/** IG-style boot mark — ~46% of screen width. */
-export const HUB_BOOT_LOGO_SCALE = 0.46;
+/** IG-style boot mark — ~72% of screen width. */
+export const HUB_BOOT_LOGO_SCALE = 0.72;
 
 const LOGO_SIZE = Math.round(Dimensions.get("window").width * HUB_BOOT_LOGO_SCALE);
 

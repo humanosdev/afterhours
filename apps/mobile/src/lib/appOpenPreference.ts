@@ -54,12 +54,12 @@ export async function clearHubSuggestionsPending(userId: string): Promise<void> 
   }
 }
 
-/** Hub suggestions coach — every 3rd app open (3, 6, 9, …). */
+/** Hub suggestions coach — every 8th app open (8, 16, 24, …). */
 export function shouldShowHubSuggestionsPopup(openCount: number): boolean {
-  return openCount > 0 && openCount % 3 === 0;
+  return openCount > 0 && openCount % 8 === 0;
 }
 
-/** Once per cold start — increments count and marks hub popup pending on 3rd/6th/9th open. */
+/** Once per cold start — increments count and marks hub popup pending on 8th/16th/24th open. */
 export async function recordAuthenticatedAppOpen(userId: string): Promise<number> {
   if (!userId.trim()) return 0;
   const next = (await readAppOpenCount(userId)) + 1;

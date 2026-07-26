@@ -7,16 +7,21 @@ import { AppLoadingScreen } from "./AppLoadingScreen";
 const FADE_EASING = Easing.bezier(0.4, 0, 0.2, 1);
 
 type BootLoadingOverlayProps = {
-  /** When false, fades out then unmounts. */
   visible: boolean;
+  progress?: number;
+  finalize?: boolean;
+  onProgressComplete?: () => void;
 };
 
-/** Full-screen hub logo boot veil — fades out instead of snapping away. */
+/** Full-screen hub logo boot veil — fades out after the bar finishes. */
 export const BootLoadingOverlay = memo(function BootLoadingOverlay({
   visible,
+  progress = 0,
+  finalize = false,
+  onProgressComplete,
 }: BootLoadingOverlayProps) {
   const opacity = useRef(new Animated.Value(1)).current;
-  const [mounted, setMounted] = useState(visible);
+  const [mounted, setMounted] = useState(true);
 
   useEffect(() => {
     if (visible) {
@@ -24,7 +29,6 @@ export const BootLoadingOverlay = memo(function BootLoadingOverlay({
       setMounted(true);
       return;
     }
-    if (!mounted) return;
 
     const anim = Animated.timing(opacity, {
       toValue: 0,
@@ -36,7 +40,7 @@ export const BootLoadingOverlay = memo(function BootLoadingOverlay({
       if (finished) setMounted(false);
     });
     return () => anim.stop();
-  }, [visible, mounted, opacity]);
+  }, [visible, opacity]);
 
   if (!mounted) return null;
 
@@ -45,7 +49,11 @@ export const BootLoadingOverlay = memo(function BootLoadingOverlay({
       style={[styles.overlay, { opacity }]}
       pointerEvents={visible ? "auto" : "none"}
     >
-      <AppLoadingScreen />
+      <AppLoadingScreen
+        progress={progress}
+        finalize={finalize}
+        onProgressComplete={onProgressComplete}
+      />
     </Animated.View>
   );
 });

@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChatThreadShell } from "../../../src/components/chat/ChatThreadShell";
 import { ChatConversationSkeleton } from "../../../src/components/skeletons/ChatConversationSkeleton";
 import { StableSlot } from "../../../src/components/ui/StableSlot";
-import { CHAT_THREAD_BUILD_MARKER, logChatThreadDebug } from "../../../src/lib/chatThreadDebug";
 import { useAcceptedFriends } from "../../../src/hooks/useAcceptedFriends";
 import { useChatInboxPrefs } from "../../../src/hooks/useChatInboxPrefs";
 import { useChatThread } from "../../../src/hooks/useChatThread";
@@ -78,14 +77,6 @@ export default function ChatThreadScreen() {
     }
     router.replace("/chat");
   }, [denyRequest, chatId, otherId, router]);
-
-  useEffect(() => {
-    logChatThreadDebug("route_params", {
-      rawId: id,
-      chatId,
-      buildMarker: CHAT_THREAD_BUILD_MARKER,
-    });
-  }, [id, chatId]);
 
   useEffect(() => {
     if (!threadHydrated || !gateError) return;

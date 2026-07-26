@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import { getCachedAcceptedFriends, setCachedAcceptedFriends } from "./acceptedFriendsCache";
 import { getCachedChatPreviews, setCachedChatPreviews } from "./chatPreviewsCache";
 import { fetchAcceptedFriends } from "./fetchAcceptedFriends";
@@ -17,6 +18,7 @@ import {
 } from "./hubFeedPreviewCache";
 import { getCachedHubMoments, hubMomentsCacheKey, setCachedHubMoments } from "./hubMomentsCache";
 import { getCachedMyProfile, setCachedMyProfile } from "./myProfileCache";
+import { resolveAvatarUri } from "./avatar";
 import { getCachedVenuesPreview, setCachedVenuesPreview } from "./venuesPreviewCache";
 
 let prewarmPromise: Promise<void> | null = null;
@@ -81,6 +83,12 @@ export function prewarmTabShellData(userId: string, storyEpoch = 0): Promise<voi
     }
 
     await Promise.all(tasks);
+
+    const profile = getCachedMyProfile(userId);
+    const avatarUri = profile ? resolveAvatarUri(profile.avatar_url) : null;
+    if (avatarUri) {
+      await Image.prefetch(avatarUri).catch(() => undefined);
+    }
 
     const friends = getCachedAcceptedFriends(userId) ?? [];
     const friendIds = friends.map((f) => f.id);

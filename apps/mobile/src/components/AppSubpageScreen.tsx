@@ -4,8 +4,6 @@ import { Screen } from "./Screen";
 import { StackScreenHeader } from "./StackScreenHeader";
 import type { PullRefreshVariant } from "./ui/IntencityRefreshControl";
 import { colors } from "../theme/colors";
-import { chrome } from "../theme/chrome";
-import { layout } from "../theme/layout";
 
 type AppSubpageScreenProps = {
   title: string;
@@ -62,35 +60,6 @@ export function SettingsSection({ title, children }: SettingsSectionProps) {
     </View>
   );
 }
-
-export const subpageStyles = StyleSheet.create({
-  lead: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.textSecondary,
-    marginBottom: layout.sectionGap,
-    paddingHorizontal: 2,
-  },
-  emptyBlock: {
-    paddingVertical: 32,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textAlign: "center",
-  },
-  emptyBody: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.textWhite42,
-    textAlign: "center",
-    maxWidth: 300,
-  },
-});
 
 const styles = StyleSheet.create({
   content: {},

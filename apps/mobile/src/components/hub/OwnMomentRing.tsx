@@ -11,6 +11,7 @@ type OwnMomentRingProps = {
   avatarUrl: string | null;
   label: string;
   loading?: boolean;
+  storyUploading?: boolean;
   ringState: StoryRingVisualState;
   /** When false, show + badge overlay (PWA no active story). */
   hasActiveStory?: boolean;
@@ -25,6 +26,7 @@ export function OwnMomentRing({
   avatarUrl,
   label,
   loading = false,
+  storyUploading = false,
   ringState,
   hasActiveStory = false,
   onPress,
@@ -43,10 +45,11 @@ export function OwnMomentRing({
           label={label}
           avatarUrl={avatarUrl}
           ringState={ringState}
+          uploadingRing={storyUploading}
           size="storyLg"
           showCaption={false}
         />
-        {!hasActiveStory ? (
+        {!hasActiveStory && !storyUploading ? (
           <View style={styles.plusBadge} pointerEvents="none">
             <Text style={styles.plus}>+</Text>
           </View>

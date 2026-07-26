@@ -1,5 +1,4 @@
 import * as SecureStore from "expo-secure-store";
-import { isNetworkRequestFailed } from "./networkErrors";
 import { secureUserKey } from "./secureStoreKeys";
 
 const QUEUE_PREFIX = "chat_send_queue";
@@ -72,10 +71,6 @@ export async function bumpQueuedChatSendAttempts(meId: string, queueId: string):
 
 export async function listQueuedChatSends(meId: string): Promise<QueuedChatSend[]> {
   return readQueue(meId);
-}
-
-export function shouldQueueChatSendFailure(error: unknown): boolean {
-  return isNetworkRequestFailed(error);
 }
 
 export function makeChatSendQueueId(): string {

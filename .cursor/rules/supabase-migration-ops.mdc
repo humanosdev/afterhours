@@ -1,0 +1,25 @@
+---
+description: Supabase migration apply status and prod ops — do not bulk-run migrations
+alwaysApply: true
+---
+
+# Supabase migration ops (Intencity)
+
+**Canonical doc:** [docs/SUPABASE_MIGRATION_OPS.md](docs/SUPABASE_MIGRATION_OPS.md)
+
+## Production (linked Supabase) — as of 2026-07-02
+
+- **No pending SQL** for native cutover security or Phase 4.5 presence reconcile on prod.
+- Applied: `native_security_hardening` (`zzz_native_security_hardening.sql`), presence reconcile functions, `push-notify` v7.
+- **Do not** run all 41 files in `supabase/migrations/` on prod — most schema already exists outside the migration tracker.
+
+## After security hardening
+
+- Notifications: clients must use RPC `create_notification_v1` (direct `notifications` INSERT is blocked).
+- Push: requires `notificationId` tied to caller; native/web client code must be rebuilt/deployed.
+- `user_presence`: friends-only SELECT; ghost rows hidden server-side.
+
+## Before suggesting "apply migration"
+
+1. Check `docs/SUPABASE_MIGRATION_OPS.md` and live DB (functions/policies), not repo file count alone.
+2. New migrations: add under `supabase/migrations/zzz_*.sql`, apply once, document in that ops doc.

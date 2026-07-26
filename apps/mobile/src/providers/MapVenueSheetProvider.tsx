@@ -93,10 +93,6 @@ export function useMapVenueSheet() {
   return ctx;
 }
 
-export function useMapVenueSheetOptional() {
-  return useContext(MapVenueSheetContext);
-}
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,

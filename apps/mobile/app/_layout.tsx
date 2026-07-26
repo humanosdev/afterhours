@@ -5,14 +5,14 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { BootLoadingOverlay } from "../src/components/BootLoadingOverlay";
 import { AppLoadingScreen } from "../src/components/AppLoadingScreen";
 import { Screen } from "../src/components/Screen";
 import { hasSupabaseConfig, getSupabaseUrlMisconfigHint } from "../src/lib/env";
 import { checkSupabaseReachability } from "../src/lib/checkSupabaseReachability";
 import { AuthProvider, useAuth } from "../src/providers/AuthProvider";
-import { AppShellVisibleProvider } from "../src/providers/AppShellVisibleProvider";
+import { useSignedInBootReady } from "../src/hooks/useSignedInBootReady";
 import { colors } from "../src/theme/colors";
 import { motion } from "../src/theme/motion";
 
@@ -22,6 +22,8 @@ function RootNavigator() {
   const { loading } = useAuth();
   const bootStartedAtRef = useRef(Date.now());
   const [bootHoldDone, setBootHoldDone] = useState(false);
+  const [bootDismissed, setBootDismissed] = useState(false);
+  const { ready: shellReady, progress: bootProgress } = useSignedInBootReady(loading);
 
   useEffect(() => {
     const delay = Math.max(0, motion.boot.loadingScreenMinMs - (Date.now() - bootStartedAtRef.current));
@@ -29,16 +31,36 @@ function RootNavigator() {
     return () => clearTimeout(timer);
   }, []);
 
-  const showBootScreen = loading || !bootHoldDone;
+  useEffect(() => {
+    const maxBoot = setTimeout(() => setBootDismissed(true), 12000);
+    return () => clearTimeout(maxBoot);
+  }, []);
 
   useEffect(() => {
-    if (!showBootScreen) {
+    if (loading) {
+      setBootDismissed(false);
+    }
+  }, [loading]);
+
+  const bootGatesReady = !loading && bootHoldDone && shellReady;
+  const showBootOverlay = !bootDismissed;
+  const bootFinalize = bootGatesReady && !bootDismissed;
+
+  useEffect(() => {
+    if (!bootFinalize || bootDismissed) return;
+    const failsafe = setTimeout(() => {
+      setBootDismissed(true);
+    }, motion.boot.completeFailsafeMs);
+    return () => clearTimeout(failsafe);
+  }, [bootDismissed, bootFinalize]);
+
+  useEffect(() => {
+    if (!showBootOverlay) {
       void SplashScreen.hideAsync();
     }
-  }, [showBootScreen]);
+  }, [showBootOverlay]);
 
   return (
-    <AppShellVisibleProvider visible={!showBootScreen}>
     <View style={styles.root}>
       <Stack
         screenOptions={{
@@ -47,9 +69,13 @@ function RootNavigator() {
           animation: "fade",
         }}
       />
-      <BootLoadingOverlay visible={showBootScreen} />
+      <BootLoadingOverlay
+        visible={showBootOverlay}
+        progress={bootProgress}
+        finalize={bootFinalize}
+        onProgressComplete={() => setBootDismissed(true)}
+      />
     </View>
-    </AppShellVisibleProvider>
   );
 }
 
@@ -93,7 +119,7 @@ export default function RootLayout() {
   if (!hasSupabaseConfig()) {
     return (
       <GestureHandlerRootView style={styles.gestureRoot}>
-        <SafeAreaProvider>
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <Screen centered>
             <StatusBar style="light" />
             <View style={styles.configCard}>
@@ -112,7 +138,7 @@ export default function RootLayout() {
   if (supabaseUrlHint) {
     return (
       <GestureHandlerRootView style={styles.gestureRoot}>
-        <SafeAreaProvider>
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <Screen centered>
             <StatusBar style="light" />
             <View style={styles.configCard}>
@@ -128,7 +154,7 @@ export default function RootLayout() {
   if (reachability === "checking") {
     return (
       <GestureHandlerRootView style={styles.gestureRoot}>
-        <SafeAreaProvider>
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <AppLoadingScreen />
           <StatusBar style="light" />
         </SafeAreaProvider>
@@ -139,7 +165,7 @@ export default function RootLayout() {
   if (reachability === "failed") {
     return (
       <GestureHandlerRootView style={styles.gestureRoot}>
-        <SafeAreaProvider>
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
           <Screen centered>
             <StatusBar style="light" />
             <View style={styles.configCard}>
@@ -161,7 +187,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <SafeAreaProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
         <AuthProvider>
           <StatusBar style="light" />
           <RootNavigator />

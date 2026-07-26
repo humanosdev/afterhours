@@ -22,26 +22,6 @@ export function ShareLibraryGridSkeleton({ rows = 10 }: { rows?: number }) {
   );
 }
 
-type ShareCropBandSkeletonProps = {
-  width: number;
-  height: number;
-  circular?: boolean;
-};
-
-/** Crop preview band — portrait/square rect or profile circle. */
-export function ShareCropBandSkeleton({ width, height, circular = false }: ShareCropBandSkeletonProps) {
-  return (
-    <Skeleton
-      style={{
-        width,
-        height,
-        borderRadius: circular ? width / 2 : 0,
-      }}
-      borderRadius={circular ? width / 2 : 0}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   root: {
     width: "100%",

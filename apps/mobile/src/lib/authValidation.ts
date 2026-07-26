@@ -23,16 +23,6 @@ export function normalizeUsername(input: string): string {
     .slice(0, 20);
 }
 
-/** @deprecated Prefer `classifyAuthError(flow, error)` — message-only mapping drifts from provider codes. */
-export function getResetPasswordErrorMessage(rawMessage: string): string {
-  return classifyAuthError("forgot_password", { message: rawMessage }).userMessage;
-}
-
-/** @deprecated Prefer `classifyAuthError(flow, error)` */
-export function getSignupErrorMessage(rawMessage: string): string {
-  return classifyAuthError("signup", { message: rawMessage }).userMessage;
-}
-
 export function mapLoginError(error: unknown): string {
   return classifyAuthError("login", error).userMessage;
 }
